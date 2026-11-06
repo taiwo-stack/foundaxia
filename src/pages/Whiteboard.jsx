@@ -9,7 +9,13 @@ import {
   isAllowedImageSrc,
   isTrustedRemoteUrl,
   mainChannelTopic,
-  hostChannelTopic
+  hostChannelTopic,
+  ensureWhiteboardIdentity,
+  isAuthUid,
+  setDrawAccess,
+  listDrawGrants,
+  postWhiteboardEvent,
+  RELAY_MAX_CHARS
 } from '../services/whiteboardAuth';
 import '../styles/Whiteboard.css';
 
@@ -104,13 +110,44 @@ const toWirePage = (p, elementsOverride) => ({
   slideUrl: p?.slideUrl || null
 });
 
-// Downscale an image data URL before sharing it (max 1280px, JPEG unless PNG is
-// needed for transparency). Resolves to the original on any decode failure.
-const compressImageDataUrl = (dataUrl, preferPng = false) => new Promise((resolve) => {
+// Participant edits go through the relay (api/wb-event.js), whose payload cap is ~200KB,
+// so their wire form rounds stroke coordinates (sub-pixel precision is invisible anyway).
+const round2 = (n) => Math.round(n * 100) / 100;
+const toWireElement = (el) => (
+  el && el.type === 'stroke' && Array.isArray(el.points)
+    ? { ...el, points: el.points.map(p => ({ x: round2(p.x), y: round2(p.y), pressure: round2(isFiniteNum(p.pressure) ? p.pressure : 0.5) })) }
+    : el
+);
+
+// What changed between two element lists: ids that disappeared, and elements that are
+// new or were replaced (the editor always creates a new object for a modified element).
+const diffElements = (before, after) => {
+  const beforeById = new Map((before || []).map(e => [String(e.id), e]));
+  const afterIds = new Set();
+  const upsert = [];
+  (after || []).forEach(e => {
+    const id = String(e.id);
+    afterIds.add(id);
+    if (beforeById.get(id) !== e) upsert.push(e);
+  });
+  const remove = [...beforeById.keys()].filter(id => !afterIds.has(id));
+  return { remove, upsert };
+};
+
+// Previews of other participants' in-progress strokes (public channel, unauthenticated)
+// are dropped when idle or too old, so a forged preview can never stick on screen.
+const PREVIEW_IDLE_MS = 2500;
+const PREVIEW_MAX_AGE_MS = 60000;
+const ICE_BATCH_MS = 150;            // ICE candidates are batched per peer before relaying
+const MAX_QUEUED_ICE = 100;
+
+// Downscale an image data URL before sharing it (max 1280px by default, JPEG unless PNG
+// is needed for transparency). Resolves to the original on any decode failure.
+const compressImageDataUrl = (dataUrl, preferPng = false, maxDim = 1280, quality = 0.8) => new Promise((resolve) => {
   const img = new Image();
   img.onload = () => {
     try {
-      const MAX_DIM = 1280;
+      const MAX_DIM = maxDim;
       let { width, height } = img;
       if (width > MAX_DIM || height > MAX_DIM) {
         const scale = MAX_DIM / Math.max(width, height);
@@ -121,7 +158,7 @@ const compressImageDataUrl = (dataUrl, preferPng = false) => new Promise((resolv
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve(preferPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.8));
+      resolve(preferPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality));
     } catch {
       resolve(dataUrl);
     }
@@ -158,6 +195,9 @@ function WhiteboardBoard({ user }) {
   const [isHandRaised, setIsHandRaised] = useState(false);
 
   // Connection & Media Refs
+  // Participant id. With Supabase this becomes the auth uid (real or anonymous sign-in)
+  // as soon as startCollaboration has an identity; the random id below is only used in
+  // mock mode and for view-only guests who could not get an identity.
   const localUserId = useRef((() => {
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room') || 'default-room';
@@ -192,7 +232,7 @@ function WhiteboardBoard({ user }) {
   // genuinely from the host. Host-only events arriving on the public channel are ignored.
   const hostChannelRef = useRef(null);
   const isHostRef = useRef(false);
-  const grantedRef = useRef(new Set());       // userIds the host has granted draw access (host-issued)
+  const grantedRef = useRef(new Set());       // auth uids with draw access (public.wb_draw_grants, announced by the host)
   const trustedHostIdRef = useRef(null);      // host's userId as announced on the host channel
   const channelStatusRef = useRef({ main: false, host: false });
   const sendQueuesRef = useRef({ main: Promise.resolve(), host: Promise.resolve() });
@@ -213,6 +253,15 @@ function WhiteboardBoard({ user }) {
   const textCommitTokenRef = useRef(null);
   const imageFailedRef = useRef(new Set());   // image srcs that failed to load - never refetched every redraw
   const localAnalyserStreamRef = useRef(null);
+  // Identity / relay (wb_guest_identity.sql, api/wb-event.js)
+  const canRelayRef = useRef(false);          // we have an auth uid + JWT, so /api/wb-event will accept us
+  const roomIdRef = useRef(null);
+  const relayQueuesRef = useRef({ board: Promise.resolve(), signal: Promise.resolve() });
+  const lastRelayToastRef = useRef(0);
+  const iceOutboxRef = useRef({});            // { peerId: { cands: [], timer } }
+  const previewSweepRef = useRef(null);
+  const pendingSignalsRef = useRef({});       // { senderId: [{ event, payload, t }] } signaling held until the sender is present
+  const [identityNotice, setIdentityNotice] = useState('');
 
   // Video call states
   const [isVideoOn, setIsVideoOn] = useState(false);
@@ -568,11 +617,91 @@ function WhiteboardBoard({ user }) {
     }).catch(() => {});
   };
 
-  // Board edits travel on the host channel when the host makes them (trusted by
-  // everyone) and on the public channel for granted participants (receivers check the
-  // sender against the host-issued grant list).
+  // ── Relay (api/wb-event.js) ──
+  // Participants can't write to the private channel, and nothing they send on the public
+  // one can be attributed, so their committed edits and call signaling are POSTed to the
+  // relay, which checks the grant, stamps senderId = their auth uid and re-broadcasts on
+  // the private channel. One FIFO per lane keeps each lane's messages in order.
+  const relayToast = (msg) => {
+    const now = Date.now();
+    if (now - lastRelayToastRef.current < 5000) return;
+    lastRelayToastRef.current = now;
+    triggerToast(msg);
+  };
+
+  const relaySend = (lane, event, payload) => {
+    const room = roomIdRef.current;
+    if (!room || !canRelayRef.current) return;
+    let size;
+    try {
+      size = JSON.stringify(payload).length;
+    } catch {
+      return;
+    }
+    if (size > RELAY_MAX_CHARS) {
+      if (lane === 'board') relayToast('That change is too large to share live (try a smaller image).');
+      return;
+    }
+    const queues = relayQueuesRef.current;
+    queues[lane] = queues[lane].then(async () => {
+      if (roomIdRef.current !== room) return;
+      const res = await postWhiteboardEvent(room, event, payload);
+      if (res.ok || !mountedRef.current) return;
+      console.warn(`Whiteboard: relay rejected '${event}' (${res.status}): ${res.error}`);
+      if (lane !== 'board') return;
+      if (res.status === 403) relayToast('Your drawing access was revoked - that change was not shared.');
+      else if (res.status === 413) relayToast('That change is too large to share live (try a smaller image).');
+      else relayToast('Could not share your last change. Check your connection.');
+    }).catch(() => {});
+  };
+
+  // Committed board edits. The host writes straight to the private channel (RLS lets it);
+  // everyone else goes through the relay. Either way receivers see a senderId.
   const sendBoardEvent = (event, payload) => {
-    sendOn(isHostRef.current ? 'host' : 'main', event, payload);
+    if (isHostRef.current) {
+      sendOn('host', event, { ...payload, senderId: localUserId.current });
+    } else {
+      relaySend('board', event, payload);
+    }
+  };
+
+  // WebRTC signaling: same split as board edits, so the sender id is never forgeable.
+  const sendSignal = (event, payload) => {
+    if (isHostRef.current) {
+      sendOn('host', event, { ...payload, senderId: localUserId.current });
+    } else {
+      relaySend('signal', event, payload);
+    }
+  };
+
+  // Batch a peer's ICE candidates (they arrive in bursts) into one relayed message.
+  // `cand` null = end of candidates: flush now.
+  const queueIceCandidate = (peerId, cand) => {
+    const outbox = iceOutboxRef.current;
+    const box = outbox[peerId] || (outbox[peerId] = { cands: [], timer: null });
+    if (cand) {
+      try {
+        box.cands.push(typeof cand.toJSON === 'function' ? cand.toJSON() : cand);
+      } catch { /* unserializable candidate: skip */ }
+    }
+    const flush = () => {
+      if (box.timer) clearTimeout(box.timer);
+      box.timer = null;
+      while (box.cands.length > 0) {
+        sendSignal('webrtc-ice', { targetUserId: peerId, candidates: box.cands.splice(0, 50) });
+      }
+    };
+    if (!cand) {
+      flush();
+    } else if (!box.timer) {
+      box.timer = setTimeout(flush, ICE_BATCH_MS);
+    }
+  };
+
+  const dropIceOutbox = (peerId) => {
+    const box = iceOutboxRef.current[peerId];
+    if (box?.timer) clearTimeout(box.timer);
+    delete iceOutboxRef.current[peerId];
   };
 
   const handleChunk = (payload, kind) => {
@@ -622,22 +751,6 @@ function WhiteboardBoard({ user }) {
     }
     if (handleBroadcastEventRef.current) {
       handleBroadcastEventRef.current(event, payload, kind === 'host');
-    }
-  };
-
-  const persistGrants = () => {
-    if (!roomId) return;
-    try {
-      sessionStorage.setItem(`wb-grants-${roomId}`, JSON.stringify([...grantedRef.current]));
-    } catch (_) {}
-  };
-
-  const loadGrants = (room) => {
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem(`wb-grants-${room}`) || '[]');
-      return Array.isArray(parsed) ? parsed.filter(isShortId) : [];
-    } catch (_) {
-      return [];
     }
   };
 
@@ -696,6 +809,13 @@ function WhiteboardBoard({ user }) {
     channelStatusRef.current = { main: false, host: false };
     chunkBuffersRef.current = {};
     sendQueuesRef.current = { main: Promise.resolve(), host: Promise.resolve() };
+    relayQueuesRef.current = { board: Promise.resolve(), signal: Promise.resolve() };
+    Object.keys(iceOutboxRef.current).forEach(dropIceOutbox);
+    pendingSignalsRef.current = {};
+    if (previewSweepRef.current) {
+      clearInterval(previewSweepRef.current);
+      previewSweepRef.current = null;
+    }
     if (stateResponseTimerRef.current) {
       clearTimeout(stateResponseTimerRef.current);
       stateResponseTimerRef.current = null;
@@ -726,7 +846,7 @@ function WhiteboardBoard({ user }) {
     if (hostChannel) {
       try {
         await Promise.race([
-          hostChannel.send({ type: 'broadcast', event: 'session-ended', payload: {} }),
+          hostChannel.send({ type: 'broadcast', event: 'session-ended', payload: { senderId: localUserId.current } }),
           new Promise(resolve => setTimeout(resolve, 1500))
         ]);
       } catch (_) {}
@@ -915,6 +1035,32 @@ function WhiteboardBoard({ user }) {
       const newurl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${id}`;
       window.history.replaceState({ path: newurl }, '', newurl);
 
+      // Identity first: every participant id is an auth uid. Visitors with no session get an
+      // anonymous one; people the app believes are logged in (role in sessionStorage) but
+      // whose Supabase session is gone are NOT silently turned into anonymous users. An
+      // existing session is always reused, never replaced.
+      roomIdRef.current = id;
+      const appLoggedIn = !!(user && user.role && user.role !== 'guest');
+      const ident = await ensureWhiteboardIdentity({ allowAnonymous: !hostMode && !appLoggedIn });
+      if (token !== startTokenRef.current || !mountedRef.current) return;
+      if (ident.userId) {
+        localUserId.current = ident.userId;
+        canRelayRef.current = true;
+        setIdentityNotice('');
+      } else {
+        // View-only: keep the local random id for presence; the relay won't accept us.
+        canRelayRef.current = false;
+        if (!hostMode) {
+          setIdentityNotice(
+            ident.reason === 'anonymous-disabled'
+              ? 'Guest drawing is turned off for this site, so you can watch the board but not draw or join voice/video. Log in to take part.'
+              : ident.reason === 'session-expired'
+                ? 'Your login has expired. You can watch the board, but log in again to draw or join voice/video.'
+                : 'Could not verify your identity. You can watch the board, but drawing and voice/video are unavailable.'
+          );
+        }
+      }
+
       if (hostMode) {
         // Registers a brand-new ad-hoc room (live_sessions row with us as tutor) so RLS lets
         // us broadcast on its host channel; a no-op for rooms we already own.
@@ -924,16 +1070,30 @@ function WhiteboardBoard({ user }) {
           console.warn('Whiteboard: the server did not confirm host rights for this room - live sync to participants will not work.', error || '');
         }
         trustedHostIdRef.current = localUserId.current;
-        grantedRef.current = new Set(loadGrants(id));
+        // Grants are stored server-side (wb_draw_grants), so they survive a host refresh.
+        const stored = confirmed ? await listDrawGrants(id) : null;
+        if (token !== startTokenRef.current || !mountedRef.current) return;
+        grantedRef.current = new Set((stored || []).filter(isShortId));
       } else {
         trustedHostIdRef.current = null;
         grantedRef.current = new Set();
+        if (canRelayRef.current) {
+          // RLS only returns our own row: start with the right draw state even before the
+          // host's board snapshot arrives (the relay enforces the same row).
+          const mine = await listDrawGrants(id);
+          if (token !== startTokenRef.current || !mountedRef.current) return;
+          if (mine && mine.includes(localUserId.current)) {
+            grantedRef.current = new Set([localUserId.current]);
+            setHasDrawAccess(true);
+            presenceRef.current.hasDrawAccess = true;
+          }
+        }
       }
 
       teardownChannels();
 
-      // Make sure Realtime carries the logged-in user's JWT (the private host channel's
-      // RLS checks it); anonymous guests keep the anon key.
+      // Make sure Realtime carries the user's JWT (real or anonymous): the private host
+      // channel's RLS checks it on join.
       try { await supabase.realtime.setAuth(); } catch (_) {}
       if (token !== startTokenRef.current || !mountedRef.current) return;
 
@@ -950,6 +1110,21 @@ function WhiteboardBoard({ user }) {
 
       channelRef.current = channel;
       hostChannelRef.current = hostChannel;
+
+      // Expire stroke previews that went idle or lived too long (forged previews on the
+      // public channel can't persist; real ones end with the relayed drawing-end).
+      previewSweepRef.current = setInterval(() => {
+        const now = Date.now();
+        let changed = false;
+        Object.keys(activeDrawingsRef.current).forEach(k => {
+          const d = activeDrawingsRef.current[k];
+          if (!d || now - (d.lastAt || 0) > PREVIEW_IDLE_MS || now - (d.startedAt || 0) > PREVIEW_MAX_AGE_MS) {
+            delete activeDrawingsRef.current[k];
+            changed = true;
+          }
+        });
+        if (changed) drawCanvas();
+      }, 1000);
 
       // Track participant joins/leaves using dynamic ref to avoid stale closures
       channel.on('presence', { event: 'sync' }, () => {
@@ -1029,13 +1204,22 @@ function WhiteboardBoard({ user }) {
   };
 
   const lastDrawingBroadcastRef = useRef(0);
+  // In-progress stroke preview. Ephemeral (receivers expire it), so participants send it
+  // straight on the public channel to keep drawing feeling live; the host uses its
+  // private channel. The committed stroke follows as drawing-end.
   const broadcastDrawingStroke = (newPoints, color, width, isHighlighter) => {
     if (!channelRef.current) return false;
     const now = Date.now();
     if (now - lastDrawingBroadcastRef.current < 16) return false; // ~60fps throttle for instant sync
     lastDrawingBroadcastRef.current = now;
 
-    sendBoardEvent('drawing-stroke', { userId: localUserId.current, newPoints, color, width, isHighlighter });
+    const preview = { userId: localUserId.current, newPoints, color, width, isHighlighter };
+    if (isHostRef.current) {
+      sendOn('host', 'drawing-stroke', { ...preview, senderId: localUserId.current });
+    } else {
+      if (!canRelayRef.current) return false; // could never commit it either
+      sendOn('main', 'drawing-stroke', preview);
+    }
     return true;
   };
 
@@ -1043,20 +1227,55 @@ function WhiteboardBoard({ user }) {
   // text) replaces it on every peer instead of duplicating it.
   const broadcastDrawingEnd = (element) => {
     if (!channelRef.current) return;
-    sendBoardEvent('drawing-end', { userId: localUserId.current, element });
+    sendBoardEvent('drawing-end', { element: isHostRef.current ? element : toWireElement(element) });
   };
 
-  const broadcastElementsUpdate = (updatedElements) => {
+  // Host: replace everyone's board with `updatedElements` (private channel, chunked).
+  // Participant: send only what changed relative to `before` as element-patch messages
+  // through the relay (a whole board easily exceeds the relay's ~200KB cap).
+  const broadcastElementsUpdate = (updatedElements, before = elementsRef.current) => {
     if (!channelRef.current) return;
-    sendBoardEvent('element-update', { action: 'update-all', elements: updatedElements, senderUserId: localUserId.current });
+    if (isHostRef.current) {
+      sendBoardEvent('element-update', { action: 'update-all', elements: updatedElements });
+      return;
+    }
+    const { remove, upsert } = diffElements(before, updatedElements);
+    const LIMIT = RELAY_MAX_CHARS - 2000;
+    let msg = { remove: [], upsert: [] };
+    let size = 0;
+    const flush = () => {
+      if (msg.remove.length + msg.upsert.length > 0) sendBoardEvent('element-patch', msg);
+      msg = { remove: [], upsert: [] };
+      size = 0;
+    };
+    remove.forEach(id => {
+      const s = String(id).length + 4;
+      if (size + s > LIMIT || msg.remove.length >= 5000) flush();
+      msg.remove.push(id);
+      size += s;
+    });
+    upsert.forEach(el => {
+      const wire = toWireElement(el);
+      let s;
+      try {
+        s = JSON.stringify(wire).length + 2;
+      } catch {
+        return;
+      }
+      if (size > 0 && (size + s > LIMIT || msg.upsert.length >= 5000)) flush();
+      msg.upsert.push(wire);
+      size += s;
+    });
+    flush();
   };
 
   const broadcastElementsClear = () => {
     if (!channelRef.current) return;
     if (isHostRef.current) {
-      sendOn('host', 'element-update', { action: 'clear' });
+      sendBoardEvent('element-update', { action: 'clear' });
     } else {
-      // Only the host may 'clear'; anyone else expresses it as an (authorised) update-all.
+      // Only the host may 'clear'; anyone else expresses it as a relayed patch removing
+      // every element.
       broadcastElementsUpdate([]);
     }
   };
@@ -1092,12 +1311,23 @@ function WhiteboardBoard({ user }) {
     remapParticipants();
   };
 
-  const toggleParticipantDrawAccess = (peerId) => {
+  const toggleParticipantDrawAccess = async (peerId) => {
     if (!isHost || !hostChannelRef.current || !isShortId(peerId)) return;
+    if (!isAuthUid(peerId)) {
+      triggerToast('This guest could not be verified (guest sign-in unavailable), so they can only watch.');
+      return;
+    }
     const nextAccess = !grantedRef.current.has(peerId);
+    // The grant is stored server-side first: the relay checks wb_draw_grants, not this UI.
+    const { error } = await setDrawAccess(roomIdRef.current || roomId, peerId, nextAccess);
+    if (error) {
+      console.error('Whiteboard: could not change drawing access:', error);
+      triggerToast('Could not change drawing access. Please try again.');
+      return;
+    }
+    if (!mountedRef.current) return;
     if (nextAccess) grantedRef.current.add(peerId);
     else grantedRef.current.delete(peerId);
-    persistGrants();
 
     // Auto-lower student's hand when granting draw access
     sendOn('host', 'access-changed', {
@@ -1134,38 +1364,86 @@ function WhiteboardBoard({ user }) {
   };
 
   // Events only the host may send: accepted ONLY from the RLS-protected host channel.
-  const HOST_ONLY_EVENTS = ['session-ended', 'page-change', 'board-state-response', 'access-changed', 'lower-hand-request', 'slide-nav'];
-  // Board edits: from the host channel, or from the public channel when the sender is on
-  // the host-issued grant list.
-  const BOARD_EDIT_EVENTS = ['drawing-stroke', 'drawing-end', 'element-update'];
+  const HOST_ONLY_EVENTS = ['session-ended', 'page-change', 'board-state-response', 'access-changed', 'lower-hand-request', 'slide-nav', 'element-update'];
+  // Committed board edits and WebRTC signaling: accepted ONLY from the private channel,
+  // where they come either from the host directly or from the /api/wb-event relay, which
+  // has checked the sender (draw grant for board edits) and stamped payload.senderId with
+  // their auth uid. They are attributed by that senderId and nothing else.
+  const RELAYED_EVENTS = ['drawing-end', 'element-patch', 'webrtc-offer', 'webrtc-answer', 'webrtc-ice', 'peer-reconnect'];
+  const SIGNAL_EVENTS = ['webrtc-offer', 'webrtc-answer', 'webrtc-ice', 'peer-reconnect'];
+
+  const holdSignalUntilPresent = (sender, event, payload) => {
+    const pending = pendingSignalsRef.current;
+    const now = Date.now();
+    Object.keys(pending).forEach(k => {
+      pending[k] = pending[k].filter(m => now - m.t < 10000);
+      if (pending[k].length === 0) delete pending[k];
+    });
+    if (!pending[sender] && Object.keys(pending).length >= 20) return;
+    const list = pending[sender] || (pending[sender] = []);
+    if (list.length < 30) list.push({ event, payload, t: now });
+  };
+
+  const replayHeldSignals = () => {
+    const pending = pendingSignalsRef.current;
+    const now = Date.now();
+    Object.keys(pending).forEach(sender => {
+      if (!participantsRef.current[sender]) return;
+      const list = pending[sender];
+      delete pending[sender];
+      list.forEach(m => {
+        if (now - m.t < 10000) handleBroadcastEvent(m.event, m.payload, true);
+      });
+    });
+  };
 
   const handleBroadcastEvent = (event, payload, fromHostChannel = false) => {
     if (!payload || typeof payload !== 'object') return;
-    if (HOST_ONLY_EVENTS.includes(event) && !fromHostChannel) return;
-    if (BOARD_EDIT_EVENTS.includes(event) && !fromHostChannel) {
-      const sender = event === 'element-update' ? payload.senderUserId : payload.userId;
-      // Residual risk (documented): userIds are client-chosen, so a participant who copies
-      // a currently-granted participant's id can still draw as them on the public channel.
-      if (!isShortId(sender) || sender === trustedHostIdRef.current || !grantedRef.current.has(sender)) return;
-      if (event === 'element-update' && payload.action !== 'update-all') return;
+    if ((HOST_ONLY_EVENTS.includes(event) || RELAYED_EVENTS.includes(event)) && !fromHostChannel) return;
+    let sender = null;
+    if (RELAYED_EVENTS.includes(event)) {
+      sender = payload.senderId;
+      if (!isShortId(sender)) return;
+      // Our own edit coming back from the relay: already applied locally when we made it.
+      if (sender === localUserId.current) return;
+      // Signaling only from someone currently in the room. The relay can beat presence by
+      // a moment, so hold it briefly (bounded) and replay once the sender shows up.
+      if (SIGNAL_EVENTS.includes(event) && !participantsRef.current[sender]) {
+        holdSignalUntilPresent(sender, event, payload);
+        return;
+      }
     }
 
     switch (event) {
       case 'drawing-stroke': {
-        const userKey = payload.userId;
+        // Preview only (never persisted). From the private channel it's the host; on the
+        // public channel the claimed id must be present and granted, and previews expire
+        // (PREVIEW_IDLE_MS / PREVIEW_MAX_AGE_MS) or are cleared by the relayed drawing-end.
+        let userKey;
+        if (fromHostChannel) {
+          userKey = isShortId(payload.senderId) ? payload.senderId : 'host';
+        } else {
+          userKey = payload.userId;
+          if (!isShortId(userKey) || userKey === localUserId.current || userKey === trustedHostIdRef.current ||
+              !participantsRef.current[userKey] || !grantedRef.current.has(userKey)) break;
+        }
         const newPoints = sanitizePoints(payload.newPoints);
-        if (!isShortId(userKey) || !newPoints) break;
+        if (!newPoints) break;
+        const now = Date.now();
         if (!activeDrawingsRef.current[userKey]) {
           activeDrawingsRef.current[userKey] = {
             type: 'stroke',
             points: [],
             color: safeColor(payload.color),
             width: isFiniteNum(payload.width) ? clampNum(payload.width, 0.5, 400) : 4,
-            isHighlighter: payload.isHighlighter === true
+            isHighlighter: payload.isHighlighter === true,
+            startedAt: now,
+            lastAt: now
           };
         }
         // Append newly arrived delta points
         const live = activeDrawingsRef.current[userKey];
+        live.lastAt = now;
         if (live.points.length + newPoints.length <= MAX_POINTS) {
           live.points.push(...newPoints);
         }
@@ -1191,12 +1469,37 @@ function WhiteboardBoard({ user }) {
           return next;
         });
         // Delay active drawing ref cleanup slightly to overlap with React state commit
-        // and prevent concurrent cursor-move updates from wiping the stroke off canvas
-        const endedUser = payload.userId;
+        // and prevent concurrent cursor-move updates from wiping the stroke off canvas.
+        // The committed stroke is attributed by the server-stamped senderId.
+        const endedUser = sender;
         miscTimersRef.current.push(setTimeout(() => {
           if (isShortId(endedUser)) delete activeDrawingsRef.current[endedUser];
           drawCanvas();
         }, 80));
+        break;
+      }
+
+      case 'element-patch': {
+        // Relayed participant edit: remove ids, then upsert (replace in place / append).
+        const removeIds = Array.isArray(payload.remove)
+          ? new Set(payload.remove.slice(0, MAX_ELEMENTS).filter(v => isShortId(v) || isFiniteNum(v)).map(String))
+          : new Set();
+        const upserts = sanitizeElements(payload.upsert || []) || [];
+        if (removeIds.size === 0 && upserts.length === 0) break;
+        setUndoStack(prev => [...prev, elementsRef.current]);
+        setRedoStack([]);
+        // Functional update: several patches can arrive before the next render.
+        setElements(prev => {
+          let next = removeIds.size > 0 ? prev.filter(el => !removeIds.has(String(el.id))) : [...prev];
+          upserts.forEach(el => {
+            const idx = next.findIndex(e => String(e.id) === el.id);
+            if (idx === -1) next.push(el);
+            else next[idx] = el;
+          });
+          if (next.length > MAX_ELEMENTS) next = next.slice(next.length - MAX_ELEMENTS);
+          return next;
+        });
+        if (selectedElement && removeIds.has(String(selectedElement.id))) setSelectedElement(null);
         break;
       }
 
@@ -1239,7 +1542,8 @@ function WhiteboardBoard({ user }) {
         break;
 
       case 'hand-raised': {
-        if (!isHost || !isShortId(payload.userId)) break;
+        // Public channel: only accept it for someone actually present.
+        if (!isHost || !isShortId(payload.userId) || !participantsRef.current[payload.userId]) break;
         // Throttle per sender so a participant can't spam toasts/chimes.
         const now = Date.now();
         if (now - (lastHandRaiseRef.current[payload.userId] || 0) < 3000) break;
@@ -1283,30 +1587,32 @@ function WhiteboardBoard({ user }) {
         }
         break;
 
-      // WebRTC voice chat signaling
-      // WebRTC voice chat signaling (public channel; see residual-risk note in the report)
+      // WebRTC voice/video signaling: private channel only, sender = server-stamped
+      // senderId (or the host), and the sender must be present (checked above).
       case 'webrtc-offer':
-        if (payload.targetUserId === localUserId.current && isShortId(payload.senderUserId) &&
+        if (payload.targetUserId === localUserId.current &&
             payload.offer && typeof payload.offer === 'object') {
-          handleWebRTCOffer(payload.offer, payload.senderUserId);
+          handleWebRTCOffer(payload.offer, sender);
         }
         break;
       case 'webrtc-answer':
-        if (payload.targetUserId === localUserId.current && isShortId(payload.senderUserId) &&
+        if (payload.targetUserId === localUserId.current &&
             payload.answer && typeof payload.answer === 'object') {
-          handleWebRTCAnswer(payload.answer, payload.senderUserId);
+          handleWebRTCAnswer(payload.answer, sender);
         }
         break;
       case 'webrtc-ice':
-        if (payload.targetUserId === localUserId.current && isShortId(payload.senderUserId) &&
-            payload.candidate && typeof payload.candidate === 'object') {
-          handleWebRTCIce(payload.candidate, payload.senderUserId);
+        if (payload.targetUserId === localUserId.current && Array.isArray(payload.candidates)) {
+          payload.candidates.slice(0, 50).forEach(c => {
+            if (c && typeof c === 'object') handleWebRTCIce(c, sender);
+          });
         }
         break;
 
       case 'peer-reconnect': {
-        const peerId = payload.senderUserId;
+        const peerId = sender;
         if (!isShortId(peerId) || peerId === localUserId.current) break;
+        dropIceOutbox(peerId);
         if (peerConnectionsRef.current[peerId]) {
           try {
             peerConnectionsRef.current[peerId].close();
@@ -1441,6 +1747,8 @@ function WhiteboardBoard({ user }) {
 
     // Update WebRTC voice streams when new peers join
     syncVoicePeers(mapped);
+    // Signaling that arrived (via the relay) just before its sender's presence did.
+    replayHeldSignals();
     drawCanvas();
   };
 
@@ -1659,7 +1967,7 @@ function WhiteboardBoard({ user }) {
 
   const broadcastReconnect = () => {
     if (!channelRef.current) return;
-    sendOn('main', 'peer-reconnect', { senderUserId: localUserId.current });
+    sendSignal('peer-reconnect', {});
   };
 
   // Tear down and re-offer every peer connection so peers pick up our current set of
@@ -1684,6 +1992,7 @@ function WhiteboardBoard({ user }) {
         } catch (_) {}
         delete peerConnectionsRef.current[peerId];
         delete iceCandidateQueuesRef.current[peerId];
+        dropIceOutbox(peerId);
         delete remoteVideoRefs.current[peerId];
         removeRemoteAnalyser(peerId);
         const audioEl = document.getElementById('peer-audio-' + peerId);
@@ -1719,6 +2028,9 @@ function WhiteboardBoard({ user }) {
 
   const createPeerConnection = async (peerId, isInitiator) => {
     if (peerConnectionsRef.current[peerId]) return;
+    // Signaling needs a verified identity on both ends (it is relayed with server-stamped
+    // sender ids), so view-only guests without an auth uid don't take part in calls.
+    if (!canRelayRef.current || !isAuthUid(peerId)) return;
 
     const pcConfig = {
       iceServers: [
@@ -1738,13 +2050,9 @@ function WhiteboardBoard({ user }) {
     }
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'webrtc-ice',
-          payload: { candidate: e.candidate, targetUserId: peerId, senderUserId: localUserId.current }
-        });
-      }
+      if (peerConnectionsRef.current[peerId] !== pc || !channelRef.current) return;
+      // Batched per peer; a null candidate (gathering complete) flushes the batch.
+      queueIceCandidate(peerId, e.candidate || null);
     };
 
     pc.ontrack = (e) => {
@@ -1804,11 +2112,7 @@ function WhiteboardBoard({ user }) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         if (channelRef.current) {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'webrtc-offer',
-            payload: { offer, targetUserId: peerId, senderUserId: localUserId.current }
-          });
+          sendSignal('webrtc-offer', { offer: { type: offer.type, sdp: offer.sdp }, targetUserId: peerId });
         }
       } catch (e) {
         console.error("Error creating WebRTC P2P offer", e);
@@ -1836,17 +2140,14 @@ function WhiteboardBoard({ user }) {
       await createPeerConnection(senderUserId, false);
     }
     const pc = peerConnectionsRef.current[senderUserId];
+    if (!pc) return;
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       await processQueuedIceCandidates(senderUserId);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       if (channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'webrtc-answer',
-          payload: { answer, targetUserId: senderUserId, senderUserId: localUserId.current }
-        });
+        sendSignal('webrtc-answer', { answer: { type: answer.type, sdp: answer.sdp }, targetUserId: senderUserId });
       }
     } catch (e) {
       console.error("Error setting WebRTC P2P offer description", e);
@@ -1867,13 +2168,15 @@ function WhiteboardBoard({ user }) {
 
   const handleWebRTCIce = async (candidate, senderUserId) => {
     const pc = peerConnectionsRef.current[senderUserId];
-    if (!pc) return;
 
-    if (!pc.remoteDescription) {
+    // Relayed signaling can reach us before the offer it belongs to: queue (bounded) until
+    // the connection has its remote description.
+    if (!pc || !pc.remoteDescription) {
       if (!iceCandidateQueuesRef.current[senderUserId]) {
         iceCandidateQueuesRef.current[senderUserId] = [];
       }
-      iceCandidateQueuesRef.current[senderUserId].push(candidate);
+      const queue = iceCandidateQueuesRef.current[senderUserId];
+      if (queue.length < MAX_QUEUED_ICE) queue.push(candidate);
       return;
     }
 
@@ -1896,6 +2199,7 @@ function WhiteboardBoard({ user }) {
     Object.values(remoteAnalysersRef.current).forEach(disconnectAnalyser);
     remoteAnalysersRef.current = {};
     iceCandidateQueuesRef.current = {};
+    Object.keys(iceOutboxRef.current).forEach(dropIceOutbox);
     setRemoteVideoStreams({});
   };
 
@@ -2364,7 +2668,7 @@ function WhiteboardBoard({ user }) {
         beginEditExistingText(hit.element);
       } else {
         setEditingText({
-          id: Date.now().toString(),
+          id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
           token: Math.random().toString(36).slice(2),
           isExisting: false,
           x,
@@ -2382,7 +2686,7 @@ function WhiteboardBoard({ user }) {
       setIsDrawing(true);
       const firstPoint = { x, y, pressure: e.pressure || 0.5 };
       const newStroke = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'stroke',
         points: [firstPoint],
         color: activeColor,
@@ -2399,7 +2703,7 @@ function WhiteboardBoard({ user }) {
       setIsDrawing(true);
       const firstPoint = { x, y, pressure: e.pressure || 0.5 };
       const newStroke = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'stroke',
         points: [firstPoint],
         color: activeColor,
@@ -2433,7 +2737,7 @@ function WhiteboardBoard({ user }) {
         shapeY = Math.round(y / 24) * 24;
       }
       setCurrentShape({
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'shape',
         shapeType: activeTool,
         x1: shapeX,
@@ -2621,7 +2925,7 @@ function WhiteboardBoard({ user }) {
       setRedoStack([]);
       dragOriginalElementsRef.current = null;
       // Broadcast elements state after eraser wipe
-      broadcastElementsUpdate(elements);
+      broadcastElementsUpdate(elements, before);
       return;
     }
 
@@ -2633,7 +2937,7 @@ function WhiteboardBoard({ user }) {
       setRedoStack([]);
       dragOriginalElementsRef.current = null;
       // Broadcast updated layout
-      broadcastElementsUpdate(elements);
+      broadcastElementsUpdate(elements, before);
       return;
     }
 
@@ -2674,7 +2978,7 @@ function WhiteboardBoard({ user }) {
     } else if (activeTool === 'select' || activeTool === 'text') {
       // Create new text block on empty canvas double click
       setEditingText({
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         token: Math.random().toString(36).slice(2),
         isExisting: false,
         x,
@@ -2818,6 +3122,15 @@ function WhiteboardBoard({ user }) {
       const url = await uploadWhiteboardImage(blob, roomId, preferPng ? 'png' : 'jpg');
       if (url) return url;
     } catch (_) {}
+    // Participants' edits go through the relay (~200KB cap): shrink harder if needed.
+    if (!isHostRef.current) {
+      let small = compressed;
+      for (const [dim, q] of [[800, 0.7], [600, 0.6], [400, 0.5]]) {
+        if (small.length <= RELAY_MAX_CHARS - 5000) break;
+        small = await compressImageDataUrl(dataUrl, false, dim, q);
+      }
+      return small;
+    }
     return compressed;
   };
 
@@ -2848,7 +3161,7 @@ function WhiteboardBoard({ user }) {
         imageCache.current[src] = img;
 
         const imgElement = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
           type: 'image',
           src,
           x: viewportCenterX - w / 2,
@@ -3784,6 +4097,21 @@ function WhiteboardBoard({ user }) {
           }}>
             <span style={{ fontSize: '1rem' }}>ðŸ”’</span>
             <span>View Only â€” waiting for the tutor to grant you drawing access</span>
+          </div>
+        )}
+
+        {/* Identity notice: guest could not get an auth identity (e.g. anonymous sign-ins
+            disabled in the Supabase project), so the session is view-only for them. */}
+        {isCollaborating && !isHost && identityNotice && (
+          <div role="status" style={{
+            position: 'absolute', bottom: '120px', left: '50%', transform: 'translateX(-50%)',
+            maxWidth: 'min(560px, calc(100% - 32px))', textAlign: 'center',
+            background: 'rgba(15, 15, 20, 0.88)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(245, 158, 11, 0.45)', borderRadius: '12px',
+            padding: '10px 20px', color: '#fcd34d', fontSize: '0.85rem', fontWeight: '600',
+            zIndex: 200, pointerEvents: 'none', userSelect: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+          }}>
+            {identityNotice}
           </div>
         )}
 

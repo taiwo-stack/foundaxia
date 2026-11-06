@@ -9,6 +9,9 @@ import { supabase, hasSupabaseConfig } from '../supabaseClient';
 //     tutor/admin caller claims it by having a row created with them as tutor.
 //   * Host-only events travel on the PRIVATE Realtime channel `room-<id>-host`,
 //     which RLS on realtime.messages lets only that tutor (or an admin) write to.
+//   * Participants' committed board edits and WebRTC signaling go through the
+//     /api/wb-event relay, which stamps the sender's auth uid and re-broadcasts on
+//     the private channel (wb_guest_identity.sql, api/wb-event.js).
 // Nothing here trusts sessionStorage or ids carried in broadcast payloads.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -28,7 +31,8 @@ export const claimWhiteboardHost = async (roomId) => {
   if (!hasSupabaseConfig || !supabase) return { isHost: false, error: new Error('Supabase not configured') };
   try {
     const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData?.session) return { isHost: false, error: null }; // anonymous guests are never hosts
+    // Visitors without an account (no session, or an anonymous guest session) are never hosts.
+    if (!sessionData?.session || sessionData.session.user?.is_anonymous === true) return { isHost: false, error: null };
     const { data, error } = await supabase.rpc('wb_claim_host', { p_room: roomId });
     if (error) return { isHost: false, error };
     return { isHost: data === true, error: null };
@@ -37,21 +41,140 @@ export const claimWhiteboardHost = async (roomId) => {
   }
 };
 
-/** True when the browser currently has a logged-in Supabase session. */
+/**
+ * True when the browser currently has a logged-in (non-anonymous) Supabase session.
+ * Anonymous whiteboard-guest sessions don't count.
+ */
 export const hasAuthSession = async () => {
   if (!hasSupabaseConfig || !supabase) return false;
   try {
     const { data } = await supabase.auth.getSession();
-    return !!data?.session;
+    return !!data?.session && data.session.user?.is_anonymous !== true;
   } catch {
     return false;
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Participant identity (wb_guest_identity.sql)
+//
+// Every whiteboard participant id is a Supabase auth uid. Guests without an account get
+// one from supabase.auth.signInAnonymously(). That anonymous session lives only in
+// supabase-js' own storage: the app's role state (sessionStorage 'currentUser') is never
+// touched, so App/ProtectedRoute keep treating the visitor as a guest, and the RESTRICTIVE
+// policies in wb_guest_identity.sql keep anonymous JWTs out of every other table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Auth uids are UUIDs; anything else is an unverified (view-only) participant id. */
+export const isAuthUid = (id) => typeof id === 'string' && UUID_RE.test(id);
+
+/**
+ * Make sure this browser has an auth identity to collaborate with.
+ *   allowAnonymous: sign in anonymously when there is no session at all. Pass false for
+ *   users the app believes are logged in (their real session expired) - they are sent
+ *   back to log in rather than silently becoming someone else.
+ * An existing session (real or anonymous) is always reused, never replaced.
+ * Resolves to { userId, isAnonymous, reason } where reason is null on success, else
+ * 'anonymous-disabled' | 'session-expired' | 'error'.
+ */
+export const ensureWhiteboardIdentity = async ({ allowAnonymous }) => {
+  if (!hasSupabaseConfig || !supabase) return { userId: null, isAnonymous: false, reason: 'error' };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if (session?.user?.id) {
+      return { userId: session.user.id, isAnonymous: session.user.is_anonymous === true, reason: null };
+    }
+    if (!allowAnonymous) return { userId: null, isAnonymous: false, reason: 'session-expired' };
+
+    const { data: anon, error } = await supabase.auth.signInAnonymously();
+    if (error || !anon?.user?.id) {
+      const msg = String(error?.message || '');
+      // GoTrue answers 422 "Anonymous sign-ins are disabled" when the dashboard toggle is off.
+      const disabled = error?.status === 422 || /anonymous/i.test(msg) || error?.code === 'anonymous_provider_disabled';
+      console.warn('Whiteboard: anonymous sign-in failed:', msg || error);
+      return { userId: null, isAnonymous: false, reason: disabled ? 'anonymous-disabled' : 'error' };
+    }
+    return { userId: anon.user.id, isAnonymous: true, reason: null };
+  } catch (err) {
+    console.warn('Whiteboard: could not establish an identity:', err?.message || err);
+    return { userId: null, isAnonymous: false, reason: 'error' };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw grants (public.wb_draw_grants; written only through wb_set_draw_access)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Host: grant/revoke drawing for `userId`. Resolves to { error }. */
+export const setDrawAccess = async (roomId, userId, allowed) => {
+  if (!hasSupabaseConfig || !supabase) return { error: new Error('Supabase not configured') };
+  try {
+    const { error } = await supabase.rpc('wb_set_draw_access', { p_room: roomId, p_user: userId, p_allowed: !!allowed });
+    return { error: error || null };
+  } catch (err) {
+    return { error: err };
+  }
+};
+
+/**
+ * User ids with a draw grant in `roomId` that the caller may see (RLS: all of them for
+ * the host, only their own row for anyone else). Resolves to an array, or null on error.
+ */
+export const listDrawGrants = async (roomId) => {
+  if (!hasSupabaseConfig || !supabase) return null;
+  try {
+    const { data, error } = await supabase.from('wb_draw_grants').select('user_id').eq('room_id', roomId).limit(500);
+    if (error) {
+      console.warn('Whiteboard: could not load draw grants:', error.message);
+      return null;
+    }
+    return (data || []).map(r => String(r.user_id));
+  } catch {
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Relay (api/wb-event.js): participants' committed board edits and call signaling.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Keep in step with MAX_PAYLOAD_BYTES in api/wb-event.js (a little headroom for UTF-8). */
+export const RELAY_MAX_CHARS = 190000;
+
+/**
+ * POST one event to the relay, which stamps senderId with our auth uid and broadcasts it
+ * on the private host channel. Resolves to { ok, status, error }.
+ */
+export const postWhiteboardEvent = async (roomId, event, payload) => {
+  if (!hasSupabaseConfig || !supabase) return { ok: false, status: 0, error: 'Supabase not configured' };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) return { ok: false, status: 401, error: 'Not signed in' };
+    const response = await fetch('/api/wb-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ roomId, event, payload })
+    });
+    if (response.ok) return { ok: true, status: response.status, error: null };
+    let error = response.statusText;
+    try {
+      const body = await response.json();
+      error = body?.error || error;
+    } catch { /* non-JSON error body */ }
+    return { ok: false, status: response.status, error };
+  } catch (err) {
+    return { ok: false, status: 0, error: err?.message || String(err) };
+  }
+};
+
 /**
  * Upload a whiteboard image (PDF page render, dropped picture) to the public
- * 'materials' bucket so only a short URL has to be broadcast. Requires a logged-in
- * user (storage policy: authenticated INSERT). Resolves to the public URL, or null
+ * 'materials' bucket so only a short URL has to be broadcast. Requires a logged-in,
+ * non-anonymous user (storage policy: authenticated INSERT; anonymous uploads are blocked
+ * by wb_guest_identity.sql). Resolves to the public URL, or null
  * on any failure so callers can fall back to an inline (compressed) data URL.
  */
 export const uploadWhiteboardImage = async (blob, roomId, ext = 'jpg') => {

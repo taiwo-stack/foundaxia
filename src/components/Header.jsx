@@ -125,7 +125,6 @@ export default function Header({ currentUser, onLogout }) {
 
               {/* No public pricing table yet: pricing enquiries go through the contact form */}
               <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
-              <li><a onClick={() => { setMobileOpen(false); alert('FoundaXia Blog and parent resources coming soon!'); }}>Resources / Blog</a></li>
               
               {/* Add direct Dashboard link if already logged in */}
               {currentUser && currentUser.role !== 'guest' && (

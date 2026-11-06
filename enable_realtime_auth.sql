@@ -34,8 +34,12 @@
 --      not receive the tutor's board.
 --   3. Dashboard -> Project Settings -> Realtime -> "Allow public access"
 --      (a.k.a. "private channels only" OFF) must stay ENABLED: the main room
---      channel (presence, WebRTC signaling, student strokes) is still public
---      so anonymous guests can use it. Only the '-host' channel is private.
+--      channel (presence, cursors, in-progress stroke previews, join requests)
+--      is still public. Only the '-host' channel is private.
+--   5. Then run wb_guest_identity.sql: participants' committed board edits and
+--      WebRTC signaling now reach the '-host' channel through the server relay
+--      api/wb-event.js (sender stamped from the caller's JWT; draw grants in
+--      public.wb_draw_grants), since RLS here is only checked on channel join.
 --   4. No other setting is needed: Realtime Authorization is applied to any
 --      channel the client opens with { config: { private: true } }
 --      (supabase-js >= 2.44; this project uses 2.108).

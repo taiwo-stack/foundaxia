@@ -2063,6 +2063,8 @@ export default function LandingPage() {
                     <option value="programs">Program Details</option>
                     <option value="scheduling">Scheduling Questions</option>
                     <option value="fees">Fees & Pricing</option>
+                    <option value="tutor_application">Become a Tutor</option>
+                    <option value="careers">Careers</option>
                     <option value="other">Other</option>
                   </select>
                 </div>
