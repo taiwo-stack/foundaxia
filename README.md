@@ -37,7 +37,7 @@ FoundaXia supports four distinct user categories:
 A layout of the codebase and assets:
 
 ```
-learncilacademy/
+foundaxia/
 ├── public/                     # Static assets (images, logos, favicon, etc.)
 │   ├── images/                 # Banner designs, subject booklets, logo files
 │   └── _redirects              # Routing config for SPAs (SPA routing fallback)
@@ -192,7 +192,8 @@ The root of the directory contains the SQL files for setting up the tables, inde
 
 1. **Clone the repository and enter the directory**:
    ```bash
-   cd learncilacademy
+   git clone https://github.com/taiwo-stack/foundaxia.git
+   cd foundaxia
    ```
 
 2. **Install project dependencies**:
