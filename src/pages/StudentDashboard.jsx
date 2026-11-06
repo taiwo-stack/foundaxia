@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
-  getStudentCourses, getCourses, getTutors,
+  getStudentCourses, getCourses, getTutors, getCourseTutors,
   getTopics, getMaterials, uploadMaterialFile,
   getTasksForStudent, submitQuiz, getStudentTasks, submitStudentTask,
   getSchedules, getAttendance,
@@ -61,6 +61,7 @@ export default function StudentDashboard({ user }) {
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
   const [tutors, setTutors] = useState([]);
+  const [courseTutors, setCourseTutors] = useState([]);
   const [topics, setTopics] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -110,17 +111,24 @@ export default function StudentDashboard({ user }) {
 
   const loadStudentData = async () => {
     try {
-      const [allBookings, allStudents, scList, cList, tList, tpList, matList, tkList, subList, schList, attList, annList, msgList] = await Promise.all([
-        getBookings(), getStudents(), getStudentCourses(), getCourses(), getTutors(),
-        getTopics(), getMaterials(), getTasksForStudent(), getStudentTasks(), getSchedules(),
-        getAttendance(), getAnnouncements(), getChatMessages()
+      // Load each source independently: one failing request (e.g. the quiz API) must
+      // not blank the whole dashboard - that used to hide the chat for some students.
+      const safe = (promise, label) => promise.catch(err => {
+        console.error(`Failed to load ${label}:`, err);
+        return [];
+      });
+      const [allBookings, allStudents, scList, cList, tList, ctList, tpList, matList, tkList, subList, schList, attList, annList, msgList] = await Promise.all([
+        safe(getBookings(), 'bookings'), safe(getStudents(), 'students'), safe(getStudentCourses(), 'enrollments'),
+        safe(getCourses(), 'courses'), safe(getTutors(), 'tutors'), safe(getCourseTutors(), 'course tutors'),
+        safe(getTopics(), 'topics'), safe(getMaterials(), 'materials'), safe(getTasksForStudent(), 'tasks'),
+        safe(getStudentTasks(), 'submissions'), safe(getSchedules(), 'schedules'),
+        safe(getAttendance(), 'attendance'), safe(getAnnouncements(), 'announcements'), safe(getChatMessages(), 'chat messages')
       ]);
 
-      const currentStudent = allStudents.find(s =>
-        s.id === studentId ||
-        s.profile_id === studentId ||
-        s.email === user?.email
-      );
+      const myEmail = user?.email?.toLowerCase();
+      const currentStudent =
+        allStudents.find(s => s.id === studentId || s.profile_id === studentId) ||
+        (myEmail ? allStudents.find(s => s.email?.toLowerCase() === myEmail) : undefined);
       setStudentInfo(currentStudent);
 
       const actualStudentId = currentStudent?.id || studentId;
@@ -141,6 +149,7 @@ export default function StudentDashboard({ user }) {
       setEnrollments(studEnroll);
       setCourses(cList);
       setTutors(tList);
+      setCourseTutors(ctList);
       setTopics(tpList);
       setMaterials(matList);
       setTasks(tkList);
@@ -342,9 +351,24 @@ export default function StudentDashboard({ user }) {
     .filter(sch => classEnd(sch) >= now)
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
   // One chat contact per tutor, even if they teach this student in several courses.
-  const chatEnrollments = enrollments.filter((en, idx) =>
-    en.tutor_id && enrollments.findIndex(other => other.tutor_id === en.tutor_id) === idx
-  );
+  // The tutor comes from the enrollment itself or, when the enrollment has no tutor set,
+  // from the tutors assigned to that course.
+  const chatEnrollments = (() => {
+    const seen = new Set();
+    const contacts = [];
+    const add = (tutorRef, courseId) => {
+      const t = tutors.find(tu => tu.id === tutorRef || tu.profile_id === tutorRef);
+      if (!t || seen.has(t.id)) return;
+      seen.add(t.id);
+      contacts.push({ tutor: t, course_id: courseId });
+    };
+    enrollments.forEach(en => { if (en.tutor_id) add(en.tutor_id, en.course_id); });
+    enrollments.forEach(en => {
+      if (en.tutor_id) return;
+      courseTutors.filter(ct => ct.course_id === en.course_id).forEach(ct => add(ct.tutor_id, en.course_id));
+    });
+    return contacts;
+  })();
   const todayStr = now.toDateString();
 
   // Today's classes (all scheduled classes for today)
@@ -1168,9 +1192,8 @@ export default function StudentDashboard({ user }) {
               </div>
               <ul className="whatsapp-contacts-list">
                 {chatEnrollments.map(en => {
-                  const t = tutors.find(tu => tu.id === en.tutor_id);
+                  const t = en.tutor;
                   const c = courses.find(co => co.id === en.course_id);
-                  if (!t) return null;
                   const isSelected = activeTutorChat?.id === t.id;
 
                   // Extract last message
@@ -1183,7 +1206,7 @@ export default function StudentDashboard({ user }) {
 
                   return (
                     <li
-                      key={en.course_id}
+                      key={t.id}
                       className={`whatsapp-contact-item ${isSelected ? 'active' : ''}`}
                       onClick={() => { setActiveTutorChat(t); setMobileChatView('chat'); }}
                     >
@@ -1200,7 +1223,7 @@ export default function StudentDashboard({ user }) {
                     </li>
                   );
                 })}
-                {enrollments.filter(en => tutors.find(tu => tu.id === en.tutor_id)).length === 0 && (
+                {chatEnrollments.length === 0 && (
                   <div style={{ padding: '2rem', textAlign: 'center', color: '#8696a0', fontSize: '0.9rem' }}>
                     No assigned tutors found.
                   </div>

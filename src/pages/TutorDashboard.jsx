@@ -738,8 +738,13 @@ export default function TutorDashboard({ user }) {
   };
 
   // Find students mapped to this tutor
+  // Includes students enrolled without a named tutor in a course this tutor is assigned to,
+  // so both sides of the chat see each other.
   const tutorStudents = students.filter(s =>
-    enrollments.some(sc => sc.student_id === s.id && sc.tutor_id === (tutorInfo?.id || tutorId))
+    enrollments.some(sc => sc.student_id === s.id && (
+      sc.tutor_id === (tutorInfo?.id || tutorId) ||
+      (!sc.tutor_id && courseTutors.some(ct => ct.course_id === sc.course_id && ct.tutor_id === (tutorInfo?.id || tutorId)))
+    ))
   );
 
   const unreadMessageCount = chatMessages.filter(m => isOneOf(m.receiver_id, personIds(tutorInfo, tutorId)) && !m.read).length;
