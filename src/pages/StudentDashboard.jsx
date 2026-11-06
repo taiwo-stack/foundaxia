@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
   getStudentCourses, getCourses, getTutors, getCourseTutors,
@@ -87,6 +87,7 @@ export default function StudentDashboard({ user }) {
 
   // Chat states
   const [chatMessages, setChatMessages] = useState([]);
+  const chatScrollRef = useRef(null);
   const [activeTutorChat, setActiveTutorChat] = useState(null);
   const [chatInput, setChatInput] = useState('');
 
@@ -207,6 +208,15 @@ export default function StudentDashboard({ user }) {
     const interval = setInterval(refreshChat, 10000);
     return () => clearInterval(interval);
   }, [studentId]);
+
+  // Keep the open conversation scrolled to the newest message
+  const activeThreadLength = activeTutorChat
+    ? chatMessages.filter(m => inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))).length
+    : 0;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeTutorChat, activeThreadLength, activeTab]);
 
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
@@ -1257,7 +1267,7 @@ export default function StudentDashboard({ user }) {
                   </div>
 
                   {/* Messages Logs view container */}
-                  <div className="whatsapp-messages-container">
+                  <div className="whatsapp-messages-container" ref={chatScrollRef}>
                     {chatMessages.filter(m =>
                       inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))
                     ).map(m => {

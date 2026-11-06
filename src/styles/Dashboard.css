@@ -1471,3 +1471,24 @@
   .tf-footer { padding: 0.85rem 1.1rem; }
   .tf-btn { flex: 1; }
 }
+
+/* ---------- Chat: keep the reply box visible ----------
+   Flex children default to min-height:auto, so a long thread grew taller than the
+   fixed-height chat box and pushed the input bar below the clipped edge. */
+.whatsapp-chat-container { grid-template-rows: minmax(0, 1fr); }
+.whatsapp-chat-window,
+.whatsapp-contacts-sidebar { min-height: 0; overflow: hidden; }
+.whatsapp-messages-container { min-height: 0; }
+.whatsapp-chat-header,
+.whatsapp-input-bar { flex-shrink: 0; }
+@media (max-width: 768px) {
+  /* Tutor chat: stack the contact list above the conversation on phones */
+  .tutor-chat-split {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 200px minmax(0, 1fr) !important;
+    gap: 0.75rem !important;
+    height: calc(100vh - 160px) !important;
+    max-height: none !important;
+    min-height: 520px !important;
+  }
+}
