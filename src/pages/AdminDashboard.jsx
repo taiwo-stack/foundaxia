@@ -1085,7 +1085,11 @@ export default function AdminDashboard({ user, onLogout }) {
         className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`}
         onClick={(e) => { if (e.target.closest('button')) setSidebarOpen(false); }}
       >
-        <div className="sidebar-brand">Admin Console</div>
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand">Admin Console</div>
+          {/* phones only; any button in the drawer closes it */}
+          <button type="button" className="drawer-close" aria-label="Close menu"><X size={20} /></button>
+        </div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`}>
             <button onClick={() => setActiveTab('overview')}><Layers size={18} /> Overview</button>

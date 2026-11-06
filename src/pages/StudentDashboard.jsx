@@ -565,6 +565,7 @@ export default function StudentDashboard({ user, onLogout }) {
           >
             {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </button>
+          <button type="button" className="drawer-close" onClick={() => setSidebarOpen(false)} aria-label="Close menu"><X size={20} /></button>
         </div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`}>
