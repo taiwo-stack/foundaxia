@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
   getStudentCourses, getCourses, getTutors, getCourseTutors,
@@ -12,11 +12,15 @@ import {
 import {
   Calendar, User, BookOpen, Clock, Save,
   MessageSquare, FileText, Send, CheckSquare, Award, X, Megaphone, Play, LayoutDashboard, Menu,
-  ChevronLeft, History, PanelLeftClose, PanelLeftOpen, CheckCircle2, XCircle, HelpCircle
+  ChevronLeft, History, PanelLeftClose, PanelLeftOpen, CheckCircle2, XCircle, HelpCircle,
+  Camera, Mail, Phone, GraduationCap, Copy, Check, Video, MapPin, Lock
 } from 'lucide-react';
+import ParentArea from '../components/ParentArea';
 import HtmlSlideModal from '../components/HtmlSlideModal';
+import BookingForm from '../components/BookingForm';
 import NotificationToggle from '../components/NotificationToggle';
 import '../styles/Dashboard.css';
+import '../styles/StudentProfile.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
@@ -47,9 +51,19 @@ const parseQuizQuestions = (raw) => {
 };
 
 export default function StudentDashboard({ user }) {
-  const [activeTab, setActiveTab] = useState('overview');
+  // Paystack sends parents back to /student?reference=... when its pop-up couldn't open.
+  const [paymentReturnRef, setPaymentReturnRef] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('reference'); } catch { return null; }
+  });
+  const [activeTab, setActiveTab] = useState(() => (paymentReturnRef ? 'parent' : 'overview'));
+  const clearPaymentReturn = useCallback(() => {
+    setPaymentReturnRef(null);
+    window.history.replaceState(null, '', window.location.pathname);
+  }, []);
   const [bookings, setBookings] = useState([]);
   const [studentInfo, setStudentInfo] = useState(null);
+  const [savedStudentInfo, setSavedStudentInfo] = useState(null); // last saved copy, for "unsaved changes"
+  const [idCopied, setIdCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -113,11 +127,31 @@ export default function StudentDashboard({ user }) {
     try {
       const publicUrl = await uploadAvatar(studentInfo?.id || user?.id, file);
       setStudentInfo(prev => ({ ...prev, avatar_url: publicUrl }));
-      alert('Picture uploaded successfully! Remember to save changes at the bottom.');
     } catch (err) {
       alert('Failed to upload picture: ' + err.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Bookings belonging to this student. Match on email; fall back to name only for
+  // bookings that have no email. (A null student_name used to throw here and blank the
+  // whole dashboard, and name matching showed other same-named students' bookings.)
+  const filterMyBookings = (allBookings, student) => {
+    const nameToMatch = student?.full_name || user?.full_name;
+    const emails = [student?.email, user?.email].filter(Boolean).map(e => e.toLowerCase());
+    return allBookings.filter(b => {
+      if (b.email) return emails.includes(b.email.toLowerCase());
+      return !!nameToMatch && b.student_name?.toLowerCase() === nameToMatch.toLowerCase();
+    });
+  };
+
+  // Re-read bookings after the student books a new consultation.
+  const refreshBookings = async () => {
+    try {
+      setBookings(filterMyBookings(await getBookings(), studentInfo));
+    } catch (err) {
+      console.error('Failed to refresh bookings:', err);
     }
   };
 
@@ -142,23 +176,14 @@ export default function StudentDashboard({ user }) {
         allStudents.find(s => s.id === studentId || s.profile_id === studentId) ||
         (myEmail ? allStudents.find(s => s.email?.toLowerCase() === myEmail) : undefined);
       setStudentInfo(currentStudent);
+      setSavedStudentInfo(currentStudent || null);
 
       const actualStudentId = currentStudent?.id || studentId;
       // Records may reference the student by row id or by login id (profile_id).
       const myIds = personIds(currentStudent, studentId);
       const isMine = (x) => isOneOf(x.student_id, myIds);
 
-      // Filter bookings for Tobi Coker (or matching by student_name)
-      const nameToMatch = currentStudent ? currentStudent.full_name : (user?.full_name || 'Tobi Coker');
-      // Match on email; fall back to name only for bookings that have no email.
-      // (A null student_name used to throw here and blank the whole dashboard, and
-      // name matching showed students other same-named students' bookings.)
-      const emails = [currentStudent?.email, user?.email].filter(Boolean).map(e => e.toLowerCase());
-      const filtered = allBookings.filter(b => {
-        if (b.email) return emails.includes(b.email.toLowerCase());
-        return !!nameToMatch && b.student_name?.toLowerCase() === nameToMatch.toLowerCase();
-      });
-      setBookings(filtered);
+      setBookings(filterMyBookings(allBookings, currentStudent));
 
       const studEnroll = scList.filter(isMine);
       setEnrollments(studEnroll);
@@ -263,6 +288,7 @@ export default function StudentDashboard({ user }) {
       // Never allow email, password, or start_date to be updated from the student side
       const { email, password, start_date, ...safeUpdates } = studentInfo;
       await updateStudent(studentInfo.id, safeUpdates);
+      setSavedStudentInfo(studentInfo);
       alert('Profile updated successfully!');
     } catch (err) {
       alert('Error updating profile: ' + err.message);
@@ -551,6 +577,9 @@ export default function StudentDashboard({ user }) {
           </li>
           <li className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''}`}>
             <button title={sidebarCollapsed ? 'Personal Info' : undefined} onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}><User size={18} /> <span className="sidebar-label">Personal Info</span></button>
+          </li>
+          <li className={`sidebar-item ${activeTab === 'parent' ? 'active' : ''}`}>
+            <button title={sidebarCollapsed ? 'Parent Area' : undefined} onClick={() => { setActiveTab('parent'); setSidebarOpen(false); }}><Lock size={18} /> <span className="sidebar-label">Parent Area</span></button>
           </li>
         </ul>
       </aside>
@@ -872,47 +901,68 @@ export default function StudentDashboard({ user }) {
           </div>
         )}
 
-        {/* Tab 1: Bookings */}
+        {/* Tab 1: Consultations */}
         {activeTab === 'bookings' && (
-          <div>
+          <div className="consult-layout">
+            <div className="dashboard-card consult-form-card">
+              <h3><Calendar size={20} color="var(--primary-color)" /> Book a Consultation</h3>
+              <BookingForm
+                variant="light"
+                prefill={{
+                  studentName: studentInfo?.full_name || user?.full_name || '',
+                  parentName: studentInfo?.parent_name || '',
+                  phone: studentInfo?.phone || '',
+                  // Login email first: students can only read back bookings under it (RLS).
+                  email: user?.email || studentInfo?.email || ''
+                }}
+                lockedFields={['bookingEmail', 'bookingStudentName']}
+                onBooked={refreshBookings}
+              />
+            </div>
 
-            <div className="dashboard-card">
-              <h3><Calendar size={20} color="var(--primary-color)" /> Appointment Log</h3>
+            <div className="dashboard-card consult-log-card">
+              <h3><Clock size={20} color="var(--primary-color)" /> My Appointments</h3>
               {bookings.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>No active consult bookings.</div>
-              ) : (
-                <div className="table-container">
-                  <table className="dashboard-table">
-                    <thead>
-                      <tr>
-                        <th>Assigned Tutor</th>
-                        <th>Meeting Date</th>
-                        <th>Meeting Time</th>
-                        <th>Consultation Type</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bookings.map((b) => (
-                        <tr key={b.id}>
-                          <td style={{ fontWeight: 'bold' }}>{b.tutor_name}</td>
-                          <td>{b.booking_date}</td>
-                          <td>{b.booking_time}</td>
-                          <td style={{ textTransform: 'capitalize' }}>{b.meeting_type}</td>
-                          <td><span className={`badge badge-${b.status}`}>{b.status}</span></td>
-                          <td>
-                            {b.status !== 'cancelled' && b.status !== 'completed' ? (
-                              <button className="btn-action cancel" onClick={() => handleCancelBooking(b.id)}>Cancel</button>
-                            ) : (
-                              <span style={{ fontSize: '0.85rem', color: '#cbd5e0' }}>Inactive</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="consult-empty">
+                  <Calendar size={28} />
+                  <p>No consultations yet.</p>
+                  <span>Book one with the form and it will appear here.</span>
                 </div>
+              ) : (
+                <ul className="consult-list">
+                  {[...bookings]
+                    .sort((x, y) => String(y.booking_date || '').localeCompare(String(x.booking_date || '')))
+                    .map((b) => {
+                      const d = b.booking_date ? new Date(`${b.booking_date}T00:00:00`) : null;
+                      const validDate = d && !isNaN(d.getTime());
+                      const active = b.status !== 'cancelled' && b.status !== 'completed';
+                      const tutorLabel = b.tutor_name && b.tutor_name !== 'Unassigned' ? b.tutor_name : 'Tutor to be assigned';
+                      return (
+                        <li key={b.id} className={`consult-item ${active ? '' : 'is-inactive'}`}>
+                          <div className="consult-date">
+                            <span className="consult-date-month">{validDate ? d.toLocaleDateString([], { month: 'short' }) : '—'}</span>
+                            <span className="consult-date-day">{validDate ? d.getDate() : '?'}</span>
+                          </div>
+                          <div className="consult-body">
+                            <div className="consult-title">{tutorLabel}</div>
+                            <div className="consult-meta">
+                              <span><Clock size={13} /> {b.booking_time || 'Time TBC'}{b.timezone ? ` · ${b.timezone.replace(/_/g, ' ')}` : ''}</span>
+                              <span>
+                                {b.meeting_type === 'physical' ? <MapPin size={13} /> : <Video size={13} />}{' '}
+                                <span style={{ textTransform: 'capitalize' }}>{b.meeting_type || 'virtual'}</span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="consult-side">
+                            <span className={`badge badge-${b.status || 'pending'}`}>{b.status || 'pending'}</span>
+                            {active && (
+                              <button className="btn-action cancel" onClick={() => handleCancelBooking(b.id)}>Cancel</button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                </ul>
               )}
             </div>
           </div>
@@ -1504,97 +1554,158 @@ export default function StudentDashboard({ user }) {
         )}
 
         {/* Tab 6: Profile Personal Info */}
-        {activeTab === 'profile' && studentInfo && (
-          <div>
-            <div className="dashboard-card">
-              <h3><User size={20} color="var(--primary-color)" /> Personal Profile</h3>
-              <form onSubmit={handleUpdateProfile}>
-                <div className="profile-avatar-row" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '2rem' }}>
-                  {studentInfo.avatar_url ? (
-                    <img src={studentInfo.avatar_url} alt={studentInfo.full_name} style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--primary-color)' }} />
-                  ) : (
-                    <div className="profile-avatar-box" style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', fontWeight: 'bold' }}>
-                      {studentInfo.full_name ? studentInfo.full_name[0] : 'S'}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-start' }}>
-                    <h4 style={{ fontSize: '1.2rem', fontWeight: 'bold', margin: 0 }}>{studentInfo.full_name}</h4>
-                    <p style={{ color: '#718096', fontSize: '0.9rem', margin: 0 }}>Student ID: {studentInfo.id}</p>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--accent-color)', cursor: 'pointer', fontWeight: '600', textDecoration: 'underline', marginTop: '4px' }}>
-                      {uploading ? 'Uploading picture...' : 'Upload Profile Picture (Optional)'}
-                      <input type="file" accept="image/*" onChange={handleAvatarChange} style={{ display: 'none' }} disabled={uploading} />
+        {activeTab === 'profile' && studentInfo && (() => {
+          const PROGRAM_LABELS = { regular: 'Regular Classes', tutoring: 'One-on-One Tutoring', group: 'Group Sessions' };
+          const titleCase = (v) => (v ? String(v).replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '');
+          const programLabel = PROGRAM_LABELS[studentInfo.program] || titleCase(studentInfo.program) || 'Not set';
+          const startLabel = (() => {
+            if (!studentInfo.start_date) return 'Not set';
+            const d = new Date(`${studentInfo.start_date}T00:00:00`);
+            return isNaN(d.getTime()) ? studentInfo.start_date : d.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+          })();
+          const EDITABLE = ['full_name', 'phone', 'date_of_birth', 'gender', 'special_needs', 'avatar_url'];
+          const isDirty = EDITABLE.some(k => (studentInfo[k] || '') !== (savedStudentInfo?.[k] || ''));
+          const setField = (key) => (e) => setStudentInfo(prev => ({ ...prev, [key]: e.target.value }));
+          const copyId = async () => {
+            try {
+              await navigator.clipboard.writeText(String(studentInfo.id));
+              setIdCopied(true);
+              setTimeout(() => setIdCopied(false), 1500);
+            } catch { /* clipboard unavailable; ignore */ }
+          };
+          const initials = (studentInfo.full_name || 'S').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+
+          return (
+            <form onSubmit={handleUpdateProfile} className="student-profile">
+              {/* Header */}
+              <div className="sp-hero">
+                <div className="sp-hero-cover" />
+                <div className="sp-hero-content">
+                  <div className="sp-avatar-wrap">
+                    {studentInfo.avatar_url ? (
+                      <img src={studentInfo.avatar_url} alt={studentInfo.full_name} className="sp-avatar" />
+                    ) : (
+                      <div className="sp-avatar sp-avatar-initials">{initials}</div>
+                    )}
+                    <label className={`sp-avatar-btn ${uploading ? 'is-busy' : ''}`} title="Change profile picture">
+                      <Camera size={15} />
+                      <input type="file" accept="image/*" onChange={handleAvatarChange} disabled={uploading} />
                     </label>
                   </div>
+                  <div className="sp-hero-text">
+                    <h2>{studentInfo.full_name || 'Student'}</h2>
+                    <div className="sp-chips">
+                      {studentInfo.grade_level && <span className="sp-chip"><GraduationCap size={13} /> {studentInfo.grade_level}</span>}
+                      <span className="sp-chip"><BookOpen size={13} /> {programLabel}</span>
+                      {studentInfo.email && <span className="sp-chip sp-chip-muted"><Mail size={13} /> {studentInfo.email}</span>}
+                    </div>
+                    {uploading && <span className="sp-hint">Uploading picture...</span>}
+                  </div>
                 </div>
+              </div>
 
-                <div className="profile-form-grid">
-                  <div className="form-group">
-                    <label>Full Name</label>
-                    <input type="text" name="full_name" value={studentInfo.full_name} onChange={(e) => setStudentInfo(prev => ({ ...prev, full_name: e.target.value }))} required />
+              <div className="sp-grid">
+                {/* Personal details (editable) */}
+                <section className="dashboard-card sp-section">
+                  <h3><User size={18} color="var(--primary-color)" /> Personal Details</h3>
+                  <div className="sp-fields">
+                    <label className="sp-field sp-field-full">
+                      <span>Full Name</span>
+                      <input type="text" value={studentInfo.full_name || ''} onChange={setField('full_name')} required />
+                    </label>
+                    <label className="sp-field">
+                      <span>Phone Number</span>
+                      <div className="sp-input-icon">
+                        <Phone size={15} />
+                        <input type="tel" value={studentInfo.phone || ''} onChange={setField('phone')} placeholder="080..." />
+                      </div>
+                    </label>
+                    <label className="sp-field">
+                      <span>Date of Birth</span>
+                      <input type="date" value={studentInfo.date_of_birth || ''} onChange={setField('date_of_birth')} required />
+                    </label>
+                    <label className="sp-field">
+                      <span>Gender</span>
+                      <select value={studentInfo.gender || ''} onChange={(e) => setStudentInfo(prev => ({ ...prev, gender: e.target.value || null }))}>
+                        <option value="">Prefer not to say</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label className="sp-field sp-field-full">
+                      <span>Special Learning Needs</span>
+                      <textarea rows={3} value={studentInfo.special_needs || ''} onChange={setField('special_needs')} placeholder="Anything your tutor should know about how you learn best" />
+                    </label>
                   </div>
-                  <div className="form-group">
-                    <label>Grade Level</label>
-                    <input type="text" name="grade_level" value={studentInfo.grade_level} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label>Email Address <span style={{ fontSize: '0.72rem', color: '#a0aec0', fontWeight: 'normal' }}>— cannot be changed</span></label>
-                    <input
-                      type="email"
-                      value={studentInfo.email || ''}
-                      readOnly
-                      style={{ background: '#f7fafc', color: '#a0aec0', cursor: 'not-allowed', border: '1.5px dashed #e2e8f0' }}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Phone Number</label>
-                    <input type="tel" name="phone" value={studentInfo.phone || ''} onChange={(e) => setStudentInfo(prev => ({ ...prev, phone: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label>Date of Birth</label>
-                    <input
-                      type="date"
-                      value={studentInfo.date_of_birth || ''}
-                      onChange={(e) => setStudentInfo(prev => ({ ...prev, date_of_birth: e.target.value }))}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Gender</label>
-                    <select name="gender" value={studentInfo.gender || ''} onChange={(e) => setStudentInfo(prev => ({ ...prev, gender: e.target.value || null }))}>
-                      <option value="">Prefer not to say</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                </div>
+                </section>
 
-                <div className="profile-form-grid" style={{ marginTop: '1rem', borderTop: '1px solid #edf2f7', paddingTop: '1.5rem' }}>
-                  <div className="form-group">
-                    <label>Program Enrolled</label>
-                    <input type="text" value={studentInfo.program} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label>Preferred Schedule</label>
-                    <input type="text" value={studentInfo.schedule} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input type="text" value={studentInfo.start_date} readOnly />
-                  </div>
-                </div>
+                <div className="sp-side">
+                  {/* Learning details (read-only, set by admin) */}
+                  <section className="dashboard-card sp-section">
+                    <h3><GraduationCap size={18} color="var(--primary-color)" /> Learning Details</h3>
+                    <dl className="sp-facts">
+                      <div><dt>Grade Level</dt><dd>{studentInfo.grade_level || 'Not set'}</dd></div>
+                      <div><dt>Program</dt><dd>{programLabel}</dd></div>
+                      <div><dt>Preferred Schedule</dt><dd>{titleCase(studentInfo.schedule) || 'Not set'}</dd></div>
+                      <div><dt>Start Date</dt><dd>{startLabel}</dd></div>
+                    </dl>
+                    <p className="sp-note">These are managed by the FoundaXia team. Contact your tutor or admin to change them.</p>
+                  </section>
 
-                <div className="form-group" style={{ marginBottom: '2rem', marginTop: '1rem' }}>
-                  <label>Special Learning Needs</label>
-                  <textarea name="special_needs" value={studentInfo.special_needs || ''} onChange={(e) => setStudentInfo(prev => ({ ...prev, special_needs: e.target.value }))} rows={2}></textarea>
+                  {/* Account */}
+                  <section className="dashboard-card sp-section">
+                    <h3><Mail size={18} color="var(--primary-color)" /> Account</h3>
+                    <dl className="sp-facts">
+                      <div><dt>Email</dt><dd className="sp-break">{studentInfo.email || 'Not set'}</dd></div>
+                      <div>
+                        <dt>Student ID</dt>
+                        <dd className="sp-id">
+                          <code>{String(studentInfo.id).slice(0, 8)}…</code>
+                          <button type="button" className="sp-copy" onClick={copyId} title="Copy full Student ID">
+                            {idCopied ? <Check size={14} /> : <Copy size={14} />}
+                          </button>
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="sp-note">Your email is your login and can't be changed here.</p>
+                  </section>
                 </div>
-                <button type="submit" className="btn-submit" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }} disabled={saving}>
-                  <Save size={16} /> {saving ? 'Saving...' : 'Save Profile Details'}
-                </button>
-              </form>
-            </div>
-          </div>
+              </div>
+
+              {/* Save bar */}
+              <div className={`sp-savebar ${isDirty ? 'is-dirty' : ''}`}>
+                <span>{isDirty ? 'You have unsaved changes' : 'All changes saved'}</span>
+                <div className="sp-savebar-actions">
+                  {isDirty && (
+                    <button type="button" className="sp-btn-ghost" onClick={() => setStudentInfo(savedStudentInfo)} disabled={saving}>Discard</button>
+                  )}
+                  <button type="submit" className="sp-btn-save" disabled={saving || !isDirty}>
+                    <Save size={16} /> {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          );
+        })()}
+
+        {/* Tab 7: Parent Area (code-protected fees & payments) */}
+        {activeTab === 'parent' && (
+          <ParentArea
+            studentName={studentInfo?.full_name || user?.full_name}
+            insights={{
+              schedules,
+              attendanceLogs,
+              tasks: activeStudentTasks,
+              submissions,
+              courses,
+              tutorContacts: chatEnrollments
+            }}
+            initialReference={paymentReturnRef}
+            onReferenceHandled={clearPaymentReturn}
+          />
         )}
+
         {/* Interactive Quiz Solving Modal Overlay */}
         {activeQuizId && (
           <div style={{

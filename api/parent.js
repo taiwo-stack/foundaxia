@@ -1,0 +1,375 @@
+import { randomUUID } from 'node:crypto';
+import { authenticate, getUserIds, setCors, sendError, HttpError } from './_lib.js';
+import {
+  paystack, confirmPayment, checkDb, hashCode, checkCode, signParentToken, readParentToken,
+  normalizeCode, isCodeShaped, newParentCode, encryptCode, decryptCode
+} from './_paystack.js';
+
+// Parent Area: a code-protected section of the student dashboard where parents see and
+// pay fees. Fees and codes live in tables the browser can't read (see parent_area.sql);
+// everything goes through here.
+//
+// Parent actions (signed-in student login):
+//   status                       -> { hasCode, lockedUntil, hardLocked }
+//   unlock   { code }            -> { token, expiresAt }
+//            5 wrong tries = 15 min lock; 10 wrong in a day = locked until an admin resets the code
+//   fees     { token }           -> { fees, payments }
+//   pay      { token, feeId }    -> { accessCode, authorizationUrl, reference }
+//   verify   { reference }       -> { status }
+//   notes    { token }           -> { notes }                  tutor notes to the parent
+// Tutor actions (profile role 'tutor' teaching this student, or 'admin'):
+//   tutor-list-notes  { studentId }               -> { notes }
+//   tutor-add-note    { studentId, note, courseId } -> { note }
+//   tutor-delete-note { noteId }                  (own notes only; admins any)
+// Admin actions (profile role 'admin'):
+//   admin-student       { studentId }                               -> { hasCode, codeSetAt, canShow, hardLocked, fees, payments }
+//   admin-generate-code { studentId }                               -> { code }   e.g. foundaxia-mango-42
+//   admin-show-code     { studentId }                               -> { code }
+//   admin-add-fee       { studentId, description, amount, dueDate } -> { fee }
+//   admin-cancel-fee    { feeId }
+//   admin-mark-paid     { feeId, note }                             (cash / bank transfer)
+
+const SESSION_MS = 10 * 60 * 1000;
+const MAX_TRIES = 5;
+const LOCK_MS = 15 * 60 * 1000;
+const MAX_DAILY_TRIES = 10;
+const MAX_FEE_NAIRA = 10_000_000;
+
+async function isAdmin(adminClient, userId) {
+  const { data } = await adminClient.from('profiles').select('role').eq('id', userId).maybeSingle();
+  return data?.role === 'admin';
+}
+
+async function roleOf(adminClient, userId) {
+  const { data } = await adminClient.from('profiles').select('role').eq('id', userId).maybeSingle();
+  return data?.role || null;
+}
+
+// A tutor may write to a student's parents only if they teach that student: assigned on
+// the enrollment itself, or assigned to one of the student's courses.
+async function tutorTeaches(adminClient, tutorIds, studentId) {
+  const ids = [...tutorIds];
+  const { data: enrolls, error } = await adminClient
+    .from('student_courses').select('course_id, tutor_id').eq('student_id', studentId);
+  if (error) throw error;
+  if ((enrolls || []).some(e => e.tutor_id && ids.includes(String(e.tutor_id)))) return true;
+  const courseIds = (enrolls || []).map(e => e.course_id).filter(Boolean);
+  if (courseIds.length === 0) return false;
+  const { data: assigned, error: ctErr } = await adminClient
+    .from('course_tutors').select('tutor_id').in('course_id', courseIds).in('tutor_id', ids);
+  if (ctErr) throw ctErr;
+  return (assigned || []).length > 0;
+}
+
+async function myStudentId(adminClient, userId) {
+  const { studentIds } = await getUserIds(adminClient, userId);
+  if (studentIds.length === 0) throw new HttpError(403, 'This login is not linked to a student');
+  return studentIds[0];
+}
+
+async function feesFor(adminClient, studentId) {
+  const { data: fees, error } = await adminClient
+    .from('student_fees').select('*').eq('student_id', studentId).order('created_at', { ascending: false });
+  checkDb(error);
+  const { data: payments, error: payErr } = await adminClient
+    .from('fee_payments').select('*').eq('student_id', studentId).eq('status', 'success').order('paid_at', { ascending: false });
+  checkDb(payErr);
+  return { fees: fees || [], payments: payments || [] };
+}
+
+async function getFee(adminClient, feeId) {
+  if (typeof feeId !== 'string' || !feeId) throw new HttpError(400, 'feeId is required');
+  const { data, error } = await adminClient.from('student_fees').select('*').eq('id', feeId).maybeSingle();
+  checkDb(error);
+  if (!data) throw new HttpError(404, 'Fee not found');
+  return data;
+}
+
+function siteOrigin(req) {
+  const origin = req.headers.origin;
+  if (origin && /^https?:\/\//.test(origin)) return origin;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return host ? `https://${host}` : '';
+}
+
+export default async function handler(req, res) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  try {
+    const { user, adminClient } = await authenticate(req);
+    const { action, ...p } = req.body || {};
+
+    // ---------------- Admin ----------------
+    if (typeof action === 'string' && action.startsWith('admin-')) {
+      if (!(await isAdmin(adminClient, user.id))) throw new HttpError(403, 'Forbidden: Admin role required');
+
+      if (action === 'admin-student') {
+        if (!p.studentId) throw new HttpError(400, 'studentId is required');
+        const { data: access, error } = await adminClient
+          .from('parent_access').select('updated_at, code_encrypted, hard_locked').eq('student_id', String(p.studentId)).maybeSingle();
+        checkDb(error);
+        const { fees, payments } = await feesFor(adminClient, String(p.studentId));
+        return res.status(200).json({
+          hasCode: !!access,
+          codeSetAt: access?.updated_at || null,
+          canShow: !!access?.code_encrypted,
+          hardLocked: !!access?.hard_locked,
+          fees,
+          payments
+        });
+      }
+
+      if (action === 'admin-show-code') {
+        if (!p.studentId) throw new HttpError(400, 'studentId is required');
+        const { data: access, error } = await adminClient
+          .from('parent_access').select('code_encrypted').eq('student_id', String(p.studentId)).maybeSingle();
+        checkDb(error);
+        if (!access) throw new HttpError(404, 'No parent code has been created yet');
+        const code = access.code_encrypted ? decryptCode(access.code_encrypted) : null;
+        if (!code) throw new HttpError(409, "This code can't be shown. Reset it to create a new one.");
+        return res.status(200).json({ code });
+      }
+
+      if (action === 'admin-generate-code') {
+        if (!p.studentId) throw new HttpError(400, 'studentId is required');
+        const { data: student } = await adminClient.from('students').select('id').eq('id', p.studentId).maybeSingle();
+        if (!student) throw new HttpError(404, 'Student not found');
+        const { display, normalized } = newParentCode();
+        const { error } = await adminClient.from('parent_access').upsert({
+          student_id: String(student.id),
+          code_hash: hashCode(normalized),
+          code_encrypted: encryptCode(display),
+          failed_attempts: 0,
+          locked_until: null,
+          daily_failed: 0,
+          daily_failed_on: null,
+          hard_locked: false,
+          updated_at: new Date().toISOString()
+        });
+        checkDb(error);
+        return res.status(200).json({ code: display });
+      }
+
+      if (action === 'admin-add-fee') {
+        const description = String(p.description || '').trim();
+        const amount = Number(p.amount);
+        if (!p.studentId) throw new HttpError(400, 'studentId is required');
+        if (!description || description.length > 200) throw new HttpError(400, 'Enter what the fee is for (max 200 characters)');
+        if (!Number.isFinite(amount) || amount < 100 || amount > MAX_FEE_NAIRA) {
+          throw new HttpError(400, 'Amount must be between ₦100 and ₦10,000,000');
+        }
+        const dueDate = p.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(p.dueDate) ? p.dueDate : null;
+        const { data, error } = await adminClient.from('student_fees').insert([{
+          student_id: String(p.studentId),
+          description,
+          amount_kobo: Math.round(amount * 100),
+          due_date: dueDate
+        }]).select().single();
+        checkDb(error);
+        return res.status(200).json({ fee: data });
+      }
+
+      if (action === 'admin-cancel-fee') {
+        const fee = await getFee(adminClient, p.feeId);
+        if (fee.status !== 'unpaid') throw new HttpError(409, 'Only unpaid fees can be cancelled');
+        const { error } = await adminClient.from('student_fees').update({ status: 'cancelled' }).eq('id', fee.id);
+        checkDb(error);
+        return res.status(200).json({ ok: true });
+      }
+
+      if (action === 'admin-mark-paid') {
+        const fee = await getFee(adminClient, p.feeId);
+        if (fee.status !== 'unpaid') throw new HttpError(409, 'This fee is not unpaid');
+        const paidAt = new Date().toISOString();
+        const { error: payErr } = await adminClient.from('fee_payments').insert([{
+          fee_id: fee.id,
+          student_id: fee.student_id,
+          reference: `MANUAL-${randomUUID()}`,
+          amount_kobo: fee.amount_kobo,
+          status: 'success',
+          channel: 'manual',
+          note: String(p.note || '').slice(0, 300) || null,
+          paid_at: paidAt
+        }]);
+        checkDb(payErr);
+        const { error } = await adminClient.from('student_fees').update({ status: 'paid', paid_at: paidAt }).eq('id', fee.id);
+        checkDb(error);
+        return res.status(200).json({ ok: true });
+      }
+
+      throw new HttpError(400, 'Unknown action');
+    }
+
+    // ---------------- Tutor notes ----------------
+    if (typeof action === 'string' && action.startsWith('tutor-')) {
+      const role = await roleOf(adminClient, user.id);
+      if (role !== 'tutor' && role !== 'admin') throw new HttpError(403, 'Only tutors can write notes to parents');
+      const { ids: myIds } = await getUserIds(adminClient, user.id);
+      const assertTeaches = async (studentId) => {
+        if (!studentId) throw new HttpError(400, 'studentId is required');
+        if (role === 'admin') return;
+        if (!(await tutorTeaches(adminClient, myIds, String(studentId)))) {
+          throw new HttpError(403, 'You can only write to parents of students you teach');
+        }
+      };
+
+      if (action === 'tutor-list-notes') {
+        await assertTeaches(p.studentId);
+        const { data, error } = await adminClient
+          .from('parent_notes').select('*').eq('student_id', String(p.studentId)).order('created_at', { ascending: false }).limit(50);
+        checkDb(error);
+        return res.status(200).json({ notes: data || [] });
+      }
+
+      if (action === 'tutor-add-note') {
+        await assertTeaches(p.studentId);
+        const note = String(p.note || '').trim();
+        if (!note) throw new HttpError(400, 'Write a note first');
+        if (note.length > 2000) throw new HttpError(400, 'Notes can be up to 2000 characters');
+        let authorName = null;
+        const { data: tutorRows } = await adminClient.from('tutors').select('full_name').in('id', [...myIds]).limit(1);
+        authorName = tutorRows?.[0]?.full_name || null;
+        if (!authorName) {
+          const { data: prof } = await adminClient.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+          authorName = prof?.full_name || (role === 'admin' ? 'FoundaXia' : 'Tutor');
+        }
+        const { data, error } = await adminClient.from('parent_notes').insert([{
+          student_id: String(p.studentId),
+          author_id: String(user.id),
+          author_name: authorName,
+          course_id: p.courseId ? String(p.courseId) : null,
+          note
+        }]).select().single();
+        checkDb(error);
+        return res.status(200).json({ note: data });
+      }
+
+      if (action === 'tutor-delete-note') {
+        if (typeof p.noteId !== 'string' || !p.noteId) throw new HttpError(400, 'noteId is required');
+        let q = adminClient.from('parent_notes').delete().eq('id', p.noteId);
+        if (role !== 'admin') q = q.eq('author_id', String(user.id));
+        const { error } = await q;
+        checkDb(error);
+        return res.status(200).json({ ok: true });
+      }
+
+      throw new HttpError(400, 'Unknown action');
+    }
+
+    // ---------------- Parent ----------------
+    const studentId = await myStudentId(adminClient, user.id);
+
+    if (action === 'status') {
+      const { data, error } = await adminClient
+        .from('parent_access').select('locked_until, hard_locked').eq('student_id', studentId).maybeSingle();
+      checkDb(error);
+      const lockedUntil = data?.locked_until && new Date(data.locked_until) > new Date() ? data.locked_until : null;
+      return res.status(200).json({ hasCode: !!data, lockedUntil, hardLocked: !!data?.hard_locked });
+    }
+
+    if (action === 'unlock') {
+      const code = normalizeCode(p.code);
+      if (!isCodeShaped(code)) throw new HttpError(400, 'Enter the parent code, e.g. mango-42');
+      const { data: access, error } = await adminClient
+        .from('parent_access').select('*').eq('student_id', studentId).maybeSingle();
+      checkDb(error);
+      if (!access) throw new HttpError(404, 'No parent code has been set up yet. Ask FoundaXia for one.');
+      if (access.hard_locked) {
+        throw new HttpError(423, 'The Parent Area is locked after too many wrong attempts. Please contact FoundaXia for a new code.');
+      }
+      if (access.locked_until && new Date(access.locked_until) > new Date()) {
+        const mins = Math.ceil((new Date(access.locked_until) - Date.now()) / 60000);
+        throw new HttpError(429, `Too many wrong attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
+      }
+      if (!checkCode(code, access.code_hash)) {
+        const today = new Date().toISOString().slice(0, 10);
+        const daily = (access.daily_failed_on === today ? access.daily_failed || 0 : 0) + 1;
+        const tries = (access.failed_attempts || 0) + 1;
+        const hardLock = daily >= MAX_DAILY_TRIES;
+        const shortLock = !hardLock && tries >= MAX_TRIES;
+        const { error: updErr } = await adminClient.from('parent_access').update({
+          failed_attempts: shortLock || hardLock ? 0 : tries,
+          locked_until: shortLock ? new Date(Date.now() + LOCK_MS).toISOString() : null,
+          daily_failed: daily,
+          daily_failed_on: today,
+          hard_locked: hardLock
+        }).eq('student_id', studentId);
+        checkDb(updErr);
+        if (hardLock) throw new HttpError(423, 'Too many wrong attempts today. The Parent Area is now locked. Please contact FoundaXia for a new code.');
+        if (shortLock) throw new HttpError(401, 'Too many wrong attempts. The Parent Area is locked for 15 minutes.');
+        throw new HttpError(401, `Incorrect code. ${MAX_TRIES - tries} attempt${MAX_TRIES - tries === 1 ? '' : 's'} left.`);
+      }
+      if (access.failed_attempts) {
+        await adminClient.from('parent_access').update({ failed_attempts: 0 }).eq('student_id', studentId);
+      }
+      return res.status(200).json(signParentToken(user.id, studentId, SESSION_MS));
+    }
+
+    if (action === 'notes') {
+      const sid = readParentToken(p.token, user.id);
+      const { data, error } = await adminClient
+        .from('parent_notes').select('id, author_name, course_id, note, created_at')
+        .eq('student_id', sid).order('created_at', { ascending: false }).limit(50);
+      checkDb(error);
+      return res.status(200).json({ notes: data || [] });
+    }
+
+    if (action === 'fees') {
+      const sid = readParentToken(p.token, user.id);
+      return res.status(200).json(await feesFor(adminClient, sid));
+    }
+
+    if (action === 'pay') {
+      const sid = readParentToken(p.token, user.id);
+      const fee = await getFee(adminClient, p.feeId);
+      if (fee.student_id !== sid) throw new HttpError(404, 'Fee not found');
+      if (fee.status !== 'unpaid') throw new HttpError(409, 'This fee has already been paid or cancelled');
+
+      const { data: student } = await adminClient.from('students').select('full_name').eq('id', sid).maybeSingle();
+      const reference = `FX-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const { error } = await adminClient.from('fee_payments').insert([{
+        fee_id: fee.id, student_id: sid, reference, amount_kobo: fee.amount_kobo, status: 'pending'
+      }]);
+      checkDb(error);
+
+      const origin = siteOrigin(req);
+      const tx = await paystack('/transaction/initialize', {
+        method: 'POST',
+        body: {
+          email: user.email,
+          amount: fee.amount_kobo,
+          currency: 'NGN',
+          reference,
+          ...(origin ? { callback_url: `${origin}/student` } : {}),
+          metadata: {
+            fee_id: fee.id,
+            student_id: sid,
+            custom_fields: [
+              { display_name: 'Student', variable_name: 'student', value: student?.full_name || sid },
+              { display_name: 'For', variable_name: 'fee', value: fee.description }
+            ]
+          }
+        }
+      });
+      return res.status(200).json({ accessCode: tx.access_code, authorizationUrl: tx.authorization_url, reference });
+    }
+
+    if (action === 'verify') {
+      const reference = String(p.reference || '');
+      if (!reference) throw new HttpError(400, 'reference is required');
+      const { data: payment, error } = await adminClient
+        .from('fee_payments').select('student_id').eq('reference', reference).maybeSingle();
+      checkDb(error);
+      if (!payment || payment.student_id !== studentId) throw new HttpError(404, 'Payment not found');
+      const result = await confirmPayment(adminClient, reference);
+      return res.status(200).json({ status: result.status });
+    }
+
+    throw new HttpError(400, 'Unknown action');
+  } catch (err) {
+    if (!(err instanceof HttpError) || err.status >= 500) console.error('parent api error:', err);
+    return sendError(res, err);
+  }
+}

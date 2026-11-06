@@ -17,6 +17,7 @@ import {
   MessageSquare, Plus, CheckSquare, Megaphone, Trash2, Send,
   BookOpen, FileText, Upload, MonitorPlay, Edit, Paperclip
 } from 'lucide-react';
+import ParentNoteModal from '../components/ParentNoteModal';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
@@ -57,6 +58,7 @@ const getSpecialClassImage = (title = '', index = 0) => {
 export default function TutorDashboard({ user }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('schedule');
+  const [noteStudent, setNoteStudent] = useState(null); // { student, courseOptions } for the Note to parent window
   const [viewingSlide, setViewingSlide] = useState(null); // material row being viewed in the embedded HTML slide modal
   const [bookings, setBookings] = useState([]);
   const [tutorInfo, setTutorInfo] = useState(null);
@@ -1423,6 +1425,21 @@ export default function TutorDashboard({ user }) {
                                 <MessageSquare size={14} />
                                 Message
                               </button>
+                              <button
+                                className="btn-action complete"
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.7rem', marginTop: '0.35rem', whiteSpace: 'nowrap' }}
+                                onClick={() => setNoteStudent({
+                                  student: s,
+                                  courseOptions: courseMaps
+                                    .map(m => courses.find(c => c.id === m.course_id))
+                                    .filter(Boolean)
+                                    .map(c => ({ id: c.id, title: c.title }))
+                                })}
+                                title="Write a private note to this student's parents"
+                              >
+                                <Send size={14} />
+                                Note to parent
+                              </button>
                             </td>
                           </tr>
                         );
@@ -1433,6 +1450,15 @@ export default function TutorDashboard({ user }) {
               )}
             </div>
           </div>
+        )}
+
+        {noteStudent && (
+          <ParentNoteModal
+            student={noteStudent.student}
+            courseOptions={noteStudent.courseOptions}
+            currentUserId={user?.id}
+            onClose={() => setNoteStudent(null)}
+          />
         )}
 
         {/* Tab: Messages / Student Chat Inbox */}

@@ -1,88 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   getPublicTutors,
   registerStudent,
-  createBooking,
   createContactMessage
 } from '../services/dataService';
 import { useNavigate, useLocation } from 'react-router-dom';
+import BookingForm from '../components/BookingForm';
+import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
-
-const allTimeZones = (() => {
-  try {
-    if (typeof Intl !== 'undefined' && Intl.supportedValuesOf) {
-      return Intl.supportedValuesOf('timeZone');
-    }
-  } catch {
-    console.warn('Intl.supportedValuesOf not supported in this environment');
-  }
-  return [
-    'Africa/Lagos',
-    'Africa/Cairo',
-    'Africa/Johannesburg',
-    'America/New_York',
-    'America/Chicago',
-    'America/Denver',
-    'America/Los_Angeles',
-    'America/Sao_Paulo',
-    'Asia/Dubai',
-    'Asia/Kolkata',
-    'Asia/Singapore',
-    'Asia/Tokyo',
-    'Australia/Sydney',
-    'Europe/London',
-    'Europe/Paris',
-    'Europe/Moscow',
-    'UTC'
-  ];
-})();
-
-const tzOptions = allTimeZones.map(tz => {
-  try {
-    const date = new Date();
-    // Offset format: "GMT+1"
-    const offsetFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      timeZoneName: 'shortOffset',
-    });
-    const offsetParts = offsetFormatter.formatToParts(date);
-    const offsetVal = offsetParts.find(p => p.type === 'timeZoneName')?.value || '';
-
-    // Abbreviation format: "WAT"
-    const abbrFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      timeZoneName: 'short',
-    });
-    const abbrParts = abbrFormatter.formatToParts(date);
-    const abbrVal = abbrParts.find(p => p.type === 'timeZoneName')?.value || '';
-
-    let label = tz.replace(/_/g, ' ');
-    if (abbrVal && offsetVal) {
-      if (abbrVal !== offsetVal) {
-        label = `${label} (${abbrVal}, ${offsetVal})`;
-      } else {
-        label = `${label} (${offsetVal})`;
-      }
-    } else if (offsetVal) {
-      label = `${label} (${offsetVal})`;
-    }
-    return { value: tz, label };
-  } catch {
-    return { value: tz, label: tz.replace(/_/g, ' ') };
-  }
-});
-
-const TIME_SLOTS = [
-  '09:00 AM',
-  '10:00 AM',
-  '11:00 AM',
-  '12:00 PM',
-  '02:00 PM',
-  '03:00 PM',
-  '04:00 PM',
-  '05:00 PM'
-];
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
@@ -145,33 +70,6 @@ const EMPTY_CONTACT_FORM = {
   contactMessage: ''
 };
 
-const getDefaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
-
-const makeEmptyBookingForm = () => ({
-  bookingStudentName: '',
-  bookingParentName: '',
-  bookingPhone: '',
-  bookingEmail: '',
-  meetingType: 'virtual', // Default to virtual
-  bookingDate: '',
-  bookingTime: '',
-  bookingMessage: '',
-  bookingTimezone: getDefaultTimezone()
-});
-
-// Today's date in the visitor's local timezone, formatted YYYY-MM-DD (matches <input type="date">)
-const getLocalDateString = () => {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
-};
-
-const withRequestedSubject = (subject, text) => {
-  if (!subject) return text || null;
-  return text ? `[Requested Subject: ${subject}]\n${text}` : `[Requested Subject: ${subject}]`;
-};
-
 // Scroll to an element, retrying each animation frame (up to ~2s) until it exists.
 // Returns a cancel function.
 const scrollToIdWhenReady = (id, timeoutMs = 2000) => {
@@ -200,12 +98,10 @@ export default function LandingPage() {
 
   // Forms success states
   const [registerSuccess, setRegisterSuccess] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
   const [contactSuccess, setContactSuccess] = useState(false);
 
   // Forms in-flight states (prevent double submit)
   const [isRegistering, setIsRegistering] = useState(false);
-  const [isBooking, setIsBooking] = useState(false);
   const [isSendingContact, setIsSendingContact] = useState(false);
 
   // Tab State: 'registration' | 'booking'
@@ -222,9 +118,6 @@ export default function LandingPage() {
 
   // Quick Register form state (only the fields the form actually collects)
   const [studentForm, setStudentForm] = useState(EMPTY_STUDENT_FORM);
-
-  // Booking form state
-  const [bookingForm, setBookingForm] = useState(makeEmptyBookingForm);
 
   // Contact form state
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM);
@@ -298,27 +191,6 @@ export default function LandingPage() {
     };
   }, []);
 
-  // Timezone searchable dropdown state
-  const [tzSearch, setTzSearch] = useState('');
-  const [tzOpen, setTzOpen] = useState(false);
-  const tzDropdownRef = useRef(null);
-  const tzPanelRef = useRef(null); // The portalled panel lives outside tzDropdownRef in the DOM
-  const tzTriggerRef = useRef(null); // Ref on the trigger button for portal positioning
-  const [tzRect, setTzRect] = useState(null); // Bounding rect of the trigger
-
-  // Close timezone dropdown on outside click (outside both the trigger wrapper and the portalled panel)
-  useEffect(() => {
-    const handler = (e) => {
-      const inTrigger = tzDropdownRef.current && tzDropdownRef.current.contains(e.target);
-      const inPanel = tzPanelRef.current && tzPanelRef.current.contains(e.target);
-      if (!inTrigger && !inPanel) {
-        setTzOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   // Scroll wrappers
   const teachersScrollRef = useRef(null);
 
@@ -386,48 +258,6 @@ export default function LandingPage() {
     }
   };
 
-  // Booking Form Handlers
-  const handleBookingChange = (e) => {
-    const { name, value } = e.target;
-    setBookingForm(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleBookingSubmit = async (e) => {
-    e.preventDefault();
-    if (isBooking) return;
-    // YYYY-MM-DD strings compare correctly as plain strings
-    if (!bookingForm.bookingDate || bookingForm.bookingDate < getLocalDateString()) {
-      alert('Please choose a meeting date from today onwards.');
-      return;
-    }
-    setIsBooking(true);
-    try {
-      const bookingData = {
-        tutor_id: null,
-        tutor_name: 'Unassigned',
-        student_name: bookingForm.bookingStudentName,
-        parent_name: bookingForm.bookingParentName,
-        phone: bookingForm.bookingPhone,
-        email: bookingForm.bookingEmail,
-        meeting_type: bookingForm.meetingType,
-        booking_date: bookingForm.bookingDate,
-        booking_time: bookingForm.bookingTime,
-        timezone: bookingForm.bookingTimezone,
-        message: withRequestedSubject(requestedSubject, bookingForm.bookingMessage)
-      };
-      await createBooking(bookingData);
-      setBookingSuccess(true);
-      setBookingForm(makeEmptyBookingForm());
-      setRequestedSubject(null);
-      clearNavigationState();
-      setTimeout(() => setBookingSuccess(false), 5000);
-    } catch (err) {
-      alert('Error scheduling booking: ' + err.message);
-    } finally {
-      setIsBooking(false);
-    }
-  };
-
   // Contact Form Handlers
   const handleContactChange = (e) => {
     const { name, value } = e.target;
@@ -455,8 +285,6 @@ export default function LandingPage() {
       setIsSendingContact(false);
     }
   };
-
-  const todayStr = getLocalDateString();
 
   return (
     <>
@@ -777,213 +605,10 @@ export default function LandingPage() {
                 )}
 
                 {activeTab === 'booking' && (
-
-                  <form onSubmit={handleBookingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <p style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.75)', margin: '0 0 0.4rem 0', lineHeight: '1.4' }}>
-                      Schedule a 1-on-1 counseling call or academic consultation session with a tutor.
-                    </p>
-                    {bookingSuccess && (
-                      <div style={{ padding: '0.5rem', background: 'rgba(40, 167, 69, 0.2)', border: '1px solid #28a745', borderRadius: '6px', fontSize: '0.75rem', textAlign: 'center', color: '#28a745', fontWeight: 'bold' }}>
-                        Meeting scheduled successfully!
-                      </div>
-                    )}
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label>Parent Name *</label>
-                      <input
-                        type="text"
-                        name="bookingParentName"
-                        value={bookingForm.bookingParentName}
-                        onChange={handleBookingChange}
-                        placeholder="e.g. David Doe"
-                        required
-                      />
-                    </div>
-                    <div className="form-row-2col">
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label>Parent Email *</label>
-                        <input
-                          type="email"
-                          name="bookingEmail"
-                          value={bookingForm.bookingEmail}
-                          onChange={handleBookingChange}
-                          placeholder="parent@example.com"
-                          required
-                        />
-                      </div>
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label>Contact Phone *</label>
-                        <input
-                          type="tel"
-                          name="bookingPhone"
-                          value={bookingForm.bookingPhone}
-                          onChange={handleBookingChange}
-                          placeholder="080..."
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label>Student's Full Name *</label>
-                      <input
-                        type="text"
-                        name="bookingStudentName"
-                        value={bookingForm.bookingStudentName}
-                        onChange={handleBookingChange}
-                        placeholder="Child's Name"
-                        required
-                      />
-                    </div>
-                    <div className="form-row-2col">
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label>Preferred Date *</label>
-                        <input
-                          type="date"
-                          name="bookingDate"
-                          min={todayStr}
-                          value={bookingForm.bookingDate}
-                          onChange={handleBookingChange}
-                          required
-                        />
-                      </div>
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label>Preferred Time *</label>
-                        <select name="bookingTime" value={bookingForm.bookingTime} onChange={handleBookingChange} required>
-                          <option value="">Select Time</option>
-                          {TIME_SLOTS.map(slot => (
-                            <option key={slot} value={slot}>{slot}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label>Time Zone *</label>
-                      {/* Custom searchable timezone dropdown — panel portalled to body to escape transform stacking context */}
-                      <div ref={tzDropdownRef} style={{ position: 'relative' }}>
-                        {/* Trigger button */}
-                        <div
-                          ref={tzTriggerRef}
-                          onClick={() => {
-                            if (!tzOpen) {
-                              setTzRect(tzTriggerRef.current.getBoundingClientRect());
-                            }
-                            setTzOpen(o => !o);
-                          }}
-                          style={{
-                            padding: '0.65rem', borderRadius: '8px',
-                            border: `1.5px solid ${tzOpen ? 'var(--primary-color)' : '#cbd5e0'}`,
-                            background: 'white', cursor: 'pointer',
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            fontSize: '0.85rem', color: bookingForm.bookingTimezone ? 'var(--primary-color)' : '#a0aec0',
-                            userSelect: 'none'
-                          }}
-                        >
-                          {bookingForm.bookingTimezone || 'Select Timezone'}
-                          <span>{tzOpen ? '▲' : '▼'}</span>
-                        </div>
-
-                        {/* Dropdown panel — rendered via portal to escape CSS transform stacking context */}
-                        {tzOpen && tzRect && createPortal(
-                          <div
-                            ref={tzPanelRef}
-                            style={{
-                              position: 'fixed',
-                              top: tzRect.bottom + 4,
-                              left: tzRect.left,
-                              width: tzRect.width,
-                              background: 'white',
-                              border: '1.5px solid var(--primary-color)',
-                              borderRadius: '8px',
-                              zIndex: 99999,
-                              boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                              overflow: 'hidden'
-                            }}
-                          >
-                            {/* Search input */}
-                            <div style={{ padding: '0.5rem' }}>
-                              <input
-                                autoFocus
-                                type="text"
-                                placeholder="Search timezone..."
-                                value={tzSearch}
-                                onChange={e => setTzSearch(e.target.value)}
-                                style={{
-                                  width: '100%', padding: '0.45rem 0.6rem',
-                                  borderRadius: '6px', border: '1px solid #cbd5e0',
-                                  fontSize: '0.82rem', outline: 'none',
-                                  boxSizing: 'border-box'
-                                }}
-                              />
-                            </div>
-                            {/* Options list */}
-                            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                              {tzOptions
-                                .filter(opt =>
-                                  opt.label.toLowerCase().includes(tzSearch.toLowerCase()) ||
-                                  opt.value.toLowerCase().includes(tzSearch.toLowerCase())
-                                )
-                                .map(opt => (
-                                  <div
-                                    key={opt.value}
-                                    onMouseDown={e => {
-                                      // Use onMouseDown + preventDefault to prevent blur closing before click registers
-                                      e.preventDefault();
-                                      setBookingForm(prev => ({ ...prev, bookingTimezone: opt.value }));
-                                      setTzOpen(false);
-                                      setTzSearch('');
-                                    }}
-                                    style={{
-                                      padding: '0.55rem 0.75rem',
-                                      fontSize: '0.82rem',
-                                      cursor: 'pointer',
-                                      background: bookingForm.bookingTimezone === opt.value ? 'rgba(59,130,246,0.08)' : 'transparent',
-                                      color: bookingForm.bookingTimezone === opt.value ? 'var(--primary-color)' : '#2d3748',
-                                      fontWeight: bookingForm.bookingTimezone === opt.value ? '600' : '400',
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = '#f7fafc'}
-                                    onMouseLeave={e => e.currentTarget.style.background = bookingForm.bookingTimezone === opt.value ? 'rgba(59,130,246,0.08)' : 'transparent'}
-                                  >
-                                    {opt.label}
-                                  </div>
-                                ))
-                              }
-                              {tzOptions.filter(opt =>
-                                opt.label.toLowerCase().includes(tzSearch.toLowerCase()) ||
-                                opt.value.toLowerCase().includes(tzSearch.toLowerCase())
-                              ).length === 0 && (
-                                <div style={{ padding: '0.75rem', fontSize: '0.82rem', color: '#a0aec0', textAlign: 'center' }}>
-                                  No timezones found
-                                </div>
-                              )}
-                            </div>
-                          </div>,
-                          document.body
-                        )}
-                      </div>
-                    </div>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label>Add Message (Optional)</label>
-                      <textarea
-                        name="bookingMessage"
-                        value={bookingForm.bookingMessage}
-                        onChange={handleBookingChange}
-                        placeholder="Tell us about your child's learning goals, grade level, or areas of struggle..."
-                        rows={2}
-                        style={{
-                          width: '100%',
-                          padding: '0.65rem',
-                          borderRadius: '8px',
-                          border: '1.5px solid #cbd5e0',
-                          background: 'white',
-                          color: '#2d3748',
-                          fontFamily: 'inherit',
-                          fontSize: '0.85rem'
-                        }}
-                      />
-                    </div>
-                    <button type="submit" className="btn-primary" disabled={isBooking} aria-busy={isBooking} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isBooking ? 0.7 : 1, cursor: isBooking ? 'not-allowed' : 'pointer' }}>
-                      {isBooking ? 'Booking...' : 'Book Session'}
-                    </button>
-                  </form>
+                  <BookingForm
+                    requestedSubject={requestedSubject}
+                    onBooked={() => { setRequestedSubject(null); clearNavigationState(); }}
+                  />
                 )}
               </div>
             </div>

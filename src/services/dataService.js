@@ -696,6 +696,12 @@ const callAuthedApi = async (path, body) => {
   return result;
 };
 
+// Parent Area (fees + Paystack). Server-only data, so there is no local/demo fallback.
+export const parentApi = async (action, payload = {}) => {
+  if (!hasSupabaseConfig) throw new Error('The Parent Area needs the live server.');
+  return await callAuthedApi('/api/parent', { action, ...payload });
+};
+
 export const createStudentAccount = async (email, password, studentData) => {
   if (hasSupabaseConfig) {
     return await callAdminApi('createStudentAccount', { email, password, studentData });
