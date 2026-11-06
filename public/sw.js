@@ -1,4 +1,4 @@
-const CACHE_NAME = 'foundaxia-v1';
+const CACHE_NAME = 'foundaxia-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -57,6 +57,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
+          if (!response.ok) return response; // never cache 404s/500s
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
@@ -72,6 +73,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request)
         .then((response) => {
+          if (!response.ok) return response; // never cache 404s/500s
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;

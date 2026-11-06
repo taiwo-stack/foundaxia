@@ -124,11 +124,14 @@ export default function StudentDashboard({ user }) {
 
       // Filter bookings for Tobi Coker (or matching by student_name)
       const nameToMatch = currentStudent ? currentStudent.full_name : (user?.full_name || 'Tobi Coker');
-      const filtered = allBookings.filter(b =>
-        b.student_name.toLowerCase() === nameToMatch.toLowerCase() ||
-        b.email === currentStudent?.email ||
-        b.email === user?.email
-      );
+      // Match on email; fall back to name only for bookings that have no email.
+      // (A null student_name used to throw here and blank the whole dashboard, and
+      // name matching showed students other same-named students' bookings.)
+      const emails = [currentStudent?.email, user?.email].filter(Boolean).map(e => e.toLowerCase());
+      const filtered = allBookings.filter(b => {
+        if (b.email) return emails.includes(b.email.toLowerCase());
+        return !!nameToMatch && b.student_name?.toLowerCase() === nameToMatch.toLowerCase();
+      });
       setBookings(filtered);
 
       const studEnroll = scList.filter(x => x.student_id === actualStudentId);
@@ -259,7 +262,7 @@ export default function StudentDashboard({ user }) {
 
   const handleHomeworkSubmit = async (e) => {
     e.preventDefault();
-    if (!activeSubTaskId) return;
+    if (!activeSubTaskId || saving) return;
     setSaving(true);
     try {
       let fileUrl = '';
@@ -310,6 +313,12 @@ export default function StudentDashboard({ user }) {
 
   // Next Incoming & Today's classes
   const now = new Date();
+  // A class only counts as over once it has ENDED, so late students still get the
+  // join link. Classes without an end_time are assumed to last one hour.
+  const classEnd = (sch) => sch.end_time
+    ? new Date(sch.end_time)
+    : new Date(new Date(sch.start_time).getTime() + 60 * 60 * 1000);
+  const enrolledCourseIds = new Set(enrollments.map(en => en.course_id));
   const todayStr = now.toDateString();
 
   // Today's classes (all scheduled classes for today)
@@ -332,7 +341,7 @@ export default function StudentDashboard({ user }) {
 
   // Next incoming class (future class, sorted by start_time ascending)
   const nextClass = schedules
-    .filter(sch => new Date(sch.start_time) > now)
+    .filter(sch => classEnd(sch) > now)
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0] || null;
 
   if (loading) {
@@ -513,7 +522,7 @@ export default function StudentDashboard({ user }) {
             <div className="dashboard-quick-stats">
               {[
                 { label: 'Courses Enrolled', value: enrollments.length, icon: '📚', color: '#4c6ef5', tab: 'courses' },
-                { label: 'Upcoming Classes', value: schedules.filter(s => new Date(s.scheduled_date) >= new Date()).length, icon: '📅', color: '#12b886', tab: 'timetable' },
+                { label: 'Upcoming Classes', value: schedules.filter(s => classEnd(s) >= now).length, icon: '📅', color: '#12b886', tab: 'timetable' },
                 { label: 'Attendance Rate', value: `${attendanceRate}%`, icon: '📊', color: '#3b82f6', tab: 'timetable' },
                 { label: 'Pending Tasks', value: activeStudentTasks.filter(t => !submissions.find(s => s.task_id === t.id)).length, icon: '✏️', color: '#f59f00', tab: 'homework' },
               ].map(stat => (
@@ -642,7 +651,7 @@ export default function StudentDashboard({ user }) {
                         const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
                         const tName = tutors.find(t => t.id === sch.tutor_id)?.full_name || 'Tutor';
                         const classTime = new Date(sch.start_time);
-                        const isPast = classTime < now;
+                        const isPast = classEnd(sch) < now;
 
                         return (
                           <div key={sch.id} style={{
@@ -720,7 +729,7 @@ export default function StudentDashboard({ user }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-color)' }}>
                       <Megaphone size={18} /> Recent Announcements
                     </h3>
-                    {announcements.slice(0, 3).map(ann => (
+                    {announcements.filter(a => enrolledCourseIds.has(a.course_id)).slice(0, 3).map(ann => (
                       <div key={ann.id} style={{
                         padding: '0.85rem 1rem',
                         background: '#f7fafc',
@@ -729,7 +738,7 @@ export default function StudentDashboard({ user }) {
                         borderLeft: '3px solid var(--primary-color)'
                       }}>
                         <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.25rem' }}>{ann.title}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#4a5568' }}>{ann.message}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#4a5568' }}>{ann.announcement || ann.message}</div>
                       </div>
                     ))}
                   </div>
@@ -1298,7 +1307,7 @@ export default function StudentDashboard({ user }) {
                                   </div>
                                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                     <button type="button" className="btn-action cancel" style={{ padding: '0.35rem 0.7rem' }} onClick={() => setActiveSubTaskId(null)}>Cancel</button>
-                                    <button type="submit" className="btn-action approve" style={{ padding: '0.35rem 0.7rem' }}>Submit Task</button>
+                                    <button type="submit" className="btn-action approve" style={{ padding: '0.35rem 0.7rem' }} disabled={saving}>{saving ? 'Submitting...' : 'Submit Task'}</button>
                                   </div>
                                 </form>
                               ) : (

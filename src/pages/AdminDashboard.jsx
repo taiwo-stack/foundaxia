@@ -555,11 +555,28 @@ export default function AdminDashboard({ user }) {
   const handleMoveTopic = async (topicId, direction) => {
     const topic = topics.find(t => t.id === topicId);
     if (!topic) return;
-    const offset = direction === 'up' ? -1 : 1;
-    const newOrder = Math.max(1, topic.sort_order + offset);
+    // Swap positions with the neighbouring lesson in the same course; just +/-1 on
+    // one lesson produced duplicate sort_order values and an undefined order.
+    const siblings = topics
+      .filter(t => t.course_id === topic.course_id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const idx = siblings.findIndex(t => t.id === topicId);
+    const neighbour = siblings[direction === 'up' ? idx - 1 : idx + 1];
+    if (!neighbour) return;
+    // Renumber the course's lessons 1..n so ties/gaps from earlier edits don't matter.
+    const reordered = siblings.slice();
+    reordered[idx] = neighbour;
+    reordered[direction === 'up' ? idx - 1 : idx + 1] = topic;
+    const newOrders = new Map(reordered.map((t, i) => [t.id, i + 1]));
     try {
-      await updateTopic(topicId, { sort_order: newOrder });
-      setTopics(prev => prev.map(t => t.id === topicId ? { ...t, sort_order: newOrder } : t).sort((a, b) => a.sort_order - b.sort_order));
+      await Promise.all(
+        reordered
+          .filter(t => t.sort_order !== newOrders.get(t.id))
+          .map(t => updateTopic(t.id, { sort_order: newOrders.get(t.id) }))
+      );
+      setTopics(prev => prev
+        .map(t => newOrders.has(t.id) ? { ...t, sort_order: newOrders.get(t.id) } : t)
+        .sort((a, b) => a.sort_order - b.sort_order));
     } catch (err) {
       alert('Error updating order: ' + err.message);
     }

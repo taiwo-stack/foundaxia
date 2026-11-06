@@ -15,7 +15,7 @@ import {
 import { 
   Calendar, User, Clock, AlertCircle, Save, Check, X,
   MessageSquare, Plus, CheckSquare, Megaphone, Trash2, Send,
-  BookOpen, FileText, Upload, MonitorPlay, Edit
+  BookOpen, FileText, Upload, MonitorPlay, Edit, Paperclip
 } from 'lucide-react';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
@@ -178,11 +178,11 @@ export default function TutorDashboard({ user }) {
         getCourseTutors(), getMaterials()
       ]);
 
-      const currentTutor = allTutors.find(t =>
-        t.id === tutorId ||
-        t.profile_id === tutorId ||
-        t.full_name === (user?.full_name || 'Adebayo Olumide')
-      );
+      // Match on id first; a name match (a different tutor sharing the same name)
+      // must never win over the logged-in tutor's own record.
+      const currentTutor =
+        allTutors.find(t => t.id === tutorId || t.profile_id === tutorId) ||
+        (user?.full_name ? allTutors.find(t => t.full_name === user.full_name) : undefined);
       setTutorInfo(currentTutor);
 
       const actualTutorId = currentTutor?.id || tutorId;
@@ -497,11 +497,18 @@ export default function TutorDashboard({ user }) {
     }
   };
 
+  // datetime-local inputs take LOCAL wall time; toISOString() gives UTC, which made
+  // every save shift the class by the tutor's UTC offset.
+  const toLocalInputValue = (iso) => {
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
   const handleEditScheduleClick = (sch) => {
     setEditingSchedule({
       ...sch,
-      start_time: sch.start_time ? new Date(sch.start_time).toISOString().slice(0, 16) : '',
-      end_time: sch.end_time ? new Date(sch.end_time).toISOString().slice(0, 16) : ''
+      start_time: sch.start_time ? toLocalInputValue(sch.start_time) : '',
+      end_time: sch.end_time ? toLocalInputValue(sch.end_time) : ''
     });
     setShowEditScheduleModal(true);
   };
@@ -1249,7 +1256,7 @@ export default function TutorDashboard({ user }) {
                               {s.avatar_url ? (
                                 <img src={s.avatar_url} alt={s.full_name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
                               ) : (
-                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>{s.full_name[0]}</div>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>{s.full_name?.[0] || '?'}</div>
                               )}
                               <span style={{ fontWeight: 'bold' }}>{s.full_name}</span>
                             </td>

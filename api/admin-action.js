@@ -70,20 +70,11 @@ export default async function handler(req, res) {
   });
 
   const { action, ...payload } = req.body;
+  const targetRole = action === 'createTutorAccount' ? 'tutor' : 'student';
 
   try {
     if (action === 'createStudentAccount') {
       const { email, password, studentData } = payload;
-      
-      const { data: existingTempStudents } = await adminClient
-        .from('students')
-        .select('id')
-        .eq('email', email);
-
-      if (existingTempStudents && existingTempStudents.length > 0) {
-        const tempIds = existingTempStudents.map(s => s.id);
-        await adminClient.from('students').delete().in('id', tempIds);
-      }
 
       let authUserId = null;
       const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
@@ -113,6 +104,18 @@ export default async function handler(req, res) {
           }
 
           if (authUserId) {
+            // Never repurpose an existing admin/tutor account (that would reset their
+            // password and demote them) just because the same email was typed here.
+            const { data: existingProfile } = await adminClient
+              .from('profiles')
+              .select('role')
+              .eq('id', authUserId)
+              .maybeSingle();
+            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
+              return res.status(409).json({
+                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
+              });
+            }
             await adminClient.auth.admin.updateUserById(authUserId, { password });
           }
         }
@@ -120,6 +123,15 @@ export default async function handler(req, res) {
       } else if (authData?.user) {
         authUserId = authData.user.id;
       }
+
+      // Only clear out pending lead rows for this email once the auth account exists,
+      // so a failed createUser (weak password, rate limit) doesn't destroy the lead.
+      const { error: tempDelError } = await adminClient
+        .from('students')
+        .delete()
+        .eq('email', email)
+        .neq('id', authUserId);
+      if (tempDelError) throw tempDelError;
 
       const { error: profError } = await adminClient.from('profiles').upsert([
         {
@@ -183,6 +195,18 @@ export default async function handler(req, res) {
           }
 
           if (authUserId) {
+            // Never repurpose an existing admin/tutor account (that would reset their
+            // password and demote them) just because the same email was typed here.
+            const { data: existingProfile } = await adminClient
+              .from('profiles')
+              .select('role')
+              .eq('id', authUserId)
+              .maybeSingle();
+            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
+              return res.status(409).json({
+                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
+              });
+            }
             await adminClient.auth.admin.updateUserById(authUserId, { password });
           }
         }
@@ -266,6 +290,18 @@ export default async function handler(req, res) {
           }
 
           if (authUserId) {
+            // Never repurpose an existing admin/tutor account (that would reset their
+            // password and demote them) just because the same email was typed here.
+            const { data: existingProfile } = await adminClient
+              .from('profiles')
+              .select('role')
+              .eq('id', authUserId)
+              .maybeSingle();
+            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
+              return res.status(409).json({
+                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
+              });
+            }
             await adminClient.auth.admin.updateUserById(authUserId, { password });
           }
         }

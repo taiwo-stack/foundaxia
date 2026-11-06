@@ -223,7 +223,7 @@ export const saveTutor = async (tutor) => {
   } else {
     initLocalStorage();
     const tutors = JSON.parse(localStorage.getItem('lc_tutors'));
-    const newTutor = { id: 't_' + Date.now(), rating: 5.0, ...tutor };
+    const newTutor = { id: 't_' + crypto.randomUUID(), rating: 5.0, ...tutor };
     tutors.push(newTutor);
     localStorage.setItem('lc_tutors', JSON.stringify(tutors));
     return newTutor;
@@ -350,7 +350,7 @@ export const registerStudent = async (student) => {
   } else {
     initLocalStorage();
     const students = JSON.parse(localStorage.getItem('lc_students'));
-    const studentId = 's_' + Date.now();
+    const studentId = 's_' + crypto.randomUUID();
     savedStudent = { id: studentId, status: 'pending', ...student };
     students.push(savedStudent);
     localStorage.setItem('lc_students', JSON.stringify(students));
@@ -447,7 +447,7 @@ export const createBooking = async (booking) => {
     initLocalStorage();
     const bookings = JSON.parse(localStorage.getItem('lc_bookings'));
     savedBooking = { 
-      id: 'b_' + Date.now(), 
+      id: 'b_' + crypto.randomUUID(), 
       status: 'pending', 
       created_at: new Date().toISOString(),
       ...booking 
@@ -509,7 +509,7 @@ export const createContactMessage = async (msg) => {
     initLocalStorage();
     const messages = JSON.parse(localStorage.getItem('lc_messages'));
     const newMsg = {
-      id: 'm_' + Date.now(),
+      id: 'm_' + crypto.randomUUID(),
       created_at: new Date().toISOString(),
       ...msg
     };
@@ -657,7 +657,7 @@ export const createStudentAccount = async (email, password, studentData) => {
     // Filter out any temporary lead student record with the same email
     students = students.filter(s => s.email.toLowerCase() !== email.toLowerCase());
 
-    const newUserId = 's_' + Date.now();
+    const newUserId = 's_' + crypto.randomUUID();
     users.push({
       id: newUserId,
       email,
@@ -690,7 +690,7 @@ export const activateStudentAccount = async (studentId, email, password) => {
     const idx = students.findIndex(s => s.id === studentId);
     if (idx === -1) throw new Error('Student record not found.');
 
-    const newUserId = 's_' + Date.now();
+    const newUserId = 's_' + crypto.randomUUID();
     users.push({
       id: newUserId,
       email,
@@ -737,7 +737,7 @@ export const createTutorAccount = async (email, password, tutorData) => {
       throw new Error('An account with this email already exists.');
     }
 
-    const newUserId = 't_' + Date.now();
+    const newUserId = 't_' + crypto.randomUUID();
 
     users.push({
       id: newUserId,
@@ -811,7 +811,7 @@ export const saveCourseCategory = async (category) => {
       if (error) throw error;
       return data[0];
     } else {
-      const catId = 'cat_' + Date.now();
+      const catId = 'cat_' + crypto.randomUUID();
       const { data, error } = await supabase.from('course_categories').insert([{ id: catId, ...category }]).select();
       if (error) throw error;
       return data[0];
@@ -828,7 +828,7 @@ export const saveCourseCategory = async (category) => {
       }
       throw new Error('Category not found');
     } else {
-      const catId = 'cat_' + Date.now();
+      const catId = 'cat_' + crypto.randomUUID();
       const newCategory = { id: catId, ...category };
       categories.push(newCategory);
       localStorage.setItem('lc_course_categories', JSON.stringify(categories));
@@ -868,7 +868,7 @@ export const saveCourse = async (course) => {
       if (error) throw error;
       return data[0];
     } else {
-      const courseId = 'c_' + Date.now();
+      const courseId = 'c_' + crypto.randomUUID();
       const { data, error } = await supabase.from('courses').insert([{ id: courseId, ...course }]).select();
       if (error) throw error;
       return data[0];
@@ -885,7 +885,7 @@ export const saveCourse = async (course) => {
       }
       throw new Error('Course not found');
     } else {
-      const courseId = 'c_' + Date.now();
+      const courseId = 'c_' + crypto.randomUUID();
       const newCourse = { id: courseId, ...course };
       courses.push(newCourse);
       localStorage.setItem('lc_courses', JSON.stringify(courses));
@@ -919,7 +919,7 @@ export const getTopics = async () => {
 };
 
 export const saveTopic = async (topic) => {
-  const topicId = 'tp_' + Date.now();
+  const topicId = 'tp_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('topics').insert([{ id: topicId, ...topic }]).select();
     if (error) throw error;
@@ -1012,7 +1012,7 @@ export const getMaterials = async () => {
 };
 
 export const saveMaterial = async (material) => {
-  const materialId = 'mat_' + Date.now();
+  const materialId = 'mat_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('course_materials').insert([{ id: materialId, ...material }]).select();
     if (error) throw error;
@@ -1126,18 +1126,20 @@ export const unenrollStudentFromCourse = async (studentId, courseId) => {
 export const updateStudentEnrollment = async (studentId, oldCourseId, newCourseId, newTutorId) => {
   if (hasSupabaseConfig) {
     if (oldCourseId !== newCourseId) {
+      // Insert the new enrollment first so a failed insert can't leave the student
+      // with no enrollment at all.
+      const { data, error: insErr } = await supabase
+        .from('student_courses')
+        .insert([{ student_id: studentId, course_id: newCourseId, tutor_id: newTutorId }])
+        .select();
+      if (insErr) throw insErr;
+
       const { error: delErr } = await supabase
         .from('student_courses')
         .delete()
         .eq('student_id', studentId)
         .eq('course_id', oldCourseId);
       if (delErr) throw delErr;
-
-      const { data, error: insErr } = await supabase
-        .from('student_courses')
-        .insert([{ student_id: studentId, course_id: newCourseId, tutor_id: newTutorId }])
-        .select();
-      if (insErr) throw insErr;
       return data[0];
     } else {
       const { data, error } = await supabase
@@ -1189,7 +1191,7 @@ export const saveTask = async (task) => {
       if (error) throw error;
       return data[0];
     } else {
-      const taskId = 'tk_' + Date.now();
+      const taskId = 'tk_' + crypto.randomUUID();
       const { data, error } = await supabase.from('tasks').insert([{ id: taskId, ...task }]).select();
       if (error) throw error;
       return data[0];
@@ -1206,7 +1208,7 @@ export const saveTask = async (task) => {
       }
       throw new Error('Task not found');
     } else {
-      const taskId = 'tk_' + Date.now();
+      const taskId = 'tk_' + crypto.randomUUID();
       const newTask = { id: taskId, ...task };
       tasks.push(newTask);
       localStorage.setItem('lc_tasks', JSON.stringify(tasks));
@@ -1240,7 +1242,7 @@ export const getStudentTasks = async () => {
 };
 
 export const submitStudentTask = async (submission) => {
-  const submissionId = 'st_' + Date.now();
+  const submissionId = 'st_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('student_tasks').insert([{ id: submissionId, ...submission }]).select();
     if (error) throw error;
@@ -1292,7 +1294,7 @@ export const getSchedules = async () => {
 };
 
 export const saveSchedule = async (schedule) => {
-  const scheduleId = 'sch_' + Date.now();
+  const scheduleId = 'sch_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('schedules').insert([{ id: scheduleId, ...schedule }]).select();
     if (error) throw error;
@@ -1405,8 +1407,16 @@ export const getAttendance = async () => {
 };
 
 export const markAttendance = async (attendance) => {
-  const attendanceId = 'att_' + Date.now();
+  const attendanceId = 'att_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
+    // Match mock mode: a re-mark replaces the earlier record for this class + student
+    // instead of piling up rows whose order on reload is undefined.
+    const { error: delErr } = await supabase
+      .from('attendance')
+      .delete()
+      .eq('schedule_id', attendance.schedule_id)
+      .eq('student_id', attendance.student_id);
+    if (delErr) throw delErr;
     const { data, error } = await supabase.from('attendance').insert([{ id: attendanceId, ...attendance }]).select();
     if (error) throw error;
     return data[0];
@@ -1435,7 +1445,7 @@ export const getAnnouncements = async () => {
 };
 
 export const createAnnouncement = async (announcement) => {
-  const announcementId = 'an_' + Date.now();
+  const announcementId = 'an_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('course_announcements').insert([{ id: announcementId, ...announcement }]).select();
     if (error) throw error;
@@ -1464,7 +1474,7 @@ export const getChatMessages = async () => {
 
 export const sendChatMessage = async (msg) => {
   const { sender_name, ...dbMsg } = msg;
-  const chatMessageId = 'ch_' + Date.now();
+  const chatMessageId = 'ch_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('chat_messages').insert([{ id: chatMessageId, ...dbMsg }]).select();
     if (error) throw error;
@@ -1515,8 +1525,13 @@ const notifyNewMessage = async (message, senderName) => {
 export const savePushSubscription = async (userId, subscription) => {
   if (!hasSupabaseConfig) return;
   const { endpoint, keys } = subscription.toJSON ? subscription.toJSON() : subscription;
+  // Derive the id from a hash of the WHOLE endpoint. Endpoints from one push service
+  // (e.g. every Chrome user on FCM) share a long common prefix, so truncating the
+  // base64 endpoint gave every such device the same primary key.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
+  const endpointHash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
   const { error } = await supabase.from('push_subscriptions').upsert([{
-    id: 'push_' + btoa(endpoint).slice(0, 40).replace(/[^a-zA-Z0-9]/g, ''),
+    id: 'push_' + endpointHash,
     user_id: userId,
     endpoint,
     p256dh: keys.p256dh,

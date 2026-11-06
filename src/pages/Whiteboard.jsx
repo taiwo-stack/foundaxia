@@ -685,6 +685,12 @@ export default function Whiteboard({ user }) {
         break;
 
       case 'drawing-end':
+        // Drop malformed elements instead of letting them crash every renderer.
+        if (!payload.element || typeof payload.element !== 'object' ||
+            (payload.element.type === 'stroke' && !Array.isArray(payload.element.points)) ||
+            (payload.element.type === 'text' && typeof payload.element.text !== 'string')) {
+          break;
+        }
         // Record a history checkpoint before applying the remote stroke, so a local
         // Undo reverts this specific change instead of popping a now-stale snapshot
         // from before the remote update (which would silently drop it).
@@ -700,6 +706,7 @@ export default function Whiteboard({ user }) {
         break;
 
       case 'element-update':
+        if (payload.action === 'update-all' && !Array.isArray(payload.elements)) break;
         setUndoStack(prev => [...prev, elements]);
         setRedoStack([]);
         if (payload.action === 'clear') {
@@ -836,6 +843,7 @@ export default function Whiteboard({ user }) {
 
       case 'board-state-response':
         console.log("Receiver: board-state-response event received", payload);
+        if (!Array.isArray(payload.pages) || payload.pages.length === 0 || !Number.isInteger(payload.currentPageIndex)) break;
         if (payload.targetUserId === 'all' || payload.targetUserId === localUserId.current) {
           if (!isHost) {
             console.log("Receiver: Updating pages to:", payload.pages, "and index to:", payload.currentPageIndex);
@@ -1576,6 +1584,9 @@ export default function Whiteboard({ user }) {
 
   // Undo operation
   const handleUndo = () => {
+    // Locked guests can't undo: their stack is full of remote strokes, so Ctrl+Z
+    // would revert the tutor's work for everyone.
+    if (isCollaborating && !isHost && !hasDrawAccess) return;
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
     setUndoStack(undoStack.slice(0, -1));
@@ -1590,6 +1601,7 @@ export default function Whiteboard({ user }) {
 
   // Redo operation
   const handleRedo = () => {
+    if (isCollaborating && !isHost && !hasDrawAccess) return;
     if (redoStack.length === 0) return;
     const next = redoStack[0];
     setRedoStack(redoStack.slice(1));
@@ -2147,6 +2159,10 @@ export default function Whiteboard({ user }) {
     const handleKeyDown = (e) => {
       // Ignore shortcut keys if user is currently typing text
       if (editingText) return;
+      // ...or typing in any form field (hex colour box, name modal, chat), where
+      // Backspace / Ctrl+Z must edit the field, not the board.
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
@@ -2155,7 +2171,7 @@ export default function Whiteboard({ user }) {
         e.preventDefault();
         handleRedo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (activeTool === 'select' && selectedElement) {
+        if (activeTool === 'select' && selectedElement && !(isCollaborating && !isHost && !hasDrawAccess)) {
           const remaining = elements.filter(el => el.id !== selectedElement.id);
           pushToHistory(remaining);
           setSelectedElement(null);
@@ -3128,6 +3144,7 @@ export default function Whiteboard({ user }) {
               const remaining = elements.filter(el => el.id !== selectedElement.id);
               pushToHistory(remaining);
               setSelectedElement(null);
+              broadcastElementsUpdate(remaining);
             }}
             title="Delete Selected Element"
           >
@@ -3316,6 +3333,7 @@ export default function Whiteboard({ user }) {
           setSelectedElement={setSelectedElement}
           elements={elements}
           pushToHistory={pushToHistory}
+          broadcastElementsUpdate={broadcastElementsUpdate}
         />
 
         {/* â”€â”€ Center Canvas Zoom Slider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
