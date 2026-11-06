@@ -16,11 +16,14 @@ import {
   Camera, Mail, Phone, GraduationCap, Copy, Check, Video, MapPin, Lock
 } from 'lucide-react';
 import ParentArea from '../components/ParentArea';
+import MobileTabBar from '../components/MobileTabBar';
+import useResponsiveTables from '../hooks/useResponsiveTables';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import BookingForm from '../components/BookingForm';
 import NotificationToggle from '../components/NotificationToggle';
 import '../styles/Dashboard.css';
 import '../styles/StudentProfile.css';
+import '../styles/DashboardMobile.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
@@ -60,11 +63,17 @@ export default function StudentDashboard({ user }) {
     setPaymentReturnRef(null);
     window.history.replaceState(null, '', window.location.pathname);
   }, []);
+  // On phones, start each section at the top.
+  useEffect(() => {
+    if (window.innerWidth <= 800) window.scrollTo({ top: 0 });
+  }, [activeTab]);
   const [bookings, setBookings] = useState([]);
   const [studentInfo, setStudentInfo] = useState(null);
   const [savedStudentInfo, setSavedStudentInfo] = useState(null); // last saved copy, for "unsaved changes"
   const [idCopied, setIdCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const mainRef = useRef(null);
+  useResponsiveTables(mainRef, !loading);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -585,7 +594,23 @@ export default function StudentDashboard({ user }) {
       </aside>
 
       {/* Main Panel */}
-      <main className="dashboard-main">
+      <MobileTabBar
+        items={[
+          { key: 'overview', label: 'Home', Icon: LayoutDashboard },
+          { key: 'courses', label: 'Courses', Icon: BookOpen },
+          { key: 'timetable', label: 'Timetable', Icon: Clock },
+          {
+            key: 'chat', label: 'Chat', Icon: MessageSquare,
+            badge: chatMessages.filter(m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read).length
+          }
+        ]}
+        active={activeTab}
+        onSelect={(key) => { setActiveTab(key); setSidebarOpen(false); }}
+        onMore={() => setSidebarOpen(o => !o)}
+        moreActive={sidebarOpen}
+      />
+
+      <main className="dashboard-main" ref={mainRef}>
 
         {/* Live Whiteboard Session Invite Banner - shown on every tab while active */}
         {liveSessions.length > 0 && liveSessions.map(session => (

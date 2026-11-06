@@ -1,0 +1,324 @@
+/* ==========================================================
+   Dashboards on phones and tablets (admin + student).
+   Loaded after Dashboard.css.
+   ========================================================== */
+
+/* ---------- Buttons that otherwise relied on LandingPage.css ----------
+   Dashboards are lazy-loaded separately, so if someone opened /admin directly these
+   rendered as plain grey browser buttons. */
+.dashboard-container .btn-primary,
+.modal-overlay .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.1rem;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.dashboard-container .btn-primary:hover,
+.modal-overlay .btn-primary:hover { background: var(--accent-dark); }
+.dashboard-container .btn-primary:disabled,
+.modal-overlay .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.dashboard-container .btn-submit,
+.modal-overlay .btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.4rem;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.dashboard-container .btn-submit:disabled,
+.modal-overlay .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.dashboard-container .btn-prev,
+.modal-overlay .btn-prev {
+  padding: 0.7rem 1.4rem;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  color: #4a5568;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+/* ---------- Form fields (same reason: base styles lived in LandingPage.css) ---------- */
+.dashboard-container .form-group,
+.modal-overlay .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.dashboard-container .form-group label,
+.modal-overlay .form-group label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-dark);
+}
+.dashboard-container .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.dashboard-container .form-group select,
+.dashboard-container .form-group textarea,
+.modal-overlay .form-group input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.modal-overlay .form-group select,
+.modal-overlay .form-group textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.85rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--text-dark);
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.dashboard-container .form-group input:focus,
+.dashboard-container .form-group select:focus,
+.dashboard-container .form-group textarea:focus,
+.modal-overlay .form-group input:focus,
+.modal-overlay .form-group select:focus,
+.modal-overlay .form-group textarea:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(242, 122, 36, 0.15);
+  background: white;
+}
+
+/* Row action buttons wrap instead of being cut off at the table edge */
+.dashboard-table .btn-action-group { flex-wrap: wrap; }
+
+/* Bottom tab bar: phones only */
+.mobile-tabbar { display: none; }
+
+@media (max-width: 800px) {
+  /* ---------- Navigation ---------- */
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1700; /* under the drawer + its backdrop */
+    background: white;
+    border-top: 1px solid rgba(15, 44, 89, 0.08);
+    box-shadow: 0 -6px 20px rgba(15, 44, 89, 0.08);
+    padding: 0.3rem 0.25rem calc(0.3rem + env(safe-area-inset-bottom));
+  }
+  .mobile-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.4rem 0.1rem;
+    border: none;
+    background: none;
+    color: #94a3b8;
+    font-family: var(--font-body);
+    cursor: pointer;
+    border-radius: 12px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-tab.is-active { color: var(--primary-color); }
+  .mobile-tab.is-active .mobile-tab-icon { background: rgba(242, 122, 36, 0.14); color: var(--accent-color); }
+  .mobile-tab-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 30px;
+    border-radius: 15px;
+    transition: background 0.2s ease;
+  }
+  .mobile-tab-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-tab-badge {
+    position: absolute;
+    top: -3px;
+    right: 4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: #ef4444;
+    color: white;
+    font-size: 0.62rem;
+    line-height: 17px;
+    text-align: center;
+    border: 2px solid white;
+    box-sizing: content-box;
+  }
+
+  /* The bottom bar replaces the floating menu + unread buttons */
+  .sidebar-toggle-btn,
+  .unread-fab { display: none !important; }
+
+  /* Drawer: scrollable, sits under the site header */
+  .dashboard-sidebar {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)) !important;
+  }
+  .sidebar-item button { min-height: 46px; }
+  .sidebar-item button:hover { transform: none; }
+
+  /* Room for the bottom bar */
+  .dashboard-main {
+    padding: 1rem 0.85rem calc(88px + env(safe-area-inset-bottom)) !important;
+    min-width: 0;
+  }
+
+  /* ---------- Cards & headings ---------- */
+  .dashboard-main .dashboard-card { padding: 1rem; border-radius: 16px; }
+  .dashboard-main .dashboard-card h3 { font-size: 1.05rem; flex-wrap: wrap; gap: 0.5rem; }
+  .dashboard-section-header h2 { font-size: 1.35rem; }
+
+  /* ---------- Stats: tidy 2-column grid instead of overflowing rows ---------- */
+  .dashboard-main .stats-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+    margin-bottom: 1.25rem !important;
+  }
+  .dashboard-main .stat-card {
+    min-width: 0;
+    padding: 0.9rem;
+    gap: 0.7rem;
+    border-radius: 16px;
+  }
+  .dashboard-main .stat-card:hover { transform: none; }
+  .dashboard-main .stat-icon { width: 40px; height: 40px; flex-shrink: 0; }
+  .dashboard-main .stat-info { min-width: 0; }
+  .dashboard-main .stat-value { font-size: 1.3rem; }
+  .dashboard-main .stat-label { font-size: 0.75rem; overflow-wrap: anywhere; }
+
+  .dashboard-main .dashboard-quick-stats {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    overflow: visible !important;
+    gap: 0.65rem !important;
+    padding: 0 !important;
+    margin-bottom: 1.25rem !important;
+  }
+  .dashboard-main .dashboard-quick-stats > * { min-width: 0 !important; width: 100% !important; max-width: none !important; flex: none !important; box-sizing: border-box; }
+  .dashboard-main .dashboard-stat-label { white-space: normal; overflow: visible; line-height: 1.25; }
+
+  /* ---------- Buttons: comfortable to tap ---------- */
+  .dashboard-main .btn-action { min-height: 36px; padding: 0.45rem 0.8rem; }
+  .dashboard-main .btn-action-group { flex-wrap: wrap; }
+
+  /* ---------- Phones: inputs at 16px so iOS doesn't zoom in ---------- */
+  .dashboard-container input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .dashboard-container select,
+  .dashboard-container textarea,
+  .modal-overlay input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .modal-overlay select,
+  .modal-overlay textarea { font-size: 16px !important; }
+}
+
+@media (max-width: 800px) {
+  /* Older screens lay out sections with inline multi-column grids: stack them. */
+  .dashboard-main div[style*="grid-template-columns"]:not([data-keep-grid]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  /* Section headers with a button beside the title: let the button drop below. */
+  .dashboard-main .dashboard-card h3[style*="space-between"] > button,
+  .dashboard-main .dashboard-card h3[style*="space-between"] > .btn-primary { width: 100%; }
+
+  /* ---------- Tables become labelled cards ----------
+     Each cell gets data-label from its column heading (useResponsiveTables). */
+  .dashboard-main .table-container { overflow: visible; border: none; border-radius: 0; }
+  .dashboard-main .dashboard-table,
+  .dashboard-main .dashboard-table tbody,
+  .dashboard-main .dashboard-table tr,
+  .dashboard-main .dashboard-table td { display: block; width: 100%; box-sizing: border-box; }
+  .dashboard-main .dashboard-table { min-width: 0 !important; }
+  .dashboard-main .dashboard-table thead { display: none; }
+  .dashboard-main .dashboard-table tr {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 0.3rem 0.9rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 2px 8px rgba(15, 44, 89, 0.04);
+  }
+  .dashboard-main .dashboard-table tr:hover td { background: transparent; }
+  /* Label floats left; the value (one line or several stacked lines) sits on the right. */
+  .dashboard-main .dashboard-table td {
+    display: block;
+    padding: 0.55rem 0 !important;
+    border-bottom: 1px dashed #edf2f7;
+    text-align: right;
+    max-width: none !important;
+    overflow-wrap: anywhere;
+  }
+  .dashboard-main .dashboard-table td:last-child { border-bottom: none; }
+  .dashboard-main .dashboard-table td::after { content: ''; display: block; clear: both; }
+  .dashboard-main .dashboard-table td::before {
+    content: attr(data-label);
+    float: left;
+    margin-right: 1rem;
+    max-width: 42%;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    padding-top: 0.15rem;
+  }
+  .dashboard-main .dashboard-table td[data-label=""]::before { display: none; }
+  /* First cell is the row's title (name, course...) */
+  .dashboard-main .dashboard-table td:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 1rem;
+    padding-top: 0.75rem !important;
+  }
+  .dashboard-main .dashboard-table td:first-child::before { display: none; }
+  /* Action cells: full-width buttons */
+  .dashboard-main .dashboard-table td[data-label="Actions"],
+  .dashboard-main .dashboard-table td[data-label="Action"] {
+    display: block;
+    text-align: left;
+    padding-bottom: 0.75rem !important;
+  }
+  .dashboard-main .dashboard-table td[data-label="Actions"]::before,
+  .dashboard-main .dashboard-table td[data-label="Action"]::before { display: none; }
+  .dashboard-main .dashboard-table td[data-label="Actions"] > *,
+  .dashboard-main .dashboard-table td[data-label="Action"] > * { display: flex !important; flex-wrap: wrap; gap: 0.5rem !important; }
+  .dashboard-main .dashboard-table td[data-label="Actions"] .btn-action,
+  .dashboard-main .dashboard-table td[data-label="Action"] .btn-action,
+  .dashboard-main .dashboard-table td[data-label="Actions"] > .btn-action,
+  .dashboard-main .dashboard-table td[data-label="Action"] > .btn-action { flex: 1 1 auto; justify-content: center; }
+}
