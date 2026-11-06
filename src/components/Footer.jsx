@@ -1,20 +1,18 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function Footer() {
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleNavClick = (sectionId) => {
-    const el = document.getElementById(sectionId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    } else {
-      navigate('/');
-      setTimeout(() => {
-        const target = document.getElementById(sectionId);
-        if (target) target.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
+  // Navigate to a landing-page section; LandingPage scrolls to state.scrollTo once mounted
+  // (it may still be lazy-loading when coming from another route).
+  const handleNavClick = (sectionId, extraState = {}) => {
+    const onLanding = location.pathname === '/';
+    navigate(
+      { pathname: '/', search: onLanding ? location.search : '' },
+      { replace: onLanding, state: { scrollTo: sectionId, ...extraState } }
+    );
   };
 
   return (
@@ -42,8 +40,8 @@ export default function Footer() {
           <h3>Company</h3>
           <ul>
             <li><a onClick={() => handleNavClick('about')}>About</a></li>
-            <li><a onClick={() => alert('FoundaXia Careers - Coming Soon!')}>Careers</a></li>
-            <li><a onClick={() => alert('Apply to become a tutor! Contact us at support@foundaxia.com')}>Become a Tutor</a></li>
+            <li><a onClick={() => handleNavClick('contact', { contactSubject: 'careers' })}>Careers</a></li>
+            <li><a onClick={() => handleNavClick('contact', { contactSubject: 'tutor_application' })}>Become a Tutor</a></li>
             <li><a onClick={() => handleNavClick('contact')}>Contact</a></li>
           </ul>
         </div>
@@ -53,9 +51,8 @@ export default function Footer() {
           <h3>For Families</h3>
           <ul>
             <li><a onClick={() => handleNavClick('how-it-works')}>How It Works</a></li>
-            <li><a onClick={() => handleNavClick('courses')}>Pricing</a></li>
+            <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
             <li><a onClick={() => handleNavClick('faq')}>FAQs</a></li>
-            <li><a onClick={() => alert('Parent Guides coming soon!')}>Parent Guides</a></li>
           </ul>
         </div>
 
@@ -72,15 +69,6 @@ export default function Footer() {
           </ul>
         </div>
 
-        {/* Legal Column */}
-        <div className="footer-section">
-          <h3>Legal</h3>
-          <ul>
-            <li><a onClick={() => alert('Terms of Use')}>Terms of Use</a></li>
-            <li><a onClick={() => alert('Privacy Policy')}>Privacy Policy</a></li>
-            <li><a onClick={() => alert('Community Guidelines')}>Community Guidelines</a></li>
-          </ul>
-        </div>
       </div>
       
       <div className="footer-bottom" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', padding: '1.5rem 2rem', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.85rem' }}>

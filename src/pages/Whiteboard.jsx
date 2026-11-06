@@ -1,8 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ZoomIn, ZoomOut, Maximize, Trash2, ChevronLeft, ChevronRight, ChevronDown, Image as ImageIcon, MonitorPlay } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { supabase, hasSupabaseConfig } from '../supabaseClient';
 import { getMaterials, getCourseTutors, endLiveSession } from '../services/dataService';
+import {
+  claimWhiteboardHost,
+  uploadWhiteboardImage,
+  isAllowedImageSrc,
+  isTrustedRemoteUrl,
+  mainChannelTopic,
+  hostChannelTopic,
+  ensureWhiteboardIdentity,
+  isAuthUid,
+  setDrawAccess,
+  listDrawGrants,
+  postWhiteboardEvent,
+  RELAY_MAX_CHARS
+} from '../services/whiteboardAuth';
 import '../styles/Whiteboard.css';
 
 // â”€â”€ Whiteboard Sub-Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -14,9 +28,157 @@ import CollaborationSidebar from '../components/whiteboard/CollaborationSidebar'
 import ParticipantStrip from '../components/whiteboard/ParticipantStrip';
 import NameModal from '../components/whiteboard/NameModal';
 import WipeBoardModal from '../components/whiteboard/WipeBoardModal';
+import BoardErrorBoundary from '../components/whiteboard/BoardErrorBoundary';
 import { AVATAR_COLORS, generateRandomName } from '../components/whiteboard/constants';
 
-export default function Whiteboard({ user }) {
+// ── Realtime transport limits ─────────────────────────────────────────────────
+// Supabase Realtime rejects broadcast messages above its payload limit (256KB on the
+// free plan), so anything bigger is split into 'chunk' messages and reassembled.
+const CHUNK_SIZE = 60000;          // characters of JSON per chunk message
+const MAX_CHUNKS = 300;            // ~18MB per logical message, hard cap
+const CHUNK_PACING_MS = 40;        // stay well under the per-client message rate limit
+const CHUNK_TTL_MS = 60000;        // drop partially received messages after a minute
+const MAX_PENDING_CHUNKED = 20;    // concurrent partial messages kept per client
+const MAX_BUFFERED_CHARS = 40000000; // total partial-message data held at once (~40MB)
+
+// ── Payload validation ─────────────────────────────────────────────────────────
+// Everything arriving over the network (and anything loaded from localStorage) goes
+// through these before it touches state, so a malformed or hostile payload is dropped
+// instead of crashing every renderer.
+const MAX_ELEMENTS = 5000;
+const MAX_POINTS = 20000;
+const ELEMENT_TYPES = new Set(['stroke', 'shape', 'text', 'image']);
+const SHAPE_TYPES = new Set(['rectangle', 'circle', 'line', 'arrow']);
+const FILL_MODES = new Set(['none', 'semi', 'solid']);
+const isFiniteNum = (n) => typeof n === 'number' && Number.isFinite(n);
+const clampNum = (n, min, max) => Math.min(max, Math.max(min, n));
+const isShortId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 100;
+const safeColor = (c) => (typeof c === 'string' && c.length <= 64 ? c : '#6366f1');
+
+const sanitizePoint = (p) => (
+  p && typeof p === 'object' && isFiniteNum(p.x) && isFiniteNum(p.y)
+    ? { x: p.x, y: p.y, pressure: isFiniteNum(p.pressure) ? clampNum(p.pressure, 0, 1) : 0.5 }
+    : null
+);
+
+const sanitizePoints = (pts) => (Array.isArray(pts) ? pts.slice(0, MAX_POINTS).map(sanitizePoint).filter(Boolean) : null);
+
+const sanitizeElement = (el) => {
+  if (!el || typeof el !== 'object' || !ELEMENT_TYPES.has(el.type)) return null;
+  if (!(isShortId(el.id) || isFiniteNum(el.id))) return null;
+  const base = { id: String(el.id), type: el.type, color: safeColor(el.color) };
+  if (el.isHighlighter === true) base.isHighlighter = true;
+  if (el.locked === true) base.locked = true;
+  const width = isFiniteNum(el.width) ? clampNum(el.width, 0.5, 400) : 4;
+  switch (el.type) {
+    case 'stroke': {
+      const points = sanitizePoints(el.points);
+      if (!points || points.length === 0) return null;
+      return { ...base, points, width };
+    }
+    case 'shape':
+      if (!SHAPE_TYPES.has(el.shapeType) || ![el.x1, el.y1, el.x2, el.y2].every(isFiniteNum)) return null;
+      return {
+        ...base, shapeType: el.shapeType, x1: el.x1, y1: el.y1, x2: el.x2, y2: el.y2,
+        width, fill: FILL_MODES.has(el.fill) ? el.fill : 'none'
+      };
+    case 'text':
+      if (typeof el.text !== 'string' || !isFiniteNum(el.x) || !isFiniteNum(el.y)) return null;
+      return {
+        ...base, x: el.x, y: el.y, text: el.text.slice(0, 5000),
+        fontSize: isFiniteNum(el.fontSize) ? clampNum(el.fontSize, 4, 400) : 24
+      };
+    case 'image':
+      if (!isAllowedImageSrc(el.src) || ![el.x, el.y, el.width, el.height].every(isFiniteNum)) return null;
+      return { ...base, src: el.src, x: el.x, y: el.y, width: el.width, height: el.height };
+    default:
+      return null;
+  }
+};
+
+const sanitizeElements = (arr) => (
+  Array.isArray(arr) ? arr.slice(0, MAX_ELEMENTS).map(sanitizeElement).filter(Boolean) : null
+);
+
+const sanitizeSlideUrl = (u) => (typeof u === 'string' && isTrustedRemoteUrl(u) ? u : null);
+
+// The wire form of a page: no undo/redo history (it's local-only and can be many
+// times the size of the page itself).
+const toWirePage = (p, elementsOverride) => ({
+  id: String(p?.id ?? 'page-1'),
+  elements: elementsOverride || p?.elements || [],
+  slideUrl: p?.slideUrl || null
+});
+
+// Participant edits go through the relay (api/wb-event.js), whose payload cap is ~200KB,
+// so their wire form rounds stroke coordinates (sub-pixel precision is invisible anyway).
+const round2 = (n) => Math.round(n * 100) / 100;
+const toWireElement = (el) => (
+  el && el.type === 'stroke' && Array.isArray(el.points)
+    ? { ...el, points: el.points.map(p => ({ x: round2(p.x), y: round2(p.y), pressure: round2(isFiniteNum(p.pressure) ? p.pressure : 0.5) })) }
+    : el
+);
+
+// What changed between two element lists: ids that disappeared, and elements that are
+// new or were replaced (the editor always creates a new object for a modified element).
+const diffElements = (before, after) => {
+  const beforeById = new Map((before || []).map(e => [String(e.id), e]));
+  const afterIds = new Set();
+  const upsert = [];
+  (after || []).forEach(e => {
+    const id = String(e.id);
+    afterIds.add(id);
+    if (beforeById.get(id) !== e) upsert.push(e);
+  });
+  const remove = [...beforeById.keys()].filter(id => !afterIds.has(id));
+  return { remove, upsert };
+};
+
+// Previews of other participants' in-progress strokes (public channel, unauthenticated)
+// are dropped when idle or too old, so a forged preview can never stick on screen.
+const PREVIEW_IDLE_MS = 2500;
+const PREVIEW_MAX_AGE_MS = 60000;
+const ICE_BATCH_MS = 150;            // ICE candidates are batched per peer before relaying
+const MAX_QUEUED_ICE = 100;
+
+// Downscale an image data URL before sharing it (max 1280px by default, JPEG unless PNG
+// is needed for transparency). Resolves to the original on any decode failure.
+const compressImageDataUrl = (dataUrl, preferPng = false, maxDim = 1280, quality = 0.8) => new Promise((resolve) => {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const MAX_DIM = maxDim;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const scale = MAX_DIM / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(preferPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality));
+    } catch {
+      resolve(dataUrl);
+    }
+  };
+  img.onerror = () => resolve(dataUrl);
+  img.src = dataUrl;
+});
+
+const estTextHeight = (el) => (isFiniteNum(el.fontSize) ? el.fontSize : 24);
+const estTextWidth = (el) => (typeof el.text === 'string' ? el.text.length : 0) * (estTextHeight(el) * 0.55);
+
+export default function Whiteboard(props) {
+  return (
+    <BoardErrorBoundary>
+      <WhiteboardBoard {...props} />
+    </BoardErrorBoundary>
+  );
+}
+
+function WhiteboardBoard({ user }) {
   const navigate = useNavigate();
 
   // Collaboration States
@@ -33,6 +195,9 @@ export default function Whiteboard({ user }) {
   const [isHandRaised, setIsHandRaised] = useState(false);
 
   // Connection & Media Refs
+  // Participant id. With Supabase this becomes the auth uid (real or anonymous sign-in)
+  // as soon as startCollaboration has an identity; the random id below is only used in
+  // mock mode and for view-only guests who could not get an identity.
   const localUserId = useRef((() => {
     const params = new URLSearchParams(window.location.search);
     const room = params.get('room') || 'default-room';
@@ -60,6 +225,43 @@ export default function Whiteboard({ user }) {
   const handleBroadcastEventRef = useRef(null);
   const presenceSyncHandlerRef = useRef(null);
   const pointsSentCountRef = useRef(0);
+
+  // ── Session authority ──
+  // hostChannelRef is the PRIVATE channel 'room-<id>-host': RLS (enable_realtime_auth.sql)
+  // only lets the session's tutor/admin broadcast on it, so anything received there is
+  // genuinely from the host. Host-only events arriving on the public channel are ignored.
+  const hostChannelRef = useRef(null);
+  const isHostRef = useRef(false);
+  const grantedRef = useRef(new Set());       // auth uids with draw access (public.wb_draw_grants, announced by the host)
+  const trustedHostIdRef = useRef(null);      // host's userId as announced on the host channel
+  const channelStatusRef = useRef({ main: false, host: false });
+  const sendQueuesRef = useRef({ main: Promise.resolve(), host: Promise.resolve() });
+  const chunkBuffersRef = useRef({});
+  const mountedRef = useRef(false);
+  const collabStartingRef = useRef(false);
+  const startTokenRef = useRef(0);
+  const hostChannelErrorShownRef = useRef(false);
+  const lastStateRequestRef = useRef(0);
+  const pendingStateRequestersRef = useRef(new Set());
+  const stateResponseTimerRef = useRef(null);
+  const lastStateResponseRef = useRef(0);
+  const lastHandRaiseRef = useRef({});
+  const toastTimerRef = useRef(null);
+  const miscTimersRef = useRef([]);
+  const presenceRef = useRef({ userName: '', hasDrawAccess: false, isMicOn: false, isVideoOn: false, handRaised: false });
+  const editingHiddenIdRef = useRef(null);    // id of the text element currently being edited (not drawn underneath the textarea)
+  const textCommitTokenRef = useRef(null);
+  const imageFailedRef = useRef(new Set());   // image srcs that failed to load - never refetched every redraw
+  const localAnalyserStreamRef = useRef(null);
+  // Identity / relay (wb_guest_identity.sql, api/wb-event.js)
+  const canRelayRef = useRef(false);          // we have an auth uid + JWT, so /api/wb-event will accept us
+  const roomIdRef = useRef(null);
+  const relayQueuesRef = useRef({ board: Promise.resolve(), signal: Promise.resolve() });
+  const lastRelayToastRef = useRef(0);
+  const iceOutboxRef = useRef({});            // { peerId: { cands: [], timer } }
+  const previewSweepRef = useRef(null);
+  const pendingSignalsRef = useRef({});       // { senderId: [{ event, payload, t }] } signaling held until the sender is present
+  const [identityNotice, setIdentityNotice] = useState('');
 
   // Video call states
   const [isVideoOn, setIsVideoOn] = useState(false);
@@ -128,13 +330,27 @@ export default function Whiteboard({ user }) {
   const loadPersistedPages = () => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY());
-      if (raw) return JSON.parse(raw);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.slice(0, 1000).map((p, i) => ({
+          id: isShortId(p?.id) ? p.id : `page-${i + 1}`,
+          elements: sanitizeElements(p?.elements) || [],
+          slideUrl: typeof p?.slideUrl === 'string' ? p.slideUrl : null,
+          undoStack: [],
+          redoStack: []
+        }));
+      }
     } catch (_) {}
     return [{ id: 'page-1', elements: [], undoStack: [], redoStack: [] }];
   };
 
   const [pages, setPages] = useState(loadPersistedPages);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  // Latest-value mirrors for realtime callbacks (subscribe/reconnect handlers outlive renders)
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  const currentPageIndexRef = useRef(currentPageIndex);
+  currentPageIndexRef.current = currentPageIndex;
 
   // HTML Teaching Slide attached to the current page (live behind the drawing canvas)
   const currentSlideUrl = pages[currentPageIndex]?.slideUrl || null;
@@ -147,8 +363,8 @@ export default function Whiteboard({ user }) {
   // in the session, the same way page navigation and drawing already sync live.
   const [remoteSlideGoto, setRemoteSlideGoto] = useState(null); // { index, nonce }
   const handleSlideNavigate = (index) => {
-    if (isHost && channelRef.current) {
-      channelRef.current.send({ type: 'broadcast', event: 'slide-nav', payload: { index } });
+    if (isHost && Number.isInteger(index)) {
+      sendOn('host', 'slide-nav', { index });
     }
   };
 
@@ -180,14 +396,22 @@ export default function Whiteboard({ user }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHost]);
 
+  // Host-only: tell everyone which page is showing. Only the target page's content is
+  // sent (plus the ordered page ids), never the whole deck or any undo/redo history -
+  // participants only ever display the current page, and each navigation delivers it.
+  const broadcastPageChange = (pagesArr, pageIndex, elementsOverride) => {
+    if (!isCollaborating || !isHost) return;
+    const page = pagesArr[pageIndex];
+    if (!page) return;
+    sendOn('host', 'page-change', {
+      pageIndex,
+      pageIds: pagesArr.map(p => String(p.id)),
+      page: toWirePage(page, elementsOverride)
+    });
+  };
+
   const broadcastPagesUpdate = (updatedPages) => {
-    if (isCollaborating && isHost && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'page-change',
-        payload: { pages: updatedPages, pageIndex: currentPageIndex }
-      });
-    }
+    broadcastPageChange(updatedPages, currentPageIndex, elements);
   };
 
   const attachSlideToCurrentPage = (material) => {
@@ -195,6 +419,9 @@ export default function Whiteboard({ user }) {
     updatedPages[currentPageIndex] = { ...updatedPages[currentPageIndex], slideUrl: material.file_url };
     setPages(updatedPages);
     setShowSlidePicker(false);
+    if (hasSupabaseConfig && !sanitizeSlideUrl(material.file_url)) {
+      triggerToast('This slide is stored inline and cannot be shared live. Re-upload it to share with students.');
+    }
     broadcastPagesUpdate(updatedPages);
   };
 
@@ -240,7 +467,8 @@ export default function Whiteboard({ user }) {
   useEffect(() => {
     try {
       // Strip undo/redo stacks from storage to keep payload small
-      const toStore = pages.map(p => ({ id: p.id, elements: p.elements }));
+      // (slideUrl is kept so a host refresh doesn't silently drop the attached slide)
+      const toStore = pages.map(p => ({ id: p.id, elements: p.elements, slideUrl: p.slideUrl || null }));
       localStorage.setItem(STORAGE_KEY(), JSON.stringify(toStore));
     } catch (_) {}
   }, [pages]);
@@ -335,133 +563,447 @@ export default function Whiteboard({ user }) {
   const [toastMessage, setToastMessage] = useState('');
   const triggerToast = (msg) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3000);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      toastTimerRef.current = null;
+      setToastMessage('');
+    }, 3000);
+  };
+
+  // ── Realtime transport ────────────────────────────────────────────────────
+  // All outgoing broadcasts go through sendOn(): per-channel FIFO queue (so a large
+  // chunked message can't be overtaken by a later small one), and automatic chunking
+  // of anything over CHUNK_SIZE so big boards never exceed Realtime's payload limit.
+  const sendOn = (kind, event, payload) => {
+    const channel = kind === 'host' ? hostChannelRef.current : channelRef.current;
+    if (!channel) return;
+    let json;
+    try {
+      json = JSON.stringify(payload ?? {});
+    } catch (_) {
+      return;
+    }
+    const queues = sendQueuesRef.current;
+    if (json.length <= CHUNK_SIZE) {
+      queues[kind] = queues[kind].then(() => {
+        try {
+          const res = channel.send({ type: 'broadcast', event, payload });
+          if (res && typeof res.catch === 'function') res.catch(() => {});
+        } catch (_) {}
+      });
+      return;
+    }
+    const total = Math.ceil(json.length / CHUNK_SIZE);
+    if (total > MAX_CHUNKS) {
+      console.warn(`Whiteboard: '${event}' payload too large to sync (${json.length} chars).`);
+      triggerToast('This board is too large to sync live. Try removing some images.');
+      return;
+    }
+    const msgId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    queues[kind] = queues[kind].then(async () => {
+      for (let i = 0; i < total; i++) {
+        const current = kind === 'host' ? hostChannelRef.current : channelRef.current;
+        if (current !== channel) return; // channel was torn down / replaced mid-send
+        try {
+          const res = channel.send({
+            type: 'broadcast',
+            event: 'chunk',
+            payload: { id: msgId, ev: event, i, n: total, d: json.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }
+          });
+          if (res && typeof res.catch === 'function') res.catch(() => {});
+        } catch (_) {}
+        await new Promise(resolve => setTimeout(resolve, CHUNK_PACING_MS));
+      }
+    }).catch(() => {});
+  };
+
+  // ── Relay (api/wb-event.js) ──
+  // Participants can't write to the private channel, and nothing they send on the public
+  // one can be attributed, so their committed edits and call signaling are POSTed to the
+  // relay, which checks the grant, stamps senderId = their auth uid and re-broadcasts on
+  // the private channel. One FIFO per lane keeps each lane's messages in order.
+  const relayToast = (msg) => {
+    const now = Date.now();
+    if (now - lastRelayToastRef.current < 5000) return;
+    lastRelayToastRef.current = now;
+    triggerToast(msg);
+  };
+
+  const relaySend = (lane, event, payload) => {
+    const room = roomIdRef.current;
+    if (!room || !canRelayRef.current) return;
+    let size;
+    try {
+      size = JSON.stringify(payload).length;
+    } catch {
+      return;
+    }
+    if (size > RELAY_MAX_CHARS) {
+      if (lane === 'board') relayToast('That change is too large to share live (try a smaller image).');
+      return;
+    }
+    const queues = relayQueuesRef.current;
+    queues[lane] = queues[lane].then(async () => {
+      if (roomIdRef.current !== room) return;
+      const res = await postWhiteboardEvent(room, event, payload);
+      if (res.ok || !mountedRef.current) return;
+      console.warn(`Whiteboard: relay rejected '${event}' (${res.status}): ${res.error}`);
+      if (lane !== 'board') return;
+      if (res.status === 403) relayToast('Your drawing access was revoked - that change was not shared.');
+      else if (res.status === 413) relayToast('That change is too large to share live (try a smaller image).');
+      else relayToast('Could not share your last change. Check your connection.');
+    }).catch(() => {});
+  };
+
+  // Committed board edits. The host writes straight to the private channel (RLS lets it);
+  // everyone else goes through the relay. Either way receivers see a senderId.
+  const sendBoardEvent = (event, payload) => {
+    if (isHostRef.current) {
+      sendOn('host', event, { ...payload, senderId: localUserId.current });
+    } else {
+      relaySend('board', event, payload);
+    }
+  };
+
+  // WebRTC signaling: same split as board edits, so the sender id is never forgeable.
+  const sendSignal = (event, payload) => {
+    if (isHostRef.current) {
+      sendOn('host', event, { ...payload, senderId: localUserId.current });
+    } else {
+      relaySend('signal', event, payload);
+    }
+  };
+
+  // Batch a peer's ICE candidates (they arrive in bursts) into one relayed message.
+  // `cand` null = end of candidates: flush now.
+  const queueIceCandidate = (peerId, cand) => {
+    const outbox = iceOutboxRef.current;
+    const box = outbox[peerId] || (outbox[peerId] = { cands: [], timer: null });
+    if (cand) {
+      try {
+        box.cands.push(typeof cand.toJSON === 'function' ? cand.toJSON() : cand);
+      } catch { /* unserializable candidate: skip */ }
+    }
+    const flush = () => {
+      if (box.timer) clearTimeout(box.timer);
+      box.timer = null;
+      while (box.cands.length > 0) {
+        sendSignal('webrtc-ice', { targetUserId: peerId, candidates: box.cands.splice(0, 50) });
+      }
+    };
+    if (!cand) {
+      flush();
+    } else if (!box.timer) {
+      box.timer = setTimeout(flush, ICE_BATCH_MS);
+    }
+  };
+
+  const dropIceOutbox = (peerId) => {
+    const box = iceOutboxRef.current[peerId];
+    if (box?.timer) clearTimeout(box.timer);
+    delete iceOutboxRef.current[peerId];
+  };
+
+  const handleChunk = (payload, kind) => {
+    const { id, ev, i, n, d } = payload;
+    if (typeof id !== 'string' || id.length > 64 || typeof ev !== 'string' || ev === 'chunk' || ev.length > 64) return;
+    if (!Number.isInteger(n) || n < 1 || n > MAX_CHUNKS || !Number.isInteger(i) || i < 0 || i >= n) return;
+    if (typeof d !== 'string' || d.length > CHUNK_SIZE) return;
+    const buffers = chunkBuffersRef.current;
+    const now = Date.now();
+    Object.keys(buffers).forEach(k => {
+      if (now - buffers[k].t > CHUNK_TTL_MS) delete buffers[k];
+    });
+    const key = `${kind}:${id}`;
+    let buf = buffers[key];
+    if (!buf) {
+      if (Object.keys(buffers).length >= MAX_PENDING_CHUNKED) return;
+      buf = buffers[key] = { t: now, ev, n, parts: new Array(n), got: 0, size: 0 };
+    }
+    if (buf.ev !== ev || buf.n !== n) return;
+    if (buf.parts[i] === undefined) {
+      const buffered = Object.values(buffers).reduce((sum, b) => sum + b.size, 0);
+      if (buffered + d.length > MAX_BUFFERED_CHARS) {
+        delete buffers[key]; // refuse to let chunk floods exhaust memory
+        return;
+      }
+      buf.parts[i] = d;
+      buf.size += d.length;
+      buf.got += 1;
+    }
+    if (buf.got === n) {
+      delete buffers[key];
+      let full;
+      try {
+        full = JSON.parse(buf.parts.join(''));
+      } catch (_) {
+        return;
+      }
+      dispatchIncoming(ev, full, kind);
+    }
+  };
+
+  const dispatchIncoming = (event, payload, kind) => {
+    if (typeof event !== 'string' || !payload || typeof payload !== 'object' || Array.isArray(payload)) return;
+    if (event === 'chunk') {
+      handleChunk(payload, kind);
+      return;
+    }
+    if (handleBroadcastEventRef.current) {
+      handleBroadcastEventRef.current(event, payload, kind === 'host');
+    }
+  };
+
+  // Current page snapshot for late joiners, built from refs so it is never stale.
+  const buildBoardSnapshot = () => {
+    const pagesNow = pagesRef.current;
+    const idx = Math.min(Math.max(0, currentPageIndexRef.current), Math.max(0, pagesNow.length - 1));
+    return {
+      pageIndex: idx,
+      pageIds: pagesNow.map(p => String(p.id)),
+      page: toWirePage(pagesNow[idx], elementsRef.current)
+    };
+  };
+
+  const broadcastBoardState = (targetUserIds) => {
+    if (!isHostRef.current) return;
+    lastStateResponseRef.current = Date.now();
+    sendOn('host', 'board-state-response', {
+      targetUserIds,
+      ...buildBoardSnapshot(),
+      granted: [...grantedRef.current],
+      hostUserId: localUserId.current
+    });
+  };
+
+  // Coalesce join requests so a burst of (possibly hostile) request-board-state messages
+  // can't make the host flood the room with snapshots.
+  const queueBoardStateResponse = (requesterId) => {
+    pendingStateRequestersRef.current.add(requesterId);
+    if (stateResponseTimerRef.current) return;
+    const wait = Math.max(250, 1000 - (Date.now() - lastStateResponseRef.current));
+    stateResponseTimerRef.current = setTimeout(() => {
+      stateResponseTimerRef.current = null;
+      const targets = [...pendingStateRequestersRef.current];
+      pendingStateRequestersRef.current = new Set();
+      if (targets.length === 0) return;
+      broadcastBoardState(targets.length > 20 ? ['all'] : targets);
+    }, wait);
+  };
+
+  const maybeRequestBoardState = () => {
+    if (isHostRef.current) return;
+    const status = channelStatusRef.current;
+    if (!status.main || !status.host) return; // the response arrives on the host channel - wait until both are joined
+    const now = Date.now();
+    if (now - lastStateRequestRef.current < 1000) return;
+    lastStateRequestRef.current = now;
+    sendOn('main', 'request-board-state', { senderUserId: localUserId.current });
+  };
+
+  const teardownChannels = () => {
+    const main = channelRef.current;
+    const host = hostChannelRef.current;
+    channelRef.current = null;
+    hostChannelRef.current = null;
+    channelStatusRef.current = { main: false, host: false };
+    chunkBuffersRef.current = {};
+    sendQueuesRef.current = { main: Promise.resolve(), host: Promise.resolve() };
+    relayQueuesRef.current = { board: Promise.resolve(), signal: Promise.resolve() };
+    Object.keys(iceOutboxRef.current).forEach(dropIceOutbox);
+    pendingSignalsRef.current = {};
+    if (previewSweepRef.current) {
+      clearInterval(previewSweepRef.current);
+      previewSweepRef.current = null;
+    }
+    if (stateResponseTimerRef.current) {
+      clearTimeout(stateResponseTimerRef.current);
+      stateResponseTimerRef.current = null;
+    }
+    if (supabase) {
+      [main, host].forEach(ch => {
+        if (!ch) return;
+        try {
+          supabase.removeChannel(ch).catch(() => {});
+        } catch (_) {}
+      });
+    }
   };
 
   // Host-only: end the session for everyone, remove the join link from invited
   // students' dashboards, and boot any currently-connected participants out.
+  // This is the ONLY place the live_sessions row is deleted from the whiteboard (a page
+  // reload also fires pagehide, so deleting there killed the session on every refresh;
+  // abandoned rows expire via getLiveSessionsForStudent's 4h age check instead).
   const handleEndSession = async () => {
     if (!window.confirm('End this session for everyone?')) return;
     try {
       await endLiveSession(roomId);
     } catch (_) {
-      // Non-fatal: an ad-hoc room (no matching live_sessions row) is a harmless no-op.
+      // Non-fatal: RLS only lets the real host delete the row; nothing else to do here.
     }
-    if (channelRef.current) {
-      channelRef.current.send({ type: 'broadcast', event: 'session-ended', payload: {} });
+    const hostChannel = hostChannelRef.current;
+    if (hostChannel) {
+      try {
+        await Promise.race([
+          hostChannel.send({ type: 'broadcast', event: 'session-ended', payload: { senderId: localUserId.current } }),
+          new Promise(resolve => setTimeout(resolve, 1500))
+        ]);
+      } catch (_) {}
     }
     navigate(user?.role === 'admin' ? '/admin' : '/tutor');
   };
 
-  // Best-effort cleanup if the host just closes the tab instead of clicking "End Session" -
-  // without this, the live_sessions row (and the student's join banner) would never go away
-  // on its own. A normal supabase-js call made during page teardown gets cancelled before it
-  // completes, so this fires a raw fetch with keepalive: true, which browsers guarantee is
-  // allowed to finish even after the page starts unloading. This is a safety net on top of
-  // the explicit End Session flow, not a replacement for it - and getLiveSessionsForStudent's
-  // own age-based expiry covers the rest (tab killed outright, offline, etc.).
+  // Full teardown on unmount (separate from the join effect below so the StrictMode
+  // mount/unmount/mount cycle and `user` re-renders can't leak channels, streams,
+  // animation frames or AudioContexts).
   useEffect(() => {
-    if (!isHost || !roomId) return;
-    const cleanup = () => {
-      const url = import.meta.env.VITE_SUPABASE_URL;
-      const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      if (!url || !key) return;
-      try {
-        fetch(`${url}/rest/v1/live_sessions?id=eq.${encodeURIComponent(roomId)}`, {
-          method: 'DELETE',
-          headers: { apikey: key, Authorization: `Bearer ${key}` },
-          keepalive: true
-        });
-      } catch (_) {}
-    };
-    window.addEventListener('pagehide', cleanup);
-    return () => window.removeEventListener('pagehide', cleanup);
-  }, [isHost, roomId]);
-
-  // On mount: check room ID, join collaboration automatically if URL link exists.
-  // Guarded to run at most once: this effect has been observed firing twice in both dev
-  // and production (not just StrictMode), and Supabase's realtime client dedupes channels
-  // by topic name - a second `supabase.channel('room-X')` call for the same room reuses
-  // the already-subscribed instance, so `channel.on(...)` throws on the second attempt and
-  // silently corrupts that invocation's own listener setup (broadcast events like
-  // board-state-response/page-change then never reach that client).
-  useEffect(() => {
-    if (collaborationStartedRef.current) return;
-    collaborationStartedRef.current = true;
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
-    
-    // Deterministic Host Role check: a client is the host if they are the room creator and not a student
-    const isRoomCreator = !roomParam || sessionStorage.getItem(`wb-host-${roomParam}`) === 'true';
-    const clientIsHost = isRoomCreator && !(user && user.role === 'student');
-
-    if (roomParam && !clientIsHost) {
-      // Guest joining via shared link
-      setRoomId(roomParam);
-      setIsHost(false);
-      setHasDrawAccess(false);
-      
-      const storedName = localStorage.getItem(`wb-name-${roomParam}`);
-      if (user && user.full_name) {
-        // Logged-in student: auto-join immediately with their name!
-        setTimeout(() => {
-          startCollaboration(roomParam, user.full_name, false);
-        }, 100);
-      } else if (storedName) {
-        // Guest who already filled out their name before refresh: auto-join!
-        setTimeout(() => {
-          startCollaboration(roomParam, storedName, false);
-        }, 100);
-      } else {
-        // Anonymous guest: ask for name in modal
-        setShowNameModal(true);
-      }
-    } else {
-      // Host: auto-join the room immediately
-      const activeRoom = roomParam || 'room-' + Math.random().toString(36).substr(2, 9);
-      sessionStorage.setItem(`wb-host-${activeRoom}`, 'true');
-      
-      let defaultName = 'Tutor';
-      if (user) {
-        if (user.role === 'admin') {
-          defaultName = user.full_name || 'Admin';
-        } else if (user.role === 'tutor') {
-          defaultName = user.full_name || 'Tutor';
-        } else if (user.full_name) {
-          defaultName = user.full_name;
-        }
-      }
-
-      // Use setTimeout to allow supabase import to settle before subscribing
-      setTimeout(() => {
-        startCollaboration(activeRoom, defaultName, true);
-      }, 100);
-    }
-
+    mountedRef.current = true;
     return () => {
-      // Cleanup WebRTC and Supabase channel on unmount
+      mountedRef.current = false;
+      startTokenRef.current += 1; // abort any startCollaboration still awaiting
       closeAllPeerConnections();
       stopLocalStream();
-      if (channelRef.current) {
-        channelRef.current.unsubscribe();
+      if (levelRafRef.current) {
+        cancelAnimationFrame(levelRafRef.current);
+        levelRafRef.current = null;
+      }
+      if (laserAnimationRef.current) {
+        cancelAnimationFrame(laserAnimationRef.current);
+        laserAnimationRef.current = null;
+      }
+      disconnectLocalAnalyser();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(() => {});
+      }
+      audioCtxRef.current = null;
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+      miscTimersRef.current.forEach(clearTimeout);
+      miscTimersRef.current = [];
+      teardownChannels();
+      collaborationStartedRef.current = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On mount: check room ID, join collaboration automatically if URL link exists.
+  // Guarded so the join runs once: Supabase's realtime client dedupes channels by topic,
+  // so a second join for the same room while the first is still subscribed would reuse
+  // (and corrupt) that channel. The guard is released again if this effect is cleaned up
+  // before anything was actually started (StrictMode's immediate mount/unmount/mount, or
+  // `user` loading while the host check is still in flight), so the next run can start.
+  useEffect(() => {
+    if (collaborationStartedRef.current) return undefined;
+    collaborationStartedRef.current = true;
+    let cancelled = false;
+    const timers = [];
+    const schedule = (fn) => {
+      timers.push(setTimeout(() => {
+        if (!cancelled) fn();
+      }, 100));
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const roomParam = params.get('room');
+    const legacyIsHost = () =>
+      (!roomParam || sessionStorage.getItem(`wb-host-${roomParam}`) === 'true') && !(user && user.role === 'student');
+
+    (async () => {
+      // Host status comes from the database (auth user == live_sessions.tutor_id), not
+      // sessionStorage. A page without ?room is a brand-new board (route is tutor/admin
+      // only); startCollaboration registers it as an ad-hoc room.
+      let clientIsHost;
+      if (!roomParam) {
+        clientIsHost = true;
+      } else if (!hasSupabaseConfig) {
+        clientIsHost = legacyIsHost(); // mock mode: no collaboration, UI only
+      } else {
+        const { isHost: dbIsHost, error } = await claimWhiteboardHost(roomParam);
+        if (error) {
+          // UI-only fallback (e.g. enable_realtime_auth.sql not run yet). It grants no
+          // power: host events are only accepted from the RLS-protected host channel.
+          console.error('Whiteboard: host check failed, falling back to local role check:', error);
+          clientIsHost = legacyIsHost();
+        } else {
+          clientIsHost = dbIsHost;
+        }
+      }
+      if (cancelled) return;
+
+      if (roomParam && !clientIsHost) {
+        // Guest joining via shared link
+        setRoomId(roomParam);
+        setIsHost(false);
+        isHostRef.current = false;
+        setHasDrawAccess(false);
+
+        const storedName = localStorage.getItem(`wb-name-${roomParam}`);
+        if (user && user.full_name) {
+          // Logged-in student: auto-join immediately with their name!
+          schedule(() => startCollaboration(roomParam, user.full_name, false));
+        } else if (storedName) {
+          // Guest who already filled out their name before refresh: auto-join!
+          schedule(() => startCollaboration(roomParam, storedName, false));
+        } else {
+          // Anonymous guest: ask for name in modal
+          setShowNameModal(true);
+        }
+      } else {
+        // Host: auto-join the room immediately
+        const activeRoom = roomParam || 'room-' + Math.random().toString(36).substr(2, 9);
+
+        let defaultName = 'Tutor';
+        if (user) {
+          if (user.role === 'admin') {
+            defaultName = user.full_name || 'Admin';
+          } else if (user.role === 'tutor') {
+            defaultName = user.full_name || 'Tutor';
+          } else if (user.full_name) {
+            defaultName = user.full_name;
+          }
+        }
+
+        // Use setTimeout to allow supabase import to settle before subscribing
+        schedule(() => startCollaboration(activeRoom, defaultName, true));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      // Nothing started yet -> let the next run of this effect start the session.
+      if (!channelRef.current && !collabStartingRef.current) {
+        collaborationStartedRef.current = false;
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Presence payload, always built from the latest values (refs), never a stale closure.
+  const buildPresence = (updates = {}) => ({
+    userId: localUserId.current,
+    userName: presenceRef.current.userName,
+    isHost: isHostRef.current,
+    hasDrawAccess: isHostRef.current ? true : presenceRef.current.hasDrawAccess,
+    color: userColor.current,
+    isMicOn: presenceRef.current.isMicOn,
+    isVideoOn: presenceRef.current.isVideoOn,
+    handRaised: presenceRef.current.handRaised,
+    cursor: null,
+    ...updates
+  });
+
   const updatePresenceState = async (updates = {}) => {
-    if (!channelRef.current) return;
-    await channelRef.current.track({
-      userId: localUserId.current,
-      userName: userName,
-      isHost: isHost,
-      hasDrawAccess: isHost ? true : hasDrawAccess,
-      color: userColor.current,
-      isMicOn: isMicOn,
-      isVideoOn: isVideoOn,
-      cursor: null,
-      ...updates
+    Object.keys(updates).forEach(k => {
+      if (k in presenceRef.current) presenceRef.current[k] = updates[k];
     });
+    if (!channelRef.current) return;
+    try {
+      await channelRef.current.track(buildPresence(updates));
+    } catch (_) {}
   };
 
   const startCollaboration = async (id, chosenName, asHost = null) => {
@@ -469,84 +1011,181 @@ export default function Whiteboard({ user }) {
       alert("Supabase configuration not detected. Multiplayer collaboration is unavailable.");
       return;
     }
+    if (!mountedRef.current || !isShortId(id)) return;
 
-    const hostMode = asHost !== null ? asHost : isHost;
+    const token = ++startTokenRef.current;
+    collabStartingRef.current = true;
+    try {
+      const hostMode = asHost !== null ? asHost : isHostRef.current;
 
-    const name = chosenName || userName || generateRandomName();
-    setUserName(name);
-    setRoomId(id);
-    setIsCollaborating(true);
-    setShowNameModal(false);
-    localStorage.setItem(`wb-name-${id}`, name);
-    if (asHost !== null) {
-      setIsHost(asHost);
-      setHasDrawAccess(asHost ? true : hasDrawAccess);
-    }
-
-    // Update browser URL query parameter without page reload
-    const newurl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${id}`;
-    window.history.replaceState({ path: newurl }, '', newurl);
-
-    const channel = supabase.channel('room-' + id, {
-      config: {
-        presence: {
-          key: localUserId.current,
-        },
-      },
-    });
-
-    channelRef.current = channel;
-
-    // Track participant joins/leaves using dynamic ref to avoid stale closures
-    channel.on('presence', { event: 'sync' }, () => {
-      if (presenceSyncHandlerRef.current) {
-        presenceSyncHandlerRef.current();
+      const name = chosenName || userName || generateRandomName();
+      setUserName(name);
+      presenceRef.current.userName = name;
+      setRoomId(id);
+      setIsCollaborating(true);
+      setShowNameModal(false);
+      localStorage.setItem(`wb-name-${id}`, name);
+      if (asHost !== null) {
+        setIsHost(asHost);
+        setHasDrawAccess(asHost ? true : hasDrawAccess);
       }
-    });
+      isHostRef.current = hostMode;
 
-    // Handle broadcast signals using fresh ref to avoid stale closures
-    channel.on('broadcast', { event: '*' }, ({ event, payload }) => {
-      if (handleBroadcastEventRef.current) {
-        handleBroadcastEventRef.current(event, payload);
-      }
-    });
+      // Update browser URL query parameter without page reload
+      const newurl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?room=${id}`;
+      window.history.replaceState({ path: newurl }, '', newurl);
 
-    await channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({
-          userId: localUserId.current,
-          userName: name,
-          isHost: hostMode,
-          hasDrawAccess: hostMode ? true : hasDrawAccess,
-          color: userColor.current,
-          isMicOn: isMicOn,
-          isVideoOn: isVideoOn,
-          handRaised: isHandRaised,
-          cursor: null
-        });
-        triggerToast(`Connected to room! Welcome ${name}.`);
-
-        // Sync board state from the host on join
+      // Identity first: every participant id is an auth uid. Visitors with no session get an
+      // anonymous one; people the app believes are logged in (role in sessionStorage) but
+      // whose Supabase session is gone are NOT silently turned into anonymous users. An
+      // existing session is always reused, never replaced.
+      roomIdRef.current = id;
+      const appLoggedIn = !!(user && user.role && user.role !== 'guest');
+      const ident = await ensureWhiteboardIdentity({ allowAnonymous: !hostMode && !appLoggedIn });
+      if (token !== startTokenRef.current || !mountedRef.current) return;
+      if (ident.userId) {
+        localUserId.current = ident.userId;
+        canRelayRef.current = true;
+        setIdentityNotice('');
+      } else {
+        // View-only: keep the local random id for presence; the relay won't accept us.
+        canRelayRef.current = false;
         if (!hostMode) {
-          channel.send({
-            type: 'broadcast',
-            event: 'request-board-state',
-            payload: { senderUserId: localUserId.current }
-          });
-        } else {
-          // Broadcast state to any existing peers
-          channel.send({
-            type: 'broadcast',
-            event: 'board-state-response',
-            payload: {
-              targetUserId: 'all',
-              pages: pages,
-              currentPageIndex: currentPageIndex
-            }
-          });
+          setIdentityNotice(
+            ident.reason === 'anonymous-disabled'
+              ? 'Guest drawing is turned off for this site, so you can watch the board but not draw or join voice/video. Log in to take part.'
+              : ident.reason === 'session-expired'
+                ? 'Your login has expired. You can watch the board, but log in again to draw or join voice/video.'
+                : 'Could not verify your identity. You can watch the board, but drawing and voice/video are unavailable.'
+          );
         }
       }
-    });
+
+      if (hostMode) {
+        // Registers a brand-new ad-hoc room (live_sessions row with us as tutor) so RLS lets
+        // us broadcast on its host channel; a no-op for rooms we already own.
+        const { isHost: confirmed, error } = await claimWhiteboardHost(id);
+        if (token !== startTokenRef.current || !mountedRef.current) return;
+        if (error || !confirmed) {
+          console.warn('Whiteboard: the server did not confirm host rights for this room - live sync to participants will not work.', error || '');
+        }
+        trustedHostIdRef.current = localUserId.current;
+        // Grants are stored server-side (wb_draw_grants), so they survive a host refresh.
+        const stored = confirmed ? await listDrawGrants(id) : null;
+        if (token !== startTokenRef.current || !mountedRef.current) return;
+        grantedRef.current = new Set((stored || []).filter(isShortId));
+      } else {
+        trustedHostIdRef.current = null;
+        grantedRef.current = new Set();
+        if (canRelayRef.current) {
+          // RLS only returns our own row: start with the right draw state even before the
+          // host's board snapshot arrives (the relay enforces the same row).
+          const mine = await listDrawGrants(id);
+          if (token !== startTokenRef.current || !mountedRef.current) return;
+          if (mine && mine.includes(localUserId.current)) {
+            grantedRef.current = new Set([localUserId.current]);
+            setHasDrawAccess(true);
+            presenceRef.current.hasDrawAccess = true;
+          }
+        }
+      }
+
+      teardownChannels();
+
+      // Make sure Realtime carries the user's JWT (real or anonymous): the private host
+      // channel's RLS checks it on join.
+      try { await supabase.realtime.setAuth(); } catch (_) {}
+      if (token !== startTokenRef.current || !mountedRef.current) return;
+
+      const channel = supabase.channel(mainChannelTopic(id), {
+        config: {
+          presence: {
+            key: localUserId.current,
+          },
+        },
+      });
+      const hostChannel = supabase.channel(hostChannelTopic(id), {
+        config: { private: true }
+      });
+
+      channelRef.current = channel;
+      hostChannelRef.current = hostChannel;
+
+      // Expire stroke previews that went idle or lived too long (forged previews on the
+      // public channel can't persist; real ones end with the relayed drawing-end).
+      previewSweepRef.current = setInterval(() => {
+        const now = Date.now();
+        let changed = false;
+        Object.keys(activeDrawingsRef.current).forEach(k => {
+          const d = activeDrawingsRef.current[k];
+          if (!d || now - (d.lastAt || 0) > PREVIEW_IDLE_MS || now - (d.startedAt || 0) > PREVIEW_MAX_AGE_MS) {
+            delete activeDrawingsRef.current[k];
+            changed = true;
+          }
+        });
+        if (changed) drawCanvas();
+      }, 1000);
+
+      // Track participant joins/leaves using dynamic ref to avoid stale closures
+      channel.on('presence', { event: 'sync' }, () => {
+        if (presenceSyncHandlerRef.current) {
+          presenceSyncHandlerRef.current();
+        }
+      });
+
+      // Handle broadcast signals using fresh ref to avoid stale closures
+      channel.on('broadcast', { event: '*' }, ({ event, payload }) => dispatchIncoming(event, payload, 'main'));
+      hostChannel.on('broadcast', { event: '*' }, ({ event, payload }) => dispatchIncoming(event, payload, 'host'));
+
+      // Callbacks fire again on every reconnect: everything below reads refs, and the
+      // one-shot bits (welcome toast, host's initial snapshot) only run the first time.
+      let mainJoinedOnce = false;
+      let hostJoinedOnce = false;
+
+      channel.subscribe(async (status) => {
+        if (channelRef.current !== channel) return;
+        if (status === 'SUBSCRIBED') {
+          channelStatusRef.current.main = true;
+          try {
+            await channel.track(buildPresence());
+          } catch (_) {}
+          if (!mainJoinedOnce) {
+            mainJoinedOnce = true;
+            triggerToast(`Connected to room! Welcome ${name}.`);
+          }
+          // A (re)joining participant may have missed events - resync from the host.
+          maybeRequestBoardState();
+        } else {
+          channelStatusRef.current.main = false;
+        }
+      });
+
+      hostChannel.subscribe((status, err) => {
+        if (hostChannelRef.current !== hostChannel) return;
+        if (status === 'SUBSCRIBED') {
+          channelStatusRef.current.host = true;
+          if (isHostRef.current) {
+            if (!hostJoinedOnce) broadcastBoardState(['all']);
+          } else {
+            maybeRequestBoardState();
+          }
+          hostJoinedOnce = true;
+        } else {
+          channelStatusRef.current.host = false;
+          if (status === 'CHANNEL_ERROR') {
+            console.error('Whiteboard: could not join the secure host channel:', err);
+            if (!hostChannelErrorShownRef.current) {
+              hostChannelErrorShownRef.current = true;
+              triggerToast(isHostRef.current
+                ? 'Secure session channel unavailable - participants will not see your board.'
+                : 'Could not connect to the tutor\'s board. Try reloading.');
+            }
+          }
+        }
+      });
+    } finally {
+      if (token === startTokenRef.current) collabStartingRef.current = false;
+    }
   };
 
   const initiateRoomCollab = () => {
@@ -565,45 +1204,80 @@ export default function Whiteboard({ user }) {
   };
 
   const lastDrawingBroadcastRef = useRef(0);
+  // In-progress stroke preview. Ephemeral (receivers expire it), so participants send it
+  // straight on the public channel to keep drawing feeling live; the host uses its
+  // private channel. The committed stroke follows as drawing-end.
   const broadcastDrawingStroke = (newPoints, color, width, isHighlighter) => {
     if (!channelRef.current) return false;
     const now = Date.now();
     if (now - lastDrawingBroadcastRef.current < 16) return false; // ~60fps throttle for instant sync
     lastDrawingBroadcastRef.current = now;
 
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'drawing-stroke',
-      payload: { userId: localUserId.current, newPoints, color, width, isHighlighter }
-    });
+    const preview = { userId: localUserId.current, newPoints, color, width, isHighlighter };
+    if (isHostRef.current) {
+      sendOn('host', 'drawing-stroke', { ...preview, senderId: localUserId.current });
+    } else {
+      if (!canRelayRef.current) return false; // could never commit it either
+      sendOn('main', 'drawing-stroke', preview);
+    }
     return true;
   };
 
+  // Receivers upsert by element id, so re-sending an existing element (e.g. edited
+  // text) replaces it on every peer instead of duplicating it.
   const broadcastDrawingEnd = (element) => {
     if (!channelRef.current) return;
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'drawing-end',
-      payload: { userId: localUserId.current, element }
-    });
+    sendBoardEvent('drawing-end', { element: isHostRef.current ? element : toWireElement(element) });
   };
 
-  const broadcastElementsUpdate = (updatedElements) => {
+  // Host: replace everyone's board with `updatedElements` (private channel, chunked).
+  // Participant: send only what changed relative to `before` as element-patch messages
+  // through the relay (a whole board easily exceeds the relay's ~200KB cap).
+  const broadcastElementsUpdate = (updatedElements, before = elementsRef.current) => {
     if (!channelRef.current) return;
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'element-update',
-      payload: { action: 'update-all', elements: updatedElements }
+    if (isHostRef.current) {
+      sendBoardEvent('element-update', { action: 'update-all', elements: updatedElements });
+      return;
+    }
+    const { remove, upsert } = diffElements(before, updatedElements);
+    const LIMIT = RELAY_MAX_CHARS - 2000;
+    let msg = { remove: [], upsert: [] };
+    let size = 0;
+    const flush = () => {
+      if (msg.remove.length + msg.upsert.length > 0) sendBoardEvent('element-patch', msg);
+      msg = { remove: [], upsert: [] };
+      size = 0;
+    };
+    remove.forEach(id => {
+      const s = String(id).length + 4;
+      if (size + s > LIMIT || msg.remove.length >= 5000) flush();
+      msg.remove.push(id);
+      size += s;
     });
+    upsert.forEach(el => {
+      const wire = toWireElement(el);
+      let s;
+      try {
+        s = JSON.stringify(wire).length + 2;
+      } catch {
+        return;
+      }
+      if (size > 0 && (size + s > LIMIT || msg.upsert.length >= 5000)) flush();
+      msg.upsert.push(wire);
+      size += s;
+    });
+    flush();
   };
 
   const broadcastElementsClear = () => {
     if (!channelRef.current) return;
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'element-update',
-      payload: { action: 'clear' }
-    });
+    if (isHostRef.current) {
+      sendBoardEvent('element-update', { action: 'clear' });
+    } else {
+      // Only the host may 'clear'; anyone else expresses it as a relayed patch removing
+      // every element.
+      broadcastElementsUpdate([]);
+    }
   };
 
   const lastCursorBroadcastRef = useRef(0);
@@ -617,37 +1291,65 @@ export default function Whiteboard({ user }) {
     const x = (clientX - rect.left - pan.x) / zoom;
     const y = (clientY - rect.top - pan.y) / zoom;
 
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'peer-cursor',
-      payload: { userId: localUserId.current, cursor: { x, y } }
+    sendOn('main', 'peer-cursor', { userId: localUserId.current, cursor: { x, y } });
+  };
+
+  // Re-derive the participants list from presence, overriding the self-reported
+  // isHost / hasDrawAccess flags with host-issued (trusted) state.
+  const remapParticipants = () => {
+    if (presenceSyncHandlerRef.current) presenceSyncHandlerRef.current();
+  };
+
+  const applyGrantedList = (granted) => {
+    if (!Array.isArray(granted)) return;
+    grantedRef.current = new Set(granted.filter(isShortId).slice(0, 500));
+    if (!isHostRef.current) {
+      const mine = grantedRef.current.has(localUserId.current);
+      setHasDrawAccess(mine);
+      if (presenceRef.current.hasDrawAccess !== mine) updatePresenceState({ hasDrawAccess: mine });
+    }
+    remapParticipants();
+  };
+
+  const toggleParticipantDrawAccess = async (peerId) => {
+    if (!isHost || !hostChannelRef.current || !isShortId(peerId)) return;
+    if (!isAuthUid(peerId)) {
+      triggerToast('This guest could not be verified (guest sign-in unavailable), so they can only watch.');
+      return;
+    }
+    const nextAccess = !grantedRef.current.has(peerId);
+    // The grant is stored server-side first: the relay checks wb_draw_grants, not this UI.
+    const { error } = await setDrawAccess(roomIdRef.current || roomId, peerId, nextAccess);
+    if (error) {
+      console.error('Whiteboard: could not change drawing access:', error);
+      triggerToast('Could not change drawing access. Please try again.');
+      return;
+    }
+    if (!mountedRef.current) return;
+    if (nextAccess) grantedRef.current.add(peerId);
+    else grantedRef.current.delete(peerId);
+
+    // Auto-lower student's hand when granting draw access
+    sendOn('host', 'access-changed', {
+      targetUserId: peerId,
+      hasDrawAccess: nextAccess,
+      lowerHand: nextAccess,
+      granted: [...grantedRef.current]
+    });
+
+    // Also trigger local state indicator redraw
+    setParticipants(prev => {
+      if (!prev[peerId]) return prev;
+      const updated = { ...prev[peerId], hasDrawAccess: nextAccess };
+      if (nextAccess) updated.handRaised = false;
+      return { ...prev, [peerId]: updated };
     });
   };
 
-  const toggleParticipantDrawAccess = (peerId, currentAccess) => {
-    if (!isHost || !channelRef.current) return;
-    const nextAccess = !currentAccess;
-    
-    // Auto-lower student's hand when granting draw access
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'access-changed',
-      payload: { 
-        targetUserId: peerId, 
-        hasDrawAccess: nextAccess,
-        lowerHand: nextAccess
-      }
-    });
-    
-    // Also trigger local state indicator redraw
-    setParticipants(prev => {
-      const next = { ...prev };
-      if (next[peerId]) {
-        next[peerId].hasDrawAccess = nextAccess;
-        if (nextAccess) next[peerId].handRaised = false;
-      }
-      return next;
-    });
+  const lowerParticipantHand = (peerId) => {
+    if (!isHost || !isShortId(peerId)) return;
+    sendOn('host', 'lower-hand-request', { targetUserId: peerId });
+    setParticipants(prev => (prev[peerId] ? { ...prev, [peerId]: { ...prev[peerId], handRaised: false } } : prev));
   };
 
   const toggleRaiseHand = async () => {
@@ -656,87 +1358,181 @@ export default function Whiteboard({ user }) {
     if (isCollaborating) {
       updatePresenceState({ handRaised: nextState });
       if (nextState) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'hand-raised',
-          payload: { userId: localUserId.current, userName: userName }
-        });
+        sendOn('main', 'hand-raised', { userId: localUserId.current, userName: userName });
       }
     }
   };
 
-  const handleBroadcastEvent = (event, payload) => {
+  // Events only the host may send: accepted ONLY from the RLS-protected host channel.
+  const HOST_ONLY_EVENTS = ['session-ended', 'page-change', 'board-state-response', 'access-changed', 'lower-hand-request', 'slide-nav', 'element-update'];
+  // Committed board edits and WebRTC signaling: accepted ONLY from the private channel,
+  // where they come either from the host directly or from the /api/wb-event relay, which
+  // has checked the sender (draw grant for board edits) and stamped payload.senderId with
+  // their auth uid. They are attributed by that senderId and nothing else.
+  const RELAYED_EVENTS = ['drawing-end', 'element-patch', 'webrtc-offer', 'webrtc-answer', 'webrtc-ice', 'peer-reconnect'];
+  const SIGNAL_EVENTS = ['webrtc-offer', 'webrtc-answer', 'webrtc-ice', 'peer-reconnect'];
+
+  const holdSignalUntilPresent = (sender, event, payload) => {
+    const pending = pendingSignalsRef.current;
+    const now = Date.now();
+    Object.keys(pending).forEach(k => {
+      pending[k] = pending[k].filter(m => now - m.t < 10000);
+      if (pending[k].length === 0) delete pending[k];
+    });
+    if (!pending[sender] && Object.keys(pending).length >= 20) return;
+    const list = pending[sender] || (pending[sender] = []);
+    if (list.length < 30) list.push({ event, payload, t: now });
+  };
+
+  const replayHeldSignals = () => {
+    const pending = pendingSignalsRef.current;
+    const now = Date.now();
+    Object.keys(pending).forEach(sender => {
+      if (!participantsRef.current[sender]) return;
+      const list = pending[sender];
+      delete pending[sender];
+      list.forEach(m => {
+        if (now - m.t < 10000) handleBroadcastEvent(m.event, m.payload, true);
+      });
+    });
+  };
+
+  const handleBroadcastEvent = (event, payload, fromHostChannel = false) => {
+    if (!payload || typeof payload !== 'object') return;
+    if ((HOST_ONLY_EVENTS.includes(event) || RELAYED_EVENTS.includes(event)) && !fromHostChannel) return;
+    let sender = null;
+    if (RELAYED_EVENTS.includes(event)) {
+      sender = payload.senderId;
+      if (!isShortId(sender)) return;
+      // Our own edit coming back from the relay: already applied locally when we made it.
+      if (sender === localUserId.current) return;
+      // Signaling only from someone currently in the room. The relay can beat presence by
+      // a moment, so hold it briefly (bounded) and replay once the sender shows up.
+      if (SIGNAL_EVENTS.includes(event) && !participantsRef.current[sender]) {
+        holdSignalUntilPresent(sender, event, payload);
+        return;
+      }
+    }
+
     switch (event) {
-      case 'drawing-stroke':
-        if (!activeDrawingsRef.current[payload.userId]) {
-          activeDrawingsRef.current[payload.userId] = {
+      case 'drawing-stroke': {
+        // Preview only (never persisted). From the private channel it's the host; on the
+        // public channel the claimed id must be present and granted, and previews expire
+        // (PREVIEW_IDLE_MS / PREVIEW_MAX_AGE_MS) or are cleared by the relayed drawing-end.
+        let userKey;
+        if (fromHostChannel) {
+          userKey = isShortId(payload.senderId) ? payload.senderId : 'host';
+        } else {
+          userKey = payload.userId;
+          if (!isShortId(userKey) || userKey === localUserId.current || userKey === trustedHostIdRef.current ||
+              !participantsRef.current[userKey] || !grantedRef.current.has(userKey)) break;
+        }
+        const newPoints = sanitizePoints(payload.newPoints);
+        if (!newPoints) break;
+        const now = Date.now();
+        if (!activeDrawingsRef.current[userKey]) {
+          activeDrawingsRef.current[userKey] = {
             type: 'stroke',
             points: [],
-            color: payload.color,
-            width: payload.width,
-            isHighlighter: payload.isHighlighter
+            color: safeColor(payload.color),
+            width: isFiniteNum(payload.width) ? clampNum(payload.width, 0.5, 400) : 4,
+            isHighlighter: payload.isHighlighter === true,
+            startedAt: now,
+            lastAt: now
           };
         }
         // Append newly arrived delta points
-        if (payload.newPoints && Array.isArray(payload.newPoints)) {
-          activeDrawingsRef.current[payload.userId].points.push(...payload.newPoints);
+        const live = activeDrawingsRef.current[userKey];
+        live.lastAt = now;
+        if (live.points.length + newPoints.length <= MAX_POINTS) {
+          live.points.push(...newPoints);
         }
         drawCanvas();
         break;
+      }
 
-      case 'drawing-end':
+      case 'drawing-end': {
+        // Drop malformed elements instead of letting them crash every renderer.
+        const element = sanitizeElement(payload.element);
+        if (!element) break;
         // Record a history checkpoint before applying the remote stroke, so a local
         // Undo reverts this specific change instead of popping a now-stale snapshot
         // from before the remote update (which would silently drop it).
         setUndoStack(prev => [...prev, elements]);
         setRedoStack([]);
-        setElements(prev => [...prev, payload.element]);
+        // Upsert: an element that already exists (edited text) is replaced in place.
+        setElements(prev => {
+          const idx = prev.findIndex(el => el.id === element.id);
+          if (idx === -1) return [...prev, element];
+          const next = [...prev];
+          next[idx] = element;
+          return next;
+        });
         // Delay active drawing ref cleanup slightly to overlap with React state commit
-        // and prevent concurrent cursor-move updates from wiping the stroke off canvas
-        setTimeout(() => {
-          delete activeDrawingsRef.current[payload.userId];
+        // and prevent concurrent cursor-move updates from wiping the stroke off canvas.
+        // The committed stroke is attributed by the server-stamped senderId.
+        const endedUser = sender;
+        miscTimersRef.current.push(setTimeout(() => {
+          if (isShortId(endedUser)) delete activeDrawingsRef.current[endedUser];
           drawCanvas();
-        }, 80);
+        }, 80));
         break;
+      }
 
-      case 'element-update':
+      case 'element-patch': {
+        // Relayed participant edit: remove ids, then upsert (replace in place / append).
+        const removeIds = Array.isArray(payload.remove)
+          ? new Set(payload.remove.slice(0, MAX_ELEMENTS).filter(v => isShortId(v) || isFiniteNum(v)).map(String))
+          : new Set();
+        const upserts = sanitizeElements(payload.upsert || []) || [];
+        if (removeIds.size === 0 && upserts.length === 0) break;
+        setUndoStack(prev => [...prev, elementsRef.current]);
+        setRedoStack([]);
+        // Functional update: several patches can arrive before the next render.
+        setElements(prev => {
+          let next = removeIds.size > 0 ? prev.filter(el => !removeIds.has(String(el.id))) : [...prev];
+          upserts.forEach(el => {
+            const idx = next.findIndex(e => String(e.id) === el.id);
+            if (idx === -1) next.push(el);
+            else next[idx] = el;
+          });
+          if (next.length > MAX_ELEMENTS) next = next.slice(next.length - MAX_ELEMENTS);
+          return next;
+        });
+        if (selectedElement && removeIds.has(String(selectedElement.id))) setSelectedElement(null);
+        break;
+      }
+
+      case 'element-update': {
+        let nextElements = null;
+        if (payload.action === 'clear') {
+          nextElements = [];
+        } else if (payload.action === 'update-all') {
+          nextElements = sanitizeElements(payload.elements);
+        }
+        if (!nextElements) break;
         setUndoStack(prev => [...prev, elements]);
         setRedoStack([]);
-        if (payload.action === 'clear') {
-          setElements([]);
-          updateCurrentPageElements([]);
-          setSelectedElement(null);
-        } else if (payload.action === 'update-all') {
-          setElements(payload.elements);
-          updateCurrentPageElements(payload.elements);
-        }
+        setElements(nextElements);
+        updateCurrentPageElements(nextElements);
+        if (payload.action === 'clear') setSelectedElement(null);
         drawCanvas();
         break;
+      }
 
       case 'page-change':
         if (!isHost) {
-          console.log("Receiver: page-change event received", payload);
-          if (payload.pages) {
-            setPages(payload.pages);
-          }
-          setCurrentPageIndex(payload.pageIndex);
-          const targetPage = payload.pages ? payload.pages[payload.pageIndex] : pages[payload.pageIndex];
-          if (targetPage) {
-            setElements(targetPage.elements || []);
-            setUndoStack(targetPage.undoStack || []);
-            setRedoStack(targetPage.redoStack || []);
-          }
-          requestAnimationFrame(() => {
-            drawCanvas();
-          });
+          applyRemotePageState(payload);
         }
         break;
 
       case 'access-changed':
-        if (payload.targetUserId === localUserId.current) {
+        if (isHost) break;
+        applyGrantedList(payload.granted);
+        if (payload.targetUserId === localUserId.current && typeof payload.hasDrawAccess === 'boolean') {
           setHasDrawAccess(payload.hasDrawAccess);
           const updates = { hasDrawAccess: payload.hasDrawAccess };
-          if (payload.lowerHand) {
+          if (payload.lowerHand === true) {
             setIsHandRaised(false);
             updates.handRaised = false;
           }
@@ -745,25 +1541,35 @@ export default function Whiteboard({ user }) {
         }
         break;
 
-      case 'hand-raised':
-        if (isHost) {
-          triggerToast(`âœ‹ ${payload.userName} raised their hand!`);
-          try {
-            // Subtle, high-quality pop chime using Web Audio API
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 note
-            osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.12); // A5 note
-            gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.22);
-          } catch (_) {}
-        }
+      case 'hand-raised': {
+        // Public channel: only accept it for someone actually present.
+        if (!isHost || !isShortId(payload.userId) || !participantsRef.current[payload.userId]) break;
+        // Throttle per sender so a participant can't spam toasts/chimes.
+        const now = Date.now();
+        if (now - (lastHandRaiseRef.current[payload.userId] || 0) < 3000) break;
+        lastHandRaiseRef.current[payload.userId] = now;
+        const who = typeof payload.userName === 'string' ? payload.userName.slice(0, 60) : 'A participant';
+        triggerToast(`✋ ${who} raised their hand!`);
+        try {
+          // Subtle, high-quality pop chime using Web Audio API
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5 note
+          osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.12); // A5 note
+          gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
+          // Release the context once the chime has played (browsers cap live AudioContexts).
+          osc.onended = () => {
+            audioCtx.close().catch(() => {});
+          };
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.22);
+        } catch (_) {}
         break;
+      }
 
       case 'lower-hand-request':
         if (payload.targetUserId === localUserId.current) {
@@ -774,99 +1580,90 @@ export default function Whiteboard({ user }) {
         break;
 
       case 'peer-cursor':
-        if (participantsRef.current[payload.userId]) {
-          participantsRef.current[payload.userId].cursor = payload.cursor;
+        if (isShortId(payload.userId) && participantsRef.current[payload.userId] &&
+            payload.cursor && isFiniteNum(payload.cursor.x) && isFiniteNum(payload.cursor.y)) {
+          participantsRef.current[payload.userId].cursor = { x: payload.cursor.x, y: payload.cursor.y };
           drawCanvas();
         }
         break;
 
-      // WebRTC voice chat signaling
+      // WebRTC voice/video signaling: private channel only, sender = server-stamped
+      // senderId (or the host), and the sender must be present (checked above).
       case 'webrtc-offer':
-        if (payload.targetUserId === localUserId.current) {
-          handleWebRTCOffer(payload.offer, payload.senderUserId);
+        if (payload.targetUserId === localUserId.current &&
+            payload.offer && typeof payload.offer === 'object') {
+          handleWebRTCOffer(payload.offer, sender);
         }
         break;
       case 'webrtc-answer':
-        if (payload.targetUserId === localUserId.current) {
-          handleWebRTCAnswer(payload.answer, payload.senderUserId);
+        if (payload.targetUserId === localUserId.current &&
+            payload.answer && typeof payload.answer === 'object') {
+          handleWebRTCAnswer(payload.answer, sender);
         }
         break;
       case 'webrtc-ice':
-        if (payload.targetUserId === localUserId.current) {
-          handleWebRTCIce(payload.candidate, payload.senderUserId);
+        if (payload.targetUserId === localUserId.current && Array.isArray(payload.candidates)) {
+          payload.candidates.slice(0, 50).forEach(c => {
+            if (c && typeof c === 'object') handleWebRTCIce(c, sender);
+          });
         }
         break;
 
-      case 'peer-reconnect':
-        const peerId = payload.senderUserId;
+      case 'peer-reconnect': {
+        const peerId = sender;
+        if (!isShortId(peerId) || peerId === localUserId.current) break;
+        dropIceOutbox(peerId);
         if (peerConnectionsRef.current[peerId]) {
           try {
             peerConnectionsRef.current[peerId].close();
           } catch (_) {}
           delete peerConnectionsRef.current[peerId];
         }
+        // Candidates queued for the old connection belong to a dead ICE session.
+        delete iceCandidateQueuesRef.current[peerId];
+        delete remoteVideoRefs.current[peerId];
         setRemoteVideoStreams(prev => {
+          if (!(peerId in prev)) return prev;
           const next = { ...prev };
           delete next[peerId];
           return next;
         });
-        if (remoteAnalysersRef.current[peerId]) {
-          delete remoteAnalysersRef.current[peerId];
-        }
+        removeRemoteAnalyser(peerId);
         const audioEl = document.getElementById('peer-audio-' + peerId);
         if (audioEl) audioEl.remove();
 
         // Create fresh connection
         createPeerConnection(peerId, localUserId.current > peerId);
         break;
+      }
 
       case 'request-board-state':
-        if (isHost && channelRef.current) {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'board-state-response',
-            payload: {
-              targetUserId: payload.senderUserId,
-              pages: pages,
-              currentPageIndex: currentPageIndex
-            }
-          });
+        if (isHost && hostChannelRef.current && isShortId(payload.senderUserId)) {
+          queueBoardStateResponse(payload.senderUserId);
         }
         break;
 
-      case 'board-state-response':
-        console.log("Receiver: board-state-response event received", payload);
-        if (payload.targetUserId === 'all' || payload.targetUserId === localUserId.current) {
-          if (!isHost) {
-            console.log("Receiver: Updating pages to:", payload.pages, "and index to:", payload.currentPageIndex);
-            setPages(payload.pages);
-            setCurrentPageIndex(payload.currentPageIndex);
-            const activePage = payload.pages[payload.currentPageIndex];
-            if (activePage) {
-              console.log("Receiver: Setting elements to active page elements:", activePage.elements);
-              setElements(activePage.elements || []);
-              setUndoStack(activePage.undoStack || []);
-              setRedoStack(activePage.redoStack || []);
-            } else {
-              console.warn("Receiver: Active page not found at index", payload.currentPageIndex);
-            }
-            requestAnimationFrame(() => {
-              drawCanvas();
-            });
-            triggerToast("Whiteboard sync complete!");
-          }
+      case 'board-state-response': {
+        if (isHost) break;
+        const targets = Array.isArray(payload.targetUserIds) ? payload.targetUserIds : [];
+        if (!targets.includes('all') && !targets.includes(localUserId.current)) break;
+        if (isShortId(payload.hostUserId)) trustedHostIdRef.current = payload.hostUserId;
+        applyGrantedList(payload.granted);
+        if (applyRemotePageState(payload)) {
+          triggerToast("Whiteboard sync complete!");
         }
         break;
+      }
 
       case 'session-ended':
         if (!isHost) {
           triggerToast('The tutor ended this session.');
-          setTimeout(() => navigate('/student'), 1500);
+          miscTimersRef.current.push(setTimeout(() => navigate('/student'), 1500));
         }
         break;
 
       case 'slide-nav':
-        if (!isHost) {
+        if (!isHost && Number.isInteger(payload.index) && payload.index >= 0 && payload.index < 10000) {
           setRemoteSlideGoto({ index: payload.index, nonce: Date.now() });
         }
         break;
@@ -876,6 +1673,46 @@ export default function Whiteboard({ user }) {
     }
   };
 
+  // Apply a host page snapshot ({ pageIndex, pageIds, page }) from page-change or
+  // board-state-response. Returns false (and changes nothing) for malformed payloads.
+  const applyRemotePageState = (payload) => {
+    const { pageIds, pageIndex, page } = payload;
+    if (!Array.isArray(pageIds) || pageIds.length === 0 || pageIds.length > 1000 || !pageIds.every(isShortId)) return false;
+    if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= pageIds.length) return false;
+    if (!page || typeof page !== 'object') return false;
+    const pageElements = sanitizeElements(page.elements);
+    if (!pageElements) return false;
+    const slideUrl = sanitizeSlideUrl(page.slideUrl);
+
+    const existingById = {};
+    pagesRef.current.forEach(p => { existingById[p.id] = p; });
+    const nextPages = pageIds.map((pid, i) => {
+      if (i === pageIndex) return { id: pid, elements: pageElements, slideUrl, undoStack: [], redoStack: [] };
+      const existing = existingById[pid];
+      return existing
+        ? { ...existing, undoStack: [], redoStack: [] }
+        : { id: pid, elements: [], slideUrl: null, undoStack: [], redoStack: [] };
+    });
+
+    setPages(nextPages);
+    setCurrentPageIndex(pageIndex);
+    setElements(pageElements);
+    setUndoStack([]);
+    setRedoStack([]);
+    setSelectedElement(null);
+    requestAnimationFrame(() => {
+      drawCanvas();
+    });
+    return true;
+  };
+
+  presenceRef.current.hasDrawAccess = hasDrawAccess;
+  presenceRef.current.isMicOn = isMicOn;
+  presenceRef.current.isVideoOn = isVideoOn;
+  presenceRef.current.handRaised = isHandRaised;
+  if (userName) presenceRef.current.userName = userName;
+  isHostRef.current = isHost;
+
   handleBroadcastEventRef.current = handleBroadcastEvent;
 
   presenceSyncHandlerRef.current = () => {
@@ -884,7 +1721,19 @@ export default function Whiteboard({ user }) {
     const state = channel.presenceState();
     const mapped = {};
     Object.keys(state).forEach(key => {
-      mapped[key] = state[key][0];
+      const meta = Array.isArray(state[key]) ? state[key][0] : null;
+      if (!meta || typeof meta !== 'object') return;
+      // Presence metadata is self-reported, so isHost / hasDrawAccess come from
+      // host-issued state instead, and userId is pinned to the presence key.
+      const isPeerHost = key === trustedHostIdRef.current;
+      mapped[key] = {
+        ...meta,
+        userId: key,
+        userName: typeof meta.userName === 'string' ? meta.userName.slice(0, 60) : 'Guest',
+        isHost: isPeerHost,
+        hasDrawAccess: isPeerHost || grantedRef.current.has(key),
+        cursor: participantsRef.current[key]?.cursor || null
+      };
     });
     setParticipants(mapped);
     participantsRef.current = mapped;
@@ -898,6 +1747,8 @@ export default function Whiteboard({ user }) {
 
     // Update WebRTC voice streams when new peers join
     syncVoicePeers(mapped);
+    // Signaling that arrived (via the relay) just before its sender's presence did.
+    replayHeldSignals();
     drawCanvas();
   };
 
@@ -1016,7 +1867,42 @@ export default function Whiteboard({ user }) {
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.7;
     source.connect(analyser);
+    analyser.__source = source; // kept so the graph can be disconnected when the stream changes
     return analyser;
+  };
+
+  const disconnectAnalyser = (analyser) => {
+    if (!analyser) return;
+    try { analyser.__source?.disconnect(); } catch (_) {}
+    try { analyser.disconnect(); } catch (_) {}
+  };
+
+  const disconnectLocalAnalyser = () => {
+    disconnectAnalyser(localAnalyserRef.current);
+    localAnalyserRef.current = null;
+    localAnalyserStreamRef.current = null;
+  };
+
+  // Point the local mic meter at `stream` (getLocalStream may have swapped in a brand
+  // new MediaStream, e.g. when the camera is turned on, which stops the old tracks).
+  const ensureLocalAnalyser = (stream) => {
+    if (!stream || stream.getAudioTracks().length === 0) {
+      disconnectLocalAnalyser();
+      return;
+    }
+    if (localAnalyserRef.current && localAnalyserStreamRef.current === stream) return;
+    disconnectLocalAnalyser();
+    try {
+      localAnalyserRef.current = createAnalyserForStream(stream);
+      localAnalyserStreamRef.current = stream;
+    } catch (_) {}
+  };
+
+  const removeRemoteAnalyser = (peerId) => {
+    if (remoteAnalysersRef.current[peerId]) {
+      disconnectAnalyser(remoteAnalysersRef.current[peerId]);
+      delete remoteAnalysersRef.current[peerId];
+    }
   };
 
   const getRMS = (analyser) => {
@@ -1081,10 +1967,19 @@ export default function Whiteboard({ user }) {
 
   const broadcastReconnect = () => {
     if (!channelRef.current) return;
-    channelRef.current.send({
-      type: 'broadcast',
-      event: 'peer-reconnect',
-      payload: { senderUserId: localUserId.current }
+    sendSignal('peer-reconnect', {});
+  };
+
+  // Tear down and re-offer every peer connection so peers pick up our current set of
+  // tracks (e.g. video removed while the mic stays on) - they drop our old streams on
+  // the peer-reconnect notice.
+  const renegotiateAllPeers = () => {
+    if (!isCollaborating) return;
+    closeAllPeerConnections();
+    broadcastReconnect();
+    Object.keys(participantsRef.current).forEach(peerId => {
+      if (peerId === localUserId.current) return;
+      createPeerConnection(peerId, localUserId.current > peerId);
     });
   };
 
@@ -1097,8 +1992,9 @@ export default function Whiteboard({ user }) {
         } catch (_) {}
         delete peerConnectionsRef.current[peerId];
         delete iceCandidateQueuesRef.current[peerId];
+        dropIceOutbox(peerId);
         delete remoteVideoRefs.current[peerId];
-        delete remoteAnalysersRef.current[peerId];
+        removeRemoteAnalyser(peerId);
         const audioEl = document.getElementById('peer-audio-' + peerId);
         if (audioEl) audioEl.remove();
         setRemoteVideoStreams(prev => {
@@ -1115,7 +2011,8 @@ export default function Whiteboard({ user }) {
         audio: isMicOn,
         video: isVideoOn ? { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15 } } : false
       };
-      await getLocalStream(constraints);
+      const stream = await getLocalStream(constraints);
+      if (stream && isMicOn) ensureLocalAnalyser(stream);
     }
 
     // Always establish peer connection with all participants, even if we are not sending media,
@@ -1131,6 +2028,9 @@ export default function Whiteboard({ user }) {
 
   const createPeerConnection = async (peerId, isInitiator) => {
     if (peerConnectionsRef.current[peerId]) return;
+    // Signaling needs a verified identity on both ends (it is relayed with server-stamped
+    // sender ids), so view-only guests without an auth uid don't take part in calls.
+    if (!canRelayRef.current || !isAuthUid(peerId)) return;
 
     const pcConfig = {
       iceServers: [
@@ -1150,13 +2050,9 @@ export default function Whiteboard({ user }) {
     }
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'webrtc-ice',
-          payload: { candidate: e.candidate, targetUserId: peerId, senderUserId: localUserId.current }
-        });
-      }
+      if (peerConnectionsRef.current[peerId] !== pc || !channelRef.current) return;
+      // Batched per peer; a null candidate (gathering complete) flushes the batch.
+      queueIceCandidate(peerId, e.candidate || null);
     };
 
     pc.ontrack = (e) => {
@@ -1166,10 +2062,31 @@ export default function Whiteboard({ user }) {
       const hasVideo = stream.getVideoTracks().length > 0;
       const hasAudio = stream.getAudioTracks().length > 0;
 
+      // Ignore late events from a connection that has since been replaced
+      if (peerConnectionsRef.current[peerId] !== pc) return;
+
       if (hasVideo) {
         setRemoteVideoStreams(prev => ({ ...prev, [peerId]: stream }));
         setShowVideoGrid(true);
+      } else {
+        // Audio-only stream from this peer: drop any stale (frozen) video tile.
+        setRemoteVideoStreams(prev => {
+          if (!(peerId in prev)) return prev;
+          const next = { ...prev };
+          delete next[peerId];
+          return next;
+        });
       }
+      stream.onremovetrack = () => {
+        if (stream.getVideoTracks().length === 0) {
+          setRemoteVideoStreams(prev => {
+            if (prev[peerId] !== stream) return prev;
+            const next = { ...prev };
+            delete next[peerId];
+            return next;
+          });
+        }
+      };
 
       if (hasAudio) {
         let audio = document.getElementById('peer-audio-' + peerId);
@@ -1195,11 +2112,7 @@ export default function Whiteboard({ user }) {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         if (channelRef.current) {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'webrtc-offer',
-            payload: { offer, targetUserId: peerId, senderUserId: localUserId.current }
-          });
+          sendSignal('webrtc-offer', { offer: { type: offer.type, sdp: offer.sdp }, targetUserId: peerId });
         }
       } catch (e) {
         console.error("Error creating WebRTC P2P offer", e);
@@ -1227,17 +2140,14 @@ export default function Whiteboard({ user }) {
       await createPeerConnection(senderUserId, false);
     }
     const pc = peerConnectionsRef.current[senderUserId];
+    if (!pc) return;
     try {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       await processQueuedIceCandidates(senderUserId);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       if (channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'webrtc-answer',
-          payload: { answer, targetUserId: senderUserId, senderUserId: localUserId.current }
-        });
+        sendSignal('webrtc-answer', { answer: { type: answer.type, sdp: answer.sdp }, targetUserId: senderUserId });
       }
     } catch (e) {
       console.error("Error setting WebRTC P2P offer description", e);
@@ -1258,13 +2168,15 @@ export default function Whiteboard({ user }) {
 
   const handleWebRTCIce = async (candidate, senderUserId) => {
     const pc = peerConnectionsRef.current[senderUserId];
-    if (!pc) return;
 
-    if (!pc.remoteDescription) {
+    // Relayed signaling can reach us before the offer it belongs to: queue (bounded) until
+    // the connection has its remote description.
+    if (!pc || !pc.remoteDescription) {
       if (!iceCandidateQueuesRef.current[senderUserId]) {
         iceCandidateQueuesRef.current[senderUserId] = [];
       }
-      iceCandidateQueuesRef.current[senderUserId].push(candidate);
+      const queue = iceCandidateQueuesRef.current[senderUserId];
+      if (queue.length < MAX_QUEUED_ICE) queue.push(candidate);
       return;
     }
 
@@ -1284,8 +2196,10 @@ export default function Whiteboard({ user }) {
       if (audioEl) audioEl.remove();
     });
     peerConnectionsRef.current = {};
+    Object.values(remoteAnalysersRef.current).forEach(disconnectAnalyser);
     remoteAnalysersRef.current = {};
     iceCandidateQueuesRef.current = {};
+    Object.keys(iceOutboxRef.current).forEach(dropIceOutbox);
     setRemoteVideoStreams({});
   };
 
@@ -1301,19 +2215,10 @@ export default function Whiteboard({ user }) {
       const stream = await getLocalStream(constraints);
       if (stream) {
         stream.getAudioTracks().forEach(t => { t.enabled = true; });
-        if (!localAnalyserRef.current) {
-          try {
-            localAnalyserRef.current = createAnalyserForStream(stream);
-          } catch (_) {}
-        }
+        ensureLocalAnalyser(stream);
         startLevelLoop();
         if (isCollaborating) {
-          closeAllPeerConnections();
-          broadcastReconnect();
-          Object.keys(participantsRef.current).forEach(peerId => {
-            if (peerId === localUserId.current) return;
-            createPeerConnection(peerId, localUserId.current > peerId);
-          });
+          renegotiateAllPeers();
           updatePresenceState({ isMicOn: true });
         }
       }
@@ -1321,7 +2226,7 @@ export default function Whiteboard({ user }) {
       if (localStreamRef.current) {
         localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = false; });
       }
-      localAnalyserRef.current = null;
+      disconnectLocalAnalyser();
       if (!isVideoOn) {
         stopLocalStream();
         closeAllPeerConnections();
@@ -1344,16 +2249,12 @@ export default function Whiteboard({ user }) {
       };
       const stream = await getLocalStream(constraints);
       if (stream) {
-        if (isCollaborating) {
-          closeAllPeerConnections();
-          broadcastReconnect();
-          Object.keys(participantsRef.current).forEach(peerId => {
-            if (peerId === localUserId.current) return;
-            createPeerConnection(peerId, localUserId.current > peerId);
-          });
-        }
+        // getLocalStream may have replaced the stream (stopping the old mic track), so the
+        // level meter has to follow it or it keeps reading a dead track.
+        if (isMicOn) ensureLocalAnalyser(stream);
+        renegotiateAllPeers();
         updatePresenceState({ isVideoOn: true });
-        triggerToast('Camera ON â€” peers can now see you.');
+        triggerToast('Camera ON — peers can now see you.');
       }
     } else {
       if (localStreamRef.current) {
@@ -1364,6 +2265,9 @@ export default function Whiteboard({ user }) {
         stopLocalStream();
         closeAllPeerConnections();
         broadcastReconnect();
+      } else {
+        // Mic stays on: renegotiate without the video track so peers drop our frozen tile.
+        renegotiateAllPeers();
       }
       updatePresenceState({ isVideoOn: false });
       triggerToast('Camera OFF.');
@@ -1455,7 +2359,11 @@ export default function Whiteboard({ user }) {
     // Search elements in reverse order (top to bottom visual layers)
     for (let i = elements.length - 1; i >= 0; i--) {
       const el = elements[i];
+      if (!el || typeof el !== 'object') continue;
+      // Locked elements (imported PDF page backgrounds) can't be picked, moved or erased.
+      if (el.locked) continue;
       if (el.type === 'image') {
+        if (![el.x, el.y, el.width, el.height].every(isFiniteNum)) continue;
         const padding = 10;
         if (x >= el.x - padding && x <= el.x + el.width + padding &&
             y >= el.y - padding && y <= el.y + el.height + padding) {
@@ -1466,18 +2374,21 @@ export default function Whiteboard({ user }) {
           return { element: el, type: isNearResize ? 'resize' : 'drag' };
         }
       } else if (el.type === 'text') {
+        if (!isFiniteNum(el.x) || !isFiniteNum(el.y)) continue;
         const padding = 10;
-        // Text hit boundary calculation is an estimation based on font size and text length
-        const estWidth = el.text.length * (el.fontSize * 0.55);
-        const estHeight = el.fontSize;
+        // Text hit boundary calculation is an estimation based on font size and text length.
+        // Text is drawn with textBaseline 'top', so it occupies y .. y + fontSize.
+        const estWidth = estTextWidth(el);
+        const estHeight = estTextHeight(el);
         if (x >= el.x - padding && x <= el.x + estWidth + padding &&
-            y >= el.y - estHeight - padding && y <= el.y + padding) {
+            y >= el.y - padding && y <= el.y + estHeight + padding) {
           const handleSize = 15;
           const isNearResize = (x >= el.x + estWidth - handleSize && x <= el.x + estWidth + handleSize &&
-                                y >= el.y - estHeight - handleSize && y <= el.y + handleSize);
+                                y >= el.y + estHeight - handleSize && y <= el.y + estHeight + handleSize);
           return { element: el, type: isNearResize ? 'resize' : 'drag' };
         }
       } else if (el.type === 'shape') {
+        if (![el.x1, el.y1, el.x2, el.y2].every(isFiniteNum)) continue;
         if (el.shapeType === 'rectangle') {
           const minX = Math.min(el.x1, el.x2);
           const maxX = Math.max(el.x1, el.x2);
@@ -1540,8 +2451,9 @@ export default function Whiteboard({ user }) {
         }
       } else if (el.type === 'stroke') {
         // Proximity hit test for freehand strokes
-        const threshold = el.width / 2 + 10;
-        const isNear = el.points.some(p => Math.hypot(p.x - x, p.y - y) < threshold);
+        if (!Array.isArray(el.points)) continue;
+        const threshold = (isFiniteNum(el.width) ? el.width : 4) / 2 + 10;
+        const isNear = el.points.some(p => p && Math.hypot(p.x - x, p.y - y) < threshold);
         if (isNear) {
           return { element: el, type: 'drag' };
         }
@@ -1576,6 +2488,9 @@ export default function Whiteboard({ user }) {
 
   // Undo operation
   const handleUndo = () => {
+    // Locked guests can't undo: their stack is full of remote strokes, so Ctrl+Z
+    // would revert the tutor's work for everyone.
+    if (isCollaborating && !isHost && !hasDrawAccess) return;
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
     setUndoStack(undoStack.slice(0, -1));
@@ -1590,6 +2505,7 @@ export default function Whiteboard({ user }) {
 
   // Redo operation
   const handleRedo = () => {
+    if (isCollaborating && !isHost && !hasDrawAccess) return;
     if (redoStack.length === 0) return;
     const next = redoStack[0];
     setRedoStack(redoStack.slice(1));
@@ -1627,16 +2543,7 @@ export default function Whiteboard({ user }) {
     setSelectedElement(null);
 
     // 4. Broadcast the new pages layout and active page index
-    if (isCollaborating && isHost && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'page-change',
-        payload: {
-          pages: nextPages,
-          pageIndex: nextIndex
-        }
-      });
-    }
+    broadcastPageChange(nextPages, nextIndex);
   };
 
   const navigatePages = (targetIndex) => {
@@ -1661,16 +2568,7 @@ export default function Whiteboard({ user }) {
     setSelectedElement(null);
 
     // Broadcast page-change and pages layout if host
-    if (isCollaborating && isHost && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'page-change',
-        payload: {
-          pages: updatedPages,
-          pageIndex: targetIndex
-        }
-      });
-    }
+    broadcastPageChange(updatedPages, targetIndex);
   };
 
   const handlePrevPage = () => {
@@ -1703,16 +2601,7 @@ export default function Whiteboard({ user }) {
     setSelectedElement(null);
 
     // Broadcast deletion and new pages layout to peers
-    if (isCollaborating && isHost && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'page-change',
-        payload: {
-          pages: updatedPages,
-          pageIndex: newIdx
-        }
-      });
-    }
+    broadcastPageChange(updatedPages, newIdx);
   };
 
   // Pointer Down event handler
@@ -1776,20 +2665,12 @@ export default function Whiteboard({ user }) {
       // Find if clicked existing text to edit it
       const hit = getElementAtPosition(x, y);
       if (hit && hit.element.type === 'text') {
-        const textEl = hit.element;
-        setEditingText({
-          id: textEl.id,
-          x: textEl.x,
-          y: textEl.y,
-          screenX,
-          screenY,
-          value: textEl.text
-        });
-        // Temp hide during editing
-        setElements(elements.filter(el => el.id !== textEl.id));
+        beginEditExistingText(hit.element);
       } else {
         setEditingText({
-          id: Date.now().toString(),
+          id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
+          token: Math.random().toString(36).slice(2),
+          isExisting: false,
           x,
           y,
           screenX,
@@ -1805,7 +2686,7 @@ export default function Whiteboard({ user }) {
       setIsDrawing(true);
       const firstPoint = { x, y, pressure: e.pressure || 0.5 };
       const newStroke = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'stroke',
         points: [firstPoint],
         color: activeColor,
@@ -1822,7 +2703,7 @@ export default function Whiteboard({ user }) {
       setIsDrawing(true);
       const firstPoint = { x, y, pressure: e.pressure || 0.5 };
       const newStroke = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'stroke',
         points: [firstPoint],
         color: activeColor,
@@ -1856,7 +2737,7 @@ export default function Whiteboard({ user }) {
         shapeY = Math.round(y / 24) * 24;
       }
       setCurrentShape({
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
         type: 'shape',
         shapeType: activeTool,
         x1: shapeX,
@@ -2044,7 +2925,7 @@ export default function Whiteboard({ user }) {
       setRedoStack([]);
       dragOriginalElementsRef.current = null;
       // Broadcast elements state after eraser wipe
-      broadcastElementsUpdate(elements);
+      broadcastElementsUpdate(elements, before);
       return;
     }
 
@@ -2056,7 +2937,7 @@ export default function Whiteboard({ user }) {
       setRedoStack([]);
       dragOriginalElementsRef.current = null;
       // Broadcast updated layout
-      broadcastElementsUpdate(elements);
+      broadcastElementsUpdate(elements, before);
       return;
     }
 
@@ -2093,20 +2974,13 @@ export default function Whiteboard({ user }) {
     const hit = getElementAtPosition(x, y);
     
     if (hit && hit.element.type === 'text') {
-      const textEl = hit.element;
-      setEditingText({
-        id: textEl.id,
-        x: textEl.x,
-        y: textEl.y,
-        screenX,
-        screenY,
-        value: textEl.text
-      });
-      setElements(elements.filter(el => el.id !== textEl.id));
+      beginEditExistingText(hit.element);
     } else if (activeTool === 'select' || activeTool === 'text') {
       // Create new text block on empty canvas double click
       setEditingText({
-        id: Date.now().toString(),
+        id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
+        token: Math.random().toString(36).slice(2),
+        isExisting: false,
         x,
         y,
         screenX,
@@ -2116,20 +2990,63 @@ export default function Whiteboard({ user }) {
     }
   };
 
+  // Edit an existing text element in place. It stays in `elements` (so history,
+  // page sync and peers are untouched while typing) and is only hidden from the
+  // canvas underneath the textarea; finishTextInput then replaces or deletes it.
+  const beginEditExistingText = (textEl) => {
+    editingHiddenIdRef.current = textEl.id;
+    setEditingText({
+      id: textEl.id,
+      token: Math.random().toString(36).slice(2),
+      isExisting: true,
+      x: textEl.x,
+      y: textEl.y,
+      // Place the editor over the text itself, in its own size and colour
+      screenX: textEl.x * zoom + pan.x,
+      screenY: textEl.y * zoom + pan.y,
+      fontSize: estTextHeight(textEl),
+      color: textEl.color,
+      value: textEl.text
+    });
+    drawCanvas();
+  };
+
   // Confirm and finish typing overlay text
   const finishTextInput = () => {
-    if (!editingText) return;
-    
-    const trimmedVal = editingText.value.trim();
-    if (trimmedVal !== '') {
+    const et = editingText;
+    if (!et) return;
+    // pointer-down and the textarea's blur can both fire for one commit
+    if (textCommitTokenRef.current === et.token) return;
+    textCommitTokenRef.current = et.token;
+    editingHiddenIdRef.current = null;
+
+    const trimmedVal = et.value.trim();
+    const existingIdx = et.isExisting ? elements.findIndex(el => el.id === et.id) : -1;
+
+    if (existingIdx !== -1) {
+      const original = elements[existingIdx];
+      if (trimmedVal === '') {
+        // Cleared: delete it for everyone (undo restores the original)
+        const remaining = elements.filter(el => el.id !== et.id);
+        pushToHistory(remaining);
+        broadcastElementsUpdate(remaining);
+      } else if (trimmedVal !== original.text) {
+        // Changed: replace in place; peers upsert by id instead of appending a duplicate
+        const updated = { ...original, text: trimmedVal };
+        pushToHistory(elements.map(el => (el.id === et.id ? updated : el)));
+        broadcastDrawingEnd(updated);
+      } else {
+        drawCanvas();
+      }
+    } else if (trimmedVal !== '') {
       const newTextElement = {
-        id: editingText.id,
+        id: et.id,
         type: 'text',
-        x: editingText.x,
-        y: editingText.y,
+        x: et.x,
+        y: et.y,
         text: trimmedVal,
-        fontSize: fontSize,
-        color: activeColor
+        fontSize: et.isExisting && isFiniteNum(et.fontSize) ? et.fontSize : fontSize,
+        color: et.isExisting && et.color ? et.color : activeColor
       };
       pushToHistory([...elements, newTextElement]);
       // Broadcast new text element
@@ -2138,7 +3055,7 @@ export default function Whiteboard({ user }) {
       // Re-render elements
       drawCanvas();
     }
-    
+
     setEditingText(null);
   };
 
@@ -2147,6 +3064,10 @@ export default function Whiteboard({ user }) {
     const handleKeyDown = (e) => {
       // Ignore shortcut keys if user is currently typing text
       if (editingText) return;
+      // ...or typing in any form field (hex colour box, name modal, chat), where
+      // Backspace / Ctrl+Z must edit the field, not the board.
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
@@ -2155,7 +3076,7 @@ export default function Whiteboard({ user }) {
         e.preventDefault();
         handleRedo();
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (activeTool === 'select' && selectedElement) {
+        if (activeTool === 'select' && selectedElement && !(isCollaborating && !isHost && !hasDrawAccess)) {
           const remaining = elements.filter(el => el.id !== selectedElement.id);
           pushToHistory(remaining);
           setSelectedElement(null);
@@ -2180,7 +3101,7 @@ export default function Whiteboard({ user }) {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [elements, selectedElement, activeTool, undoStack, redoStack, editingText]);
+  }, [elements, selectedElement, activeTool, undoStack, redoStack, editingText, isHost, hasDrawAccess, isCollaborating]);
 
   // Handle uploading locally stored image files
   const handleImageUpload = (e) => {
@@ -2189,39 +3110,72 @@ export default function Whiteboard({ user }) {
     loadImageFile(file);
   };
 
+  // While collaborating, images are downscaled and uploaded to Storage so only a short URL
+  // is broadcast (a raw photo as a data: URL is far past Realtime's payload limit). If the
+  // upload isn't possible (anonymous guest, storage error) the compressed data URL is used
+  // and the transport chunks it.
+  const prepareSharedImageSrc = async (dataUrl, preferPng) => {
+    if (!isCollaborating) return dataUrl;
+    const compressed = await compressImageDataUrl(dataUrl, preferPng);
+    try {
+      const blob = await (await fetch(compressed)).blob();
+      const url = await uploadWhiteboardImage(blob, roomId, preferPng ? 'png' : 'jpg');
+      if (url) return url;
+    } catch (_) {}
+    // Participants' edits go through the relay (~200KB cap): shrink harder if needed.
+    if (!isHostRef.current) {
+      let small = compressed;
+      for (const [dim, q] of [[800, 0.7], [600, 0.6], [400, 0.5]]) {
+        if (small.length <= RELAY_MAX_CHARS - 5000) break;
+        small = await compressImageDataUrl(dataUrl, false, dim, q);
+      }
+      return small;
+    }
+    return compressed;
+  };
+
   const loadImageFile = (file) => {
+    if (!file.type.startsWith('image/')) return;
     const reader = new FileReader();
     reader.onload = (event) => {
+      const dataUrl = event.target.result;
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
+        const preferPng = file.type === 'image/png' || file.type === 'image/gif';
+        const src = await prepareSharedImageSrc(dataUrl, preferPng);
+        if (!mountedRef.current) return;
+
         // Place in the center of current viewport
         const canvas = canvasRef.current;
+        if (!canvas) return;
         const viewportCenterX = (-pan.x + canvas.width / 2) / zoom;
         const viewportCenterY = (-pan.y + canvas.height / 2) / zoom;
-        
+
         // Scale default size to look good
         const maxW = 350;
         const ratio = img.width / img.height;
         const w = Math.min(maxW, img.width);
         const h = w / ratio;
 
-        // Cache image object locally
-        imageCache.current[event.target.result] = img;
+        // Cache image object locally (keyed by whatever src we ended up using)
+        imageCache.current[src] = img;
 
         const imgElement = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(), // unique across participants (Date.now() could collide)
           type: 'image',
-          src: event.target.result,
+          src,
           x: viewportCenterX - w / 2,
           y: viewportCenterY - h / 2,
           width: w,
           height: h
         };
-        pushToHistory([...elements, imgElement]);
+        pushToHistory([...elementsRef.current, imgElement]);
         setActiveTool('select');
         setSelectedElement(imgElement);
+        // Previously images were never sent to peers at all; share them like any other element.
+        broadcastDrawingEnd(imgElement);
       };
-      img.src = event.target.result;
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -2281,16 +3235,27 @@ export default function Whiteboard({ user }) {
 
         const dataUrl = offscreenCanvas.toDataURL('image/jpeg', 0.85);
 
+        // Upload the page render to Storage so only its URL is broadcast (one rendered
+        // page is ~100-300KB, past Realtime's payload limit). Falls back to the inline
+        // data URL (mock mode / upload failure); the transport then chunks it.
+        let src = dataUrl;
+        if (isCollaborating) {
+          const blob = await new Promise(resolve => offscreenCanvas.toBlob(resolve, 'image/jpeg', 0.85));
+          const uploadedUrl = await uploadWhiteboardImage(blob, roomId, 'jpg');
+          if (uploadedUrl) src = uploadedUrl;
+        }
+
         // Pre-cache the rendered image
         const imgObj = new Image();
+        imgObj.onload = () => drawCanvas();
         imgObj.src = dataUrl;
-        imageCache.current[dataUrl] = imgObj;
+        imageCache.current[src] = imgObj;
 
         // Position slide image at center of canvas coordinate space
         const slideImageElement = {
           id: `pdf-slide-${Date.now()}-${pageNum}`,
           type: 'image',
-          src: dataUrl,
+          src,
           x: 0,
           y: 0,
           width: offscreenCanvas.width,
@@ -2314,17 +3279,9 @@ export default function Whiteboard({ user }) {
       setRedoStack([]);
       setSelectedElement(null);
 
-      // Broadcast the newly imported PDF deck to all participants
-      if (isCollaborating && isHost && channelRef.current) {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'page-change',
-          payload: {
-            pages: newSlidePages,
-            pageIndex: 0
-          }
-        });
-      }
+      // Broadcast the newly imported PDF deck to all participants (only the page being
+      // shown is sent; each later page travels with its own page-change)
+      broadcastPageChange(newSlidePages, 0);
 
       triggerToast(`âœ… PDF imported successfully! ${totalPages} slides loaded.`);
     } catch (err) {
@@ -2350,6 +3307,11 @@ export default function Whiteboard({ user }) {
     e.preventDefault();
     setIsDragOver(false);
     
+    if (isCollaborating && !isHost && !hasDrawAccess) {
+      triggerToast("Drawing locked! Ask the tutor (host) to grant you drawing access.");
+      return;
+    }
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
@@ -2441,8 +3403,21 @@ export default function Whiteboard({ user }) {
     ctx.scale(zoomRef.current, zoomRef.current);
 
     // Helper: Draw elements (strokes, shapes, text, images)
+    // One bad element must never abort the whole frame: render each in isolation.
     const renderElement = (el) => {
-      if (!el) return;
+      if (!el || typeof el !== 'object') return;
+      if (el.id !== undefined && el.id === editingHiddenIdRef.current) return; // text under the editor
+      ctx.save();
+      try {
+        renderElementUnsafe(el);
+      } catch (_) {
+        // skip malformed element
+      } finally {
+        ctx.restore();
+      }
+    };
+
+    const renderElementUnsafe = (el) => {
       ctx.strokeStyle = el.color;
       ctx.fillStyle = el.color;
       ctx.lineWidth = el.width;
@@ -2451,7 +3426,7 @@ export default function Whiteboard({ user }) {
 
       if (el.type === 'stroke') {
         const pts = el.points;
-        if (pts.length < 2) return;
+        if (!Array.isArray(pts) || pts.length < 2) return;
         
         if (el.isHighlighter) {
           // Render Highlighter stroke
@@ -2570,23 +3545,37 @@ export default function Whiteboard({ user }) {
         ctx.fillText(el.text, el.x, el.y);
 
       } else if (el.type === 'image') {
-        const img = imageCache.current[el.src];
-        if (img) {
+        const src = el.src;
+        const img = typeof src === 'string' ? imageCache.current[src] : null;
+        if (img && img.complete && img.naturalWidth > 0) {
           ctx.drawImage(img, el.x, el.y, el.width, el.height);
-        } else {
-          // Preload image if not cached
-          const preImg = new Image();
-          preImg.onload = () => {
-            imageCache.current[el.src] = preImg;
-            drawCanvas(); // Trigger redraw
-          };
-          preImg.src = el.src;
-          // Temp outline
-          ctx.strokeStyle = '#6366f1';
-          ctx.strokeRect(el.x, el.y, el.width, el.height);
-          ctx.font = '12px Inter';
-          ctx.fillText('Loading image...', el.x + 10, el.y + 20);
+          return;
         }
+        const failed = typeof src !== 'string' || imageFailedRef.current.has(src);
+        if (!failed && !img) {
+          if (!isAllowedImageSrc(src)) {
+            imageFailedRef.current.add(src);
+          } else {
+            // Start ONE load per src (the cache entry doubles as the in-flight marker);
+            // failures are remembered so a broken URL isn't re-fetched on every redraw.
+            const preImg = new Image();
+            if (!src.startsWith('data:')) preImg.crossOrigin = 'anonymous'; // keep PNG export untainted
+            imageCache.current[src] = preImg;
+            preImg.onload = () => drawCanvas(); // Trigger redraw
+            preImg.onerror = () => {
+              if (imageCache.current[src] === preImg) delete imageCache.current[src];
+              imageFailedRef.current.add(src);
+              drawCanvas();
+            };
+            preImg.src = src;
+          }
+        }
+        // Temp outline
+        ctx.strokeStyle = '#6366f1';
+        ctx.strokeRect(el.x, el.y, el.width, el.height);
+        ctx.font = '12px Inter';
+        ctx.fillStyle = '#6366f1';
+        ctx.fillText(imageFailedRef.current.has(src) ? 'Image failed to load' : 'Loading image...', el.x + 10, el.y + 20);
       }
     };
 
@@ -2633,15 +3622,15 @@ export default function Whiteboard({ user }) {
           h = el.height;
         } else if (el.type === 'text') {
           minX = el.x;
-          minY = el.y - el.fontSize * 0.1;
-          w = el.text.length * (el.fontSize * 0.55);
-          h = el.fontSize * 1.1;
+          minY = el.y - estTextHeight(el) * 0.1;
+          w = estTextWidth(el);
+          h = estTextHeight(el) * 1.1;
         } else if (el.type === 'shape') {
           minX = Math.min(el.x1, el.x2);
           minY = Math.min(el.y1, el.y2);
           w = Math.abs(el.x2 - el.x1);
           h = Math.abs(el.y2 - el.y1);
-        } else if (el.type === 'stroke') {
+        } else if (el.type === 'stroke' && Array.isArray(el.points) && el.points.length > 0) {
           // Compute bounding box for strokes
           const xs = el.points.map(p => p.x);
           const ys = el.points.map(p => p.y);
@@ -2770,8 +3759,9 @@ export default function Whiteboard({ user }) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     
     elements.forEach(el => {
+      if (!el || typeof el !== 'object') return;
       if (el.type === 'stroke') {
-        el.points.forEach(p => {
+        (Array.isArray(el.points) ? el.points : []).forEach(p => {
           minX = Math.min(minX, p.x);
           minY = Math.min(minY, p.y);
           maxX = Math.max(maxX, p.x);
@@ -2783,11 +3773,12 @@ export default function Whiteboard({ user }) {
         maxX = Math.max(maxX, el.x1, el.x2);
         maxY = Math.max(maxY, el.y1, el.y2);
       } else if (el.type === 'text') {
-        const estWidth = el.text.length * (el.fontSize * 0.6);
+        // Text is drawn with textBaseline 'top': it spans y .. y + fontSize (plus descenders)
+        const estWidth = (typeof el.text === 'string' ? el.text.length : 0) * (estTextHeight(el) * 0.6);
         minX = Math.min(minX, el.x);
-        minY = Math.min(minY, el.y - el.fontSize);
+        minY = Math.min(minY, el.y);
         maxX = Math.max(maxX, el.x + estWidth);
-        maxY = Math.max(maxY, el.y + el.fontSize * 0.5);
+        maxY = Math.max(maxY, el.y + estTextHeight(el) * 1.2);
       } else if (el.type === 'image') {
         minX = Math.min(minX, el.x);
         minY = Math.min(minY, el.y);
@@ -2806,7 +3797,7 @@ export default function Whiteboard({ user }) {
     const width = maxX - minX;
     const height = maxY - minY;
 
-    if (width <= 0 || height <= 0) return;
+    if (!isFiniteNum(width) || !isFiniteNum(height) || width <= 0 || height <= 0) return;
 
     tempCanvas.width = width;
     tempCanvas.height = height;
@@ -2825,6 +3816,7 @@ export default function Whiteboard({ user }) {
 
     // Draw all objects
     const renderExportElement = (el) => {
+      if (!el || typeof el !== 'object') return;
       tempCtx.strokeStyle = el.color;
       tempCtx.fillStyle = el.color;
       tempCtx.lineWidth = el.width;
@@ -2832,7 +3824,7 @@ export default function Whiteboard({ user }) {
       tempCtx.lineJoin = 'round';
 
       if (el.type === 'stroke') {
-        const pts = el.points;
+        const pts = Array.isArray(el.points) ? el.points : [];
         if (pts.length >= 2) {
           if (el.isHighlighter) {
             tempCtx.save();
@@ -2911,7 +3903,7 @@ export default function Whiteboard({ user }) {
         tempCtx.fillText(el.text, el.x, el.y);
       } else if (el.type === 'image') {
         const img = imageCache.current[el.src];
-        if (img) {
+        if (img && img.complete && img.naturalWidth > 0) {
           tempCtx.drawImage(img, el.x, el.y, el.width, el.height);
         }
       }
@@ -2927,7 +3919,14 @@ export default function Whiteboard({ user }) {
     // Trigger PNG image download link
     const link = document.createElement('a');
     link.download = `foundaxia-whiteboard-${Date.now()}.png`;
-    link.href = tempCanvas.toDataURL('image/png');
+    try {
+      link.href = tempCanvas.toDataURL('image/png');
+    } catch (err) {
+      // A remote image without CORS headers taints the canvas
+      console.error('PNG export failed:', err);
+      triggerToast('Export failed: an image on the board could not be included.');
+      return;
+    }
     link.click();
   };
 
@@ -2945,15 +3944,15 @@ export default function Whiteboard({ user }) {
       h = el.height;
     } else if (el.type === 'text') {
       minX = el.x;
-      minY = el.y - el.fontSize * 0.1;
-      w = el.text.length * (el.fontSize * 0.55);
-      h = el.fontSize * 1.1;
+      minY = el.y - estTextHeight(el) * 0.1;
+      w = estTextWidth(el);
+      h = estTextHeight(el) * 1.1;
     } else if (el.type === 'shape') {
       minX = Math.min(el.x1, el.x2);
       minY = Math.min(el.y1, el.y2);
       w = Math.abs(el.x2 - el.x1);
       h = Math.abs(el.y2 - el.y1);
-    } else if (el.type === 'stroke') {
+    } else if (el.type === 'stroke' && Array.isArray(el.points) && el.points.length > 0) {
       const xs = el.points.map(p => p.x);
       const ys = el.points.map(p => p.y);
       minX = Math.min(...xs);
@@ -2961,6 +3960,8 @@ export default function Whiteboard({ user }) {
       w = Math.max(...xs) - minX;
       h = Math.max(...ys) - minY;
     }
+
+    if (![minX, minY, w, h].every(isFiniteNum)) return null;
 
     // Convert world bounds to screen bounds
     const screenLeft = minX * zoom + pan.x;
@@ -3099,6 +4100,21 @@ export default function Whiteboard({ user }) {
           </div>
         )}
 
+        {/* Identity notice: guest could not get an auth identity (e.g. anonymous sign-ins
+            disabled in the Supabase project), so the session is view-only for them. */}
+        {isCollaborating && !isHost && identityNotice && (
+          <div role="status" style={{
+            position: 'absolute', bottom: '120px', left: '50%', transform: 'translateX(-50%)',
+            maxWidth: 'min(560px, calc(100% - 32px))', textAlign: 'center',
+            background: 'rgba(15, 15, 20, 0.88)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(245, 158, 11, 0.45)', borderRadius: '12px',
+            padding: '10px 20px', color: '#fcd34d', fontSize: '0.85rem', fontWeight: '600',
+            zIndex: 200, pointerEvents: 'none', userSelect: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+          }}>
+            {identityNotice}
+          </div>
+        )}
+
         {/* Granted Access Banner */}
         {isCollaborating && !isHost && hasDrawAccess && (
           <div style={{
@@ -3128,6 +4144,7 @@ export default function Whiteboard({ user }) {
               const remaining = elements.filter(el => el.id !== selectedElement.id);
               pushToHistory(remaining);
               setSelectedElement(null);
+              broadcastElementsUpdate(remaining);
             }}
             title="Delete Selected Element"
           >
@@ -3150,8 +4167,8 @@ export default function Whiteboard({ user }) {
               value={editingText.value}
               rows={Math.max(1, editingText.value.split('\n').length)}
               style={{
-                fontSize: fontSize * zoom + 'px',
-                color: activeColor,
+                fontSize: (editingText.isExisting && isFiniteNum(editingText.fontSize) ? editingText.fontSize : fontSize) * zoom + 'px',
+                color: editingText.isExisting && editingText.color ? editingText.color : activeColor,
                 minWidth: '150px',
                 lineHeight: '1.2'
               }}
@@ -3316,6 +4333,7 @@ export default function Whiteboard({ user }) {
           setSelectedElement={setSelectedElement}
           elements={elements}
           pushToHistory={pushToHistory}
+          broadcastElementsUpdate={broadcastElementsUpdate}
         />
 
         {/* â”€â”€ Center Canvas Zoom Slider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -3469,8 +4487,7 @@ export default function Whiteboard({ user }) {
         participants={participants}
         localUserId={localUserId.current}
         isHost={isHost}
-        channelRef={channelRef}
-        setParticipants={setParticipants}
+        onLowerHand={lowerParticipantHand}
         toggleParticipantDrawAccess={toggleParticipantDrawAccess}
       />
 
@@ -3491,6 +4508,5 @@ export default function Whiteboard({ user }) {
     </div>
   );
 }
-// Harmless comment to trigger IDE diagnostics refresh
 
 

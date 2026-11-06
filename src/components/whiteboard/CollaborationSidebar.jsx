@@ -10,8 +10,7 @@ export default function CollaborationSidebar({
   participants,
   localUserId,
   isHost,
-  channelRef,
-  setParticipants,
+  onLowerHand,
   toggleParticipantDrawAccess
 }) {
   if (!isCollaborating || !showCollabSidebar) return null;
@@ -87,20 +86,7 @@ export default function CollaborationSidebar({
 
                   {!isPeerHost && isHost && peer.handRaised && (
                     <button 
-                      onClick={() => {
-                        // Lower student's hand
-                        channelRef.current.send({
-                          type: 'broadcast',
-                          event: 'lower-hand-request',
-                          payload: { targetUserId: peer.userId }
-                        });
-                        // Also update local state
-                        setParticipants(prev => {
-                          const next = { ...prev };
-                          if (next[peer.userId]) next[peer.userId].handRaised = false;
-                          return next;
-                        });
-                      }}
+                      onClick={() => onLowerHand(peer.userId)}
                       style={{
                         background: 'rgba(245, 158, 11, 0.2)',
                         border: '1px solid rgba(245, 158, 11, 0.5)',

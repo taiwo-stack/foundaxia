@@ -1,4 +1,4 @@
-const CACHE_NAME = 'foundaxia-v1';
+const CACHE_NAME = 'foundaxia-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -35,7 +35,13 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          // Take the open tab to the notification's page, not just focus it as-is.
+          const focused = client.focus();
+          return 'navigate' in client && targetUrl !== '/'
+            ? focused.then((c) => (c || client).navigate(targetUrl))
+            : focused;
+        }
       }
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     })
@@ -57,6 +63,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
+          if (!response.ok) return response; // never cache 404s/500s
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;
@@ -72,6 +79,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((cached) => {
       const networkFetch = fetch(request)
         .then((response) => {
+          if (!response.ok) return response; // never cache 404s/500s
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           return response;

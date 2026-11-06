@@ -1,22 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
-  getStudentCourses, getCourses, getTutors,
+  getStudentCourses, getCourses, getTutors, getCourseTutors,
   getTopics, getMaterials, uploadMaterialFile,
-  getTasks, getStudentTasks, submitStudentTask,
+  getTasksForStudent, submitQuiz, getStudentTasks, submitStudentTask,
   getSchedules, getAttendance,
   getAnnouncements,
   getChatMessages, sendChatMessage, markMessagesRead,
   getLiveSessionsForStudent
 } from '../services/dataService';
 import {
-  Calendar, User, BookOpen, Clock, AlertCircle, Save,
-  MessageSquare, FileText, Send, CheckSquare, Award, Check, X, Megaphone, Play, LayoutDashboard, Menu,
+  Calendar, User, BookOpen, Clock, Save,
+  MessageSquare, FileText, Send, CheckSquare, Award, X, Megaphone, Play, LayoutDashboard, Menu,
   ChevronLeft
 } from 'lucide-react';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import '../styles/Dashboard.css';
+import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -60,6 +61,7 @@ export default function StudentDashboard({ user }) {
   const [enrollments, setEnrollments] = useState([]);
   const [courses, setCourses] = useState([]);
   const [tutors, setTutors] = useState([]);
+  const [courseTutors, setCourseTutors] = useState([]);
   const [topics, setTopics] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -75,6 +77,8 @@ export default function StudentDashboard({ user }) {
   const [activeQuizId, setActiveQuizId] = useState(null);
   const [quizAnswers, setQuizAnswers] = useState({});
   const [quizScore, setQuizScore] = useState(null);
+  const [quizCorrectAnswers, setQuizCorrectAnswers] = useState(null); // revealed only after submitting
+  const [quizSubmitting, setQuizSubmitting] = useState(false);
 
   // Homework Submission inputs
   const [activeSubTaskId, setActiveSubTaskId] = useState(null);
@@ -87,7 +91,7 @@ export default function StudentDashboard({ user }) {
   const [chatInput, setChatInput] = useState('');
 
   // Load dynamically based on logged-in student details
-  const studentId = user?.id || 's1';
+  const studentId = user?.id;
 
   const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
@@ -107,34 +111,45 @@ export default function StudentDashboard({ user }) {
 
   const loadStudentData = async () => {
     try {
-      const [allBookings, allStudents, scList, cList, tList, tpList, matList, tkList, subList, schList, attList, annList, msgList] = await Promise.all([
-        getBookings(), getStudents(), getStudentCourses(), getCourses(), getTutors(),
-        getTopics(), getMaterials(), getTasks(), getStudentTasks(), getSchedules(),
-        getAttendance(), getAnnouncements(), getChatMessages()
+      // Load each source independently: one failing request (e.g. the quiz API) must
+      // not blank the whole dashboard - that used to hide the chat for some students.
+      const safe = (promise, label) => promise.catch(err => {
+        console.error(`Failed to load ${label}:`, err);
+        return [];
+      });
+      const [allBookings, allStudents, scList, cList, tList, ctList, tpList, matList, tkList, subList, schList, attList, annList, msgList] = await Promise.all([
+        safe(getBookings(), 'bookings'), safe(getStudents(), 'students'), safe(getStudentCourses(), 'enrollments'),
+        safe(getCourses(), 'courses'), safe(getTutors(), 'tutors'), safe(getCourseTutors(), 'course tutors'),
+        safe(getTopics(), 'topics'), safe(getMaterials(), 'materials'), safe(getTasksForStudent(), 'tasks'),
+        safe(getStudentTasks(), 'submissions'), safe(getSchedules(), 'schedules'),
+        safe(getAttendance(), 'attendance'), safe(getAnnouncements(), 'announcements'), safe(getChatMessages(), 'chat messages')
       ]);
 
-      const currentStudent = allStudents.find(s =>
-        s.id === studentId ||
-        s.profile_id === studentId ||
-        s.email === user?.email
-      );
+      const myEmail = user?.email?.toLowerCase();
+      const currentStudent =
+        allStudents.find(s => s.id === studentId || s.profile_id === studentId) ||
+        (myEmail ? allStudents.find(s => s.email?.toLowerCase() === myEmail) : undefined);
       setStudentInfo(currentStudent);
 
       const actualStudentId = currentStudent?.id || studentId;
 
       // Filter bookings for Tobi Coker (or matching by student_name)
       const nameToMatch = currentStudent ? currentStudent.full_name : (user?.full_name || 'Tobi Coker');
-      const filtered = allBookings.filter(b =>
-        b.student_name.toLowerCase() === nameToMatch.toLowerCase() ||
-        b.email === currentStudent?.email ||
-        b.email === user?.email
-      );
+      // Match on email; fall back to name only for bookings that have no email.
+      // (A null student_name used to throw here and blank the whole dashboard, and
+      // name matching showed students other same-named students' bookings.)
+      const emails = [currentStudent?.email, user?.email].filter(Boolean).map(e => e.toLowerCase());
+      const filtered = allBookings.filter(b => {
+        if (b.email) return emails.includes(b.email.toLowerCase());
+        return !!nameToMatch && b.student_name?.toLowerCase() === nameToMatch.toLowerCase();
+      });
       setBookings(filtered);
 
       const studEnroll = scList.filter(x => x.student_id === actualStudentId);
       setEnrollments(studEnroll);
       setCourses(cList);
       setTutors(tList);
+      setCourseTutors(ctList);
       setTopics(tpList);
       setMaterials(matList);
       setTasks(tkList);
@@ -175,13 +190,31 @@ export default function StudentDashboard({ user }) {
     return () => clearInterval(interval);
   }, [studentInfo?.id, studentId]);
 
+  // Chat used to load only once; poll so new tutor messages and the unread badge update.
+  useEffect(() => {
+    if (!studentId) return;
+    const refreshChat = async () => {
+      try {
+        const latest = await getChatMessages();
+        setChatMessages(prev => {
+          if (prev.length === latest.length && prev.every((m, i) => m.id === latest[i].id && m.read === latest[i].read)) return prev;
+          return latest;
+        });
+      } catch (err) {
+        console.error('Error refreshing chat:', err);
+      }
+    };
+    const interval = setInterval(refreshChat, 10000);
+    return () => clearInterval(interval);
+  }, [studentId]);
+
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
     if (!activeTutorChat) return;
-    const actualStudentId = studentInfo?.profile_id || studentInfo?.id || studentId;
-    const otherId = activeTutorChat.profile_id || activeTutorChat.id;
+    const actualStudentId = personIds(studentInfo, studentId);
+    const otherId = personIds(activeTutorChat);
     const unreadIds = chatMessages
-      .filter(m => m.sender_id === otherId && m.receiver_id === actualStudentId && !m.read)
+      .filter(m => isOneOf(m.sender_id, otherId) && isOneOf(m.receiver_id, actualStudentId) && !m.read)
       .map(m => m.id);
     if (unreadIds.length === 0) return;
     markMessagesRead(unreadIds)
@@ -191,8 +224,8 @@ export default function StudentDashboard({ user }) {
 
   // Reflect unread count on the installed app's icon, where supported
   useEffect(() => {
-    const actualStudentId = studentInfo?.profile_id || studentInfo?.id || studentId;
-    const count = chatMessages.filter(m => m.receiver_id === actualStudentId && !m.read).length;
+    const actualStudentId = personIds(studentInfo, studentId);
+    const count = chatMessages.filter(m => isOneOf(m.receiver_id, actualStudentId) && !m.read).length;
     if ('setAppBadge' in navigator) {
       if (count > 0) navigator.setAppBadge(count).catch(() => {});
       else navigator.clearAppBadge().catch(() => {});
@@ -232,34 +265,31 @@ export default function StudentDashboard({ user }) {
   };
 
   const handleQuizSubmit = async (taskObj) => {
-    const questions = parseQuizQuestions(taskObj?.quiz_questions);
-    let correctCount = 0;
+    if (!taskObj || quizSubmitting) return;
+    const questions = parseQuizQuestions(taskObj.quiz_questions);
+    const unanswered = questions.filter((_, idx) => quizAnswers[idx] === undefined).length;
+    if (unanswered > 0 && !window.confirm(`You have ${unanswered} unanswered question(s). Submit anyway?`)) return;
 
-    questions.forEach((q, idx) => {
-      if (quizAnswers[idx] === q.correct) {
-        correctCount++;
-      }
-    });
-
-    const finalPercent = questions.length > 0 ? Math.round((correctCount / questions.length) * 100) : 0;
-    setQuizScore(finalPercent);
-
+    setQuizSubmitting(true);
     try {
-      const saved = await submitStudentTask({
-        task_id: taskObj.id,
-        student_id: studentInfo?.id || studentId,
-        submission_text: `Interactive Quiz completed. Score: ${finalPercent}% (${correctCount}/${questions.length} correct).`
-      });
-      setSubmissions(prev => [...prev, saved]);
-      alert(`Quiz completed! You scored ${finalPercent}%.`);
+      // Graded on the server: the answer key never reaches the browser beforehand and
+      // the saved grade can't be altered client-side.
+      const answers = questions.map((_, idx) => (quizAnswers[idx] === undefined ? null : quizAnswers[idx]));
+      const result = await submitQuiz(taskObj.id, answers);
+      setQuizScore(result.percent);
+      setQuizCorrectAnswers(result.correctAnswers || null);
+      setSubmissions(prev => [...prev, result.submission]);
+      alert(`Quiz completed! You scored ${result.percent}% (${result.correctCount}/${result.total} correct).`);
     } catch (err) {
-      alert('Failed to save quiz results: ' + err.message);
+      alert('Failed to submit quiz: ' + err.message);
+    } finally {
+      setQuizSubmitting(false);
     }
   };
 
   const handleHomeworkSubmit = async (e) => {
     e.preventDefault();
-    if (!activeSubTaskId) return;
+    if (!activeSubTaskId || saving) return;
     setSaving(true);
     try {
       let fileUrl = '';
@@ -310,6 +340,35 @@ export default function StudentDashboard({ user }) {
 
   // Next Incoming & Today's classes
   const now = new Date();
+  // A class only counts as over once it has ENDED, so late students still get the
+  // join link. Classes without an end_time are assumed to last one hour.
+  const classEnd = (sch) => sch.end_time
+    ? new Date(sch.end_time)
+    : new Date(new Date(sch.start_time).getTime() + 60 * 60 * 1000);
+  const enrolledCourseIds = new Set(enrollments.map(en => en.course_id));
+  // Timetable: classes that haven't ended yet, soonest first.
+  const upcomingSchedules = schedules
+    .filter(sch => classEnd(sch) >= now)
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  // One chat contact per tutor, even if they teach this student in several courses.
+  // The tutor comes from the enrollment itself or, when the enrollment has no tutor set,
+  // from the tutors assigned to that course.
+  const chatEnrollments = (() => {
+    const seen = new Set();
+    const contacts = [];
+    const add = (tutorRef, courseId) => {
+      const t = tutors.find(tu => tu.id === tutorRef || tu.profile_id === tutorRef);
+      if (!t || seen.has(t.id)) return;
+      seen.add(t.id);
+      contacts.push({ tutor: t, course_id: courseId });
+    };
+    enrollments.forEach(en => { if (en.tutor_id) add(en.tutor_id, en.course_id); });
+    enrollments.forEach(en => {
+      if (en.tutor_id) return;
+      courseTutors.filter(ct => ct.course_id === en.course_id).forEach(ct => add(ct.tutor_id, en.course_id));
+    });
+    return contacts;
+  })();
   const todayStr = now.toDateString();
 
   // Today's classes (all scheduled classes for today)
@@ -332,7 +391,7 @@ export default function StudentDashboard({ user }) {
 
   // Next incoming class (future class, sorted by start_time ascending)
   const nextClass = schedules
-    .filter(sch => new Date(sch.start_time) > now)
+    .filter(sch => classEnd(sch) > now)
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time))[0] || null;
 
   if (loading) {
@@ -364,7 +423,7 @@ export default function StudentDashboard({ user }) {
       {/* Floating Unread Messages Badge FAB */}
       {(() => {
         const unreadCount = chatMessages.filter(
-          m => m.receiver_id === (studentInfo?.profile_id || studentInfo?.id) && !m.read
+          m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read
         ).length;
         return unreadCount > 0 ? (
           <button
@@ -513,7 +572,7 @@ export default function StudentDashboard({ user }) {
             <div className="dashboard-quick-stats">
               {[
                 { label: 'Courses Enrolled', value: enrollments.length, icon: '📚', color: '#4c6ef5', tab: 'courses' },
-                { label: 'Upcoming Classes', value: schedules.filter(s => new Date(s.scheduled_date) >= new Date()).length, icon: '📅', color: '#12b886', tab: 'timetable' },
+                { label: 'Upcoming Classes', value: schedules.filter(s => classEnd(s) >= now).length, icon: '📅', color: '#12b886', tab: 'timetable' },
                 { label: 'Attendance Rate', value: `${attendanceRate}%`, icon: '📊', color: '#3b82f6', tab: 'timetable' },
                 { label: 'Pending Tasks', value: activeStudentTasks.filter(t => !submissions.find(s => s.task_id === t.id)).length, icon: '✏️', color: '#f59f00', tab: 'homework' },
               ].map(stat => (
@@ -642,7 +701,7 @@ export default function StudentDashboard({ user }) {
                         const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
                         const tName = tutors.find(t => t.id === sch.tutor_id)?.full_name || 'Tutor';
                         const classTime = new Date(sch.start_time);
-                        const isPast = classTime < now;
+                        const isPast = classEnd(sch) < now;
 
                         return (
                           <div key={sch.id} style={{
@@ -720,7 +779,7 @@ export default function StudentDashboard({ user }) {
                     <h3 style={{ marginTop: 0, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-color)' }}>
                       <Megaphone size={18} /> Recent Announcements
                     </h3>
-                    {announcements.slice(0, 3).map(ann => (
+                    {announcements.filter(a => enrolledCourseIds.has(a.course_id)).slice(0, 3).map(ann => (
                       <div key={ann.id} style={{
                         padding: '0.85rem 1rem',
                         background: '#f7fafc',
@@ -729,7 +788,7 @@ export default function StudentDashboard({ user }) {
                         borderLeft: '3px solid var(--primary-color)'
                       }}>
                         <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: '0.25rem' }}>{ann.title}</div>
-                        <div style={{ fontSize: '0.82rem', color: '#4a5568' }}>{ann.message}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#4a5568' }}>{ann.announcement || ann.message}</div>
                       </div>
                     ))}
                   </div>
@@ -817,7 +876,7 @@ export default function StudentDashboard({ user }) {
                       <div
                         key={c.id}
                         className="course-enrollment-card"
-                        onClick={() => { setSelectedCourseId(c.id); setActiveQuizId(null); setQuizAnswers({}); setQuizScore(null); }}
+                        onClick={() => { setSelectedCourseId(c.id); setActiveQuizId(null); setQuizAnswers({}); setQuizScore(null); setQuizCorrectAnswers(null); }}
                       >
                         <div
                           className="course-card-banner-img"
@@ -856,7 +915,7 @@ export default function StudentDashboard({ user }) {
                 <div>
                   <button
                     className="classroom-back-btn-link"
-                    onClick={() => { setSelectedCourseId(null); setActiveQuizId(null); setQuizScore(null); }}
+                    onClick={() => { setSelectedCourseId(null); setActiveQuizId(null); setQuizScore(null); setQuizCorrectAnswers(null); }}
                   >
                     <ChevronLeft size={15} /> Back to My Courses
                   </button>
@@ -1021,13 +1080,15 @@ export default function StudentDashboard({ user }) {
                                   <div key={tk.id} style={{ marginTop: '0.75rem' }}>
                                     {sub ? (
                                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', color: '#166534', background: '#d1fae5', padding: '0.3rem 0.6rem', borderRadius: '6px' }}>
-                                        <Award size={12} /> Score: {sub.grade}% (Completed)
+                                        <Award size={12} /> {sub.grade !== null && sub.grade !== undefined
+                                          ? `Score: ${Math.round((Number(sub.grade) / (Number(tk.max_points) || 100)) * 100)}% (${sub.grade}/${tk.max_points || 100})`
+                                          : 'Submitted - awaiting grade'}
                                       </div>
                                     ) : (
                                       <button
                                         className="btn-action edit"
                                         style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, borderRadius: '8px' }}
-                                        onClick={() => { setActiveQuizId(tk.id); setQuizAnswers({}); setQuizScore(null); }}
+                                        onClick={() => { setActiveQuizId(tk.id); setQuizAnswers({}); setQuizScore(null); setQuizCorrectAnswers(null); }}
                                       >
                                         <Play size={13} /> Start Quiz: {tk.title}
                                       </button>
@@ -1087,7 +1148,10 @@ export default function StudentDashboard({ user }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {schedules.map(sch => {
+                        {upcomingSchedules.length === 0 && (
+                          <tr><td colSpan={4} style={{ color: '#a0aec0', textAlign: 'center' }}>No upcoming classes.</td></tr>
+                        )}
+                        {upcomingSchedules.map(sch => {
                           const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
                           const tName = tutors.find(t => t.id === sch.tutor_id)?.full_name || 'Tutor';
                           return (
@@ -1127,16 +1191,14 @@ export default function StudentDashboard({ user }) {
                 <NotificationToggle userId={studentInfo?.profile_id || studentInfo?.id || studentId} />
               </div>
               <ul className="whatsapp-contacts-list">
-                {enrollments.map(en => {
-                  const t = tutors.find(tu => tu.id === en.tutor_id);
+                {chatEnrollments.map(en => {
+                  const t = en.tutor;
                   const c = courses.find(co => co.id === en.course_id);
-                  if (!t) return null;
                   const isSelected = activeTutorChat?.id === t.id;
 
                   // Extract last message
                   const threadMessages = chatMessages.filter(m =>
-                    (m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId) && m.receiver_id === (t.profile_id || t.id)) ||
-                    (m.sender_id === (t.profile_id || t.id) && m.receiver_id === (studentInfo?.profile_id || studentInfo?.id || studentId))
+                    inThread(m, personIds(studentInfo, studentId), personIds(t))
                   );
                   const lastMsg = threadMessages[threadMessages.length - 1];
                   const lastMsgText = lastMsg ? lastMsg.message_text : `Start learning in ${c?.title || 'course'}`;
@@ -1144,7 +1206,7 @@ export default function StudentDashboard({ user }) {
 
                   return (
                     <li
-                      key={en.course_id}
+                      key={t.id}
                       className={`whatsapp-contact-item ${isSelected ? 'active' : ''}`}
                       onClick={() => { setActiveTutorChat(t); setMobileChatView('chat'); }}
                     >
@@ -1161,7 +1223,7 @@ export default function StudentDashboard({ user }) {
                     </li>
                   );
                 })}
-                {enrollments.filter(en => tutors.find(tu => tu.id === en.tutor_id)).length === 0 && (
+                {chatEnrollments.length === 0 && (
                   <div style={{ padding: '2rem', textAlign: 'center', color: '#8696a0', fontSize: '0.9rem' }}>
                     No assigned tutors found.
                   </div>
@@ -1197,10 +1259,9 @@ export default function StudentDashboard({ user }) {
                   {/* Messages Logs view container */}
                   <div className="whatsapp-messages-container">
                     {chatMessages.filter(m =>
-                      (m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId) && m.receiver_id === (activeTutorChat.profile_id || activeTutorChat.id)) ||
-                      (m.sender_id === (activeTutorChat.profile_id || activeTutorChat.id) && m.receiver_id === (studentInfo?.profile_id || studentInfo?.id || studentId))
+                      inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))
                     ).map(m => {
-                      const isMe = m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId);
+                      const isMe = isOneOf(m.sender_id, personIds(studentInfo, studentId));
                       return (
                         <div
                           key={m.id}
@@ -1261,8 +1322,8 @@ export default function StudentDashboard({ user }) {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
                           <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>{tk.title} ({cTitle})</span>
                           {sub ? (
-                            <span className={`badge ${sub.grade !== null ? 'badge-approved' : 'badge-pending'}`}>
-                              {sub.grade !== null ? `Graded: ${sub.grade}/${tk.max_points}` : 'Submitted'}
+                            <span className={`badge ${sub.grade != null ? 'badge-approved' : 'badge-pending'}`}>
+                              {sub.grade != null ? `Graded: ${sub.grade}/${tk.max_points || 100}` : 'Submitted'}
                             </span>
                           ) : (
                             <span className="badge badge-pending">Not Submitted</span>
@@ -1281,7 +1342,7 @@ export default function StudentDashboard({ user }) {
                               <button
                                 className="btn-action edit"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, borderRadius: '8px' }}
-                                onClick={() => { setActiveQuizId(tk.id); setQuizAnswers({}); setQuizScore(null); }}
+                                onClick={() => { setActiveQuizId(tk.id); setQuizAnswers({}); setQuizScore(null); setQuizCorrectAnswers(null); }}
                               >
                                 <Play size={13} /> Start Quiz
                               </button>
@@ -1298,7 +1359,7 @@ export default function StudentDashboard({ user }) {
                                   </div>
                                   <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                     <button type="button" className="btn-action cancel" style={{ padding: '0.35rem 0.7rem' }} onClick={() => setActiveSubTaskId(null)}>Cancel</button>
-                                    <button type="submit" className="btn-action approve" style={{ padding: '0.35rem 0.7rem' }}>Submit Task</button>
+                                    <button type="submit" className="btn-action approve" style={{ padding: '0.35rem 0.7rem' }} disabled={saving}>{saving ? 'Submitting...' : 'Submit Task'}</button>
                                   </div>
                                 </form>
                               ) : (
@@ -1373,9 +1434,11 @@ export default function StudentDashboard({ user }) {
                   </div>
                   <div className="form-group">
                     <label>Gender</label>
-                    <select name="gender" value={studentInfo.gender} onChange={(e) => setStudentInfo(prev => ({ ...prev, gender: e.target.value }))}>
+                    <select name="gender" value={studentInfo.gender || ''} onChange={(e) => setStudentInfo(prev => ({ ...prev, gender: e.target.value || null }))}>
+                      <option value="">Prefer not to say</option>
                       <option value="male">Male</option>
                       <option value="female">Female</option>
+                      <option value="other">Other</option>
                     </select>
                   </div>
                 </div>
@@ -1437,7 +1500,7 @@ export default function StudentDashboard({ user }) {
                 <h4 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: 'var(--primary-color)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   📝 {tasks.find(t => t.id === activeQuizId)?.title}
                 </h4>
-                <button onClick={() => { setActiveQuizId(null); setQuizScore(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0', padding: '0.25rem' }}><X size={20} /></button>
+                <button onClick={() => { setActiveQuizId(null); setQuizScore(null); setQuizCorrectAnswers(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0', padding: '0.25rem' }}><X size={20} /></button>
               </div>
 
               {/* Questions list */}
@@ -1467,8 +1530,14 @@ export default function StudentDashboard({ user }) {
                                 fontSize: '0.88rem',
                                 padding: '0.65rem 0.85rem',
                                 borderRadius: '8px',
-                                background: quizAnswers[qIdx] === optIdx ? '#f0f7ff' : 'transparent',
-                                border: quizAnswers[qIdx] === optIdx ? '1px solid var(--primary-color)' : '1px solid #edf2f7',
+                                background: quizCorrectAnswers && quizCorrectAnswers[qIdx] === optIdx
+                                  ? '#dcfce7'
+                                  : quizCorrectAnswers && quizAnswers[qIdx] === optIdx
+                                    ? '#fee2e2'
+                                    : quizAnswers[qIdx] === optIdx ? '#f0f7ff' : 'transparent',
+                                border: quizCorrectAnswers && quizCorrectAnswers[qIdx] === optIdx
+                                  ? '1px solid #16a34a'
+                                  : quizAnswers[qIdx] === optIdx ? '1px solid var(--primary-color)' : '1px solid #edf2f7',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease'
                               }}
@@ -1498,13 +1567,14 @@ export default function StudentDashboard({ user }) {
                     className="btn-primary"
                     style={{ padding: '0.65rem 1.5rem', fontSize: '0.9rem', borderRadius: '10px' }}
                     onClick={() => handleQuizSubmit(tasks.find(t => t.id === activeQuizId))}
+                    disabled={quizSubmitting}
                   >
-                    Submit Answers
+                    {quizSubmitting ? 'Grading...' : 'Submit Answers'}
                   </button>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
                     <span style={{ fontWeight: 'bold', color: '#166534', fontSize: '1rem' }}>Result Score: {quizScore}%</span>
-                    <button className="btn-action edit" style={{ padding: '0.65rem 1.25rem', borderRadius: '8px' }} onClick={() => { setActiveQuizId(null); setQuizScore(null); }}>Done</button>
+                    <button className="btn-action edit" style={{ padding: '0.65rem 1.25rem', borderRadius: '8px' }} onClick={() => { setActiveQuizId(null); setQuizScore(null); setQuizCorrectAnswers(null); }}>Done</button>
                   </div>
                 )}
               </div>

@@ -28,7 +28,8 @@ export default function WhiteboardProperties({
   selectedElement,
   setSelectedElement,
   elements,
-  pushToHistory
+  pushToHistory,
+  broadcastElementsUpdate
 }) {
   // If user is collaborator and does not have drawing access, properties shouldn't render
   if (!isHost && isCollaborating && !hasDrawAccess) return null;
@@ -205,6 +206,7 @@ export default function WhiteboardProperties({
                 const remaining = elements.filter(el => el.id !== selectedElement.id);
                 pushToHistory(remaining);
                 setSelectedElement(null);
+                broadcastElementsUpdate?.(remaining);
               }}
             >
               <Trash size={16} />

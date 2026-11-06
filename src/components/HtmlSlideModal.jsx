@@ -39,7 +39,8 @@ export default function HtmlSlideModal({ url, title, onClose }) {
           </button>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
-          <SandboxedFrame src={url} title={title} />
+          {/* url comes from our own course_materials row; legacy uploads may be inline data: URLs */}
+          <SandboxedFrame src={url} title={title} allowDataUrl />
         </div>
       </div>
     </div>

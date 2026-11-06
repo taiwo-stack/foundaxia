@@ -201,7 +201,7 @@ export const buildSlideDeckHtml = (deckTitle, slides) => {
   const sizeBytes = new Blob([html]).size;
   if (sizeBytes > MAX_OUTPUT_BYTES) {
     throw new Error(
-      `Slide deck is ${(sizeBytes / (1024 * 1024)).toFixed(1)}MB, over the 5MB limit - ` +
+      `Slide deck is ${(sizeBytes / (1024 * 1024)).toFixed(1)}MB, over the ${(MAX_OUTPUT_BYTES / (1024 * 1024)).toFixed(0)}MB limit - ` +
       'try compressing or removing some images.'
     );
   }

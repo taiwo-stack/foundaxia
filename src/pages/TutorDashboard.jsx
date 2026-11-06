@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getTutors, updateTutor, updateBookingStatus, uploadAvatar,
@@ -13,20 +13,33 @@ import {
   createLiveSession
 } from '../services/dataService';
 import { 
-  Calendar, User, Clock, AlertCircle, Save, Check, X,
+  Calendar, User, Clock, Save, X,
   MessageSquare, Plus, CheckSquare, Megaphone, Trash2, Send,
-  BookOpen, FileText, Upload, MonitorPlay, Edit
+  BookOpen, FileText, Upload, MonitorPlay, Edit, Paperclip
 } from 'lucide-react';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
+import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return '';
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// Normalise an uploaded file to the material file_type convention used by the admin and
+// student dashboards ('pdf' | 'image' | 'video' | 'doc' | 'other'; 'html_slide' handled by caller).
+const getMaterialFileType = (file) => {
+  const mime = (file?.type || '').toLowerCase();
+  const name = (file?.name || '').toLowerCase();
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
+  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/.test(name)) return 'image';
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|avi)$/.test(name)) return 'video';
+  if (mime.includes('msword') || mime.includes('wordprocessingml') || /\.docx?$/.test(name)) return 'doc';
+  return 'other';
 };
 
 const getSpecialClassImage = (title = '', index = 0) => {
@@ -81,6 +94,7 @@ export default function TutorDashboard({ user }) {
   const [broadcastText, setBroadcastText] = useState('');
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
+  const [broadcastSentCount, setBroadcastSentCount] = useState(0);
 
   // Tutor Task Creation state
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -132,11 +146,6 @@ export default function TutorDashboard({ user }) {
       i === qIdx ? { ...q, options: q.options.map((o, oi) => oi === optIdx ? value : o) } : q
     ));
 
-  // Students enrolled in the currently-selected course
-  const courseStudents = students.filter(s =>
-    enrollments.some(sc => sc.course_id === newTaskCourse && sc.student_id === s.id)
-  );
-
   // Grading states
   const [activeSubmissionId, setActiveSubmissionId] = useState(null);
   const [gradeInput, setGradeInput] = useState('');
@@ -169,8 +178,46 @@ export default function TutorDashboard({ user }) {
 
   // Load dynamically based on logged-in tutor details
   const tutorId = user?.id || 't1';
+  const myTutorId = tutorInfo?.id || tutorId;
 
-  const loadTutorDashboard = async () => {
+  // Courses this tutor teaches (assigned via course_tutors or via a student enrollment)
+  const myCourseIds = new Set([
+    ...courseTutors.filter(ct => ct.tutor_id === myTutorId).map(ct => ct.course_id),
+    ...enrollments.filter(sc => sc.tutor_id === myTutorId).map(sc => sc.course_id)
+  ]);
+
+  // Students this tutor is responsible for: their own enrollments plus anyone on their timetable
+  const myStudentIds = new Set([
+    ...enrollments.filter(sc => sc.tutor_id === myTutorId).map(sc => sc.student_id),
+    ...schedules.filter(sch => sch.tutor_id === myTutorId).map(sch => sch.student_id)
+  ]);
+
+  // A tutor may edit/delete tasks they created, or legacy (created_by null) tasks in a course they teach
+  const canEditTask = (t) =>
+    Boolean(t) && (t.created_by === myTutorId || (t.created_by == null && myCourseIds.has(t.course_id)));
+
+  // A submission belongs in this tutor's inbox only if the student is theirs AND the task is
+  // theirs or sits in a course where they teach that student.
+  const isMySubmission = (sub) => {
+    if (!myStudentIds.has(sub.student_id)) return false;
+    const t = tasks.find(tk => tk.id === sub.task_id);
+    if (!t) return false;
+    return t.created_by === myTutorId ||
+      enrollments.some(sc => sc.student_id === sub.student_id && sc.course_id === t.course_id && sc.tutor_id === myTutorId) ||
+      schedules.some(sch => sch.tutor_id === myTutorId && sch.student_id === sub.student_id && sch.course_id === t.course_id);
+  };
+
+  // Students enrolled with THIS tutor in the currently-selected course. Enrollments with no
+  // tutor_id fall back to course_tutors assignment.
+  const teachesSelectedCourse = courseTutors.some(ct => ct.course_id === newTaskCourse && ct.tutor_id === myTutorId);
+  const courseStudents = students.filter(s =>
+    enrollments.some(sc =>
+      sc.course_id === newTaskCourse && sc.student_id === s.id &&
+      (sc.tutor_id === myTutorId || (!sc.tutor_id && teachesSelectedCourse))
+    )
+  );
+
+  const loadTutorDashboard = useCallback(async () => {
     try {
       const [allBookings, allTutors, sList, cList, scList, tkList, subList, schList, attList, annList, msgList, topicList, ctList, matList] = await Promise.all([
         getBookings(), getTutors(), getStudents(), getCourses(), getStudentCourses(),
@@ -178,11 +225,11 @@ export default function TutorDashboard({ user }) {
         getCourseTutors(), getMaterials()
       ]);
 
-      const currentTutor = allTutors.find(t =>
-        t.id === tutorId ||
-        t.profile_id === tutorId ||
-        t.full_name === (user?.full_name || 'Adebayo Olumide')
-      );
+      // Match on id first; a name match (a different tutor sharing the same name)
+      // must never win over the logged-in tutor's own record.
+      const currentTutor =
+        allTutors.find(t => t.id === tutorId || t.profile_id === tutorId) ||
+        (user?.full_name ? allTutors.find(t => t.full_name === user.full_name) : undefined);
       setTutorInfo(currentTutor);
 
       const actualTutorId = currentTutor?.id || tutorId;
@@ -213,19 +260,49 @@ export default function TutorDashboard({ user }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [tutorId, user?.full_name]);
 
   useEffect(() => {
     loadTutorDashboard();
-  }, [tutorId]);
+  }, [loadTutorDashboard]);
+
+  // Poll for new chat messages so open conversations and unread badges stay current.
+  // Server rows win, but a message we already marked read locally stays read, and
+  // locally-added messages the server hasn't returned yet are kept.
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const fresh = await getChatMessages();
+        if (cancelled || !Array.isArray(fresh)) return;
+        setChatMessages(prev => {
+          const byId = new Map(prev.map(m => [m.id, m]));
+          let changed = false;
+          for (const m of fresh) {
+            const old = byId.get(m.id);
+            const merged = old ? { ...old, ...m, read: Boolean(m.read || old.read) } : m;
+            if (!old || old.read !== merged.read || old.message_text !== merged.message_text) changed = true;
+            byId.set(m.id, merged);
+          }
+          if (!changed) return prev;
+          return [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        });
+      } catch (err) {
+        console.error('Failed to refresh chat messages:', err);
+      }
+    };
+    const timer = setInterval(poll, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
     if (!activeStudentChat) return;
-    const actualTutorId = tutorInfo?.id || tutorId;
-    const otherId = activeStudentChat.profile_id || activeStudentChat.id;
+    const actualTutorId = personIds(tutorInfo, tutorId);
+    const otherId = personIds(activeStudentChat);
     const unreadIds = chatMessages
-      .filter(m => m.sender_id === otherId && m.receiver_id === actualTutorId && !m.read)
+      .filter(m => isOneOf(m.sender_id, otherId) && isOneOf(m.receiver_id, actualTutorId) && !m.read)
       .map(m => m.id);
     if (unreadIds.length === 0) return;
     markMessagesRead(unreadIds)
@@ -235,7 +312,7 @@ export default function TutorDashboard({ user }) {
 
   // Reflect unread count on the installed app's icon, where supported
   useEffect(() => {
-    const count = chatMessages.filter(m => m.receiver_id === (tutorInfo?.id || tutorId) && !m.read).length;
+    const count = chatMessages.filter(m => isOneOf(m.receiver_id, personIds(tutorInfo, tutorId)) && !m.read).length;
     if ('setAppBadge' in navigator) {
       if (count > 0) navigator.setAppBadge(count).catch(() => {});
       else navigator.clearAppBadge().catch(() => {});
@@ -283,17 +360,34 @@ export default function TutorDashboard({ user }) {
 
   // --- LMS TUTOR HANDLERS ---
 
+  // Returns an error message, or null when every question has text, 2+ filled options and a valid correct answer
+  const validateQuizQuestions = (qs) => {
+    if (!qs || qs.length === 0) return 'Add at least one quiz question.';
+    for (let i = 0; i < qs.length; i++) {
+      const q = qs[i];
+      const opts = Array.isArray(q.options) ? q.options : [];
+      if (!String(q.question || '').trim()) return `Question ${i + 1} is empty.`;
+      if (opts.length < 2 || opts.some(o => !String(o || '').trim())) return `Fill in every option for question ${i + 1}.`;
+      if (!Number.isInteger(q.correct) || q.correct < 0 || q.correct >= opts.length) {
+        return `Select the correct answer for question ${i + 1}.`;
+      }
+    }
+    return null;
+  };
+
   const handleCreateTask = async (e, status = 'published') => {
     e.preventDefault();
     if (!newTaskTitle || !newTaskCourse) return alert('Fill out task title and course.');
 
+    // Same rules for drafts and published tasks (the Draft button bypasses native form validation)
     if (newTaskType === 'quiz') {
-      const incomplete = quizQuestions.some(q =>
-        !q.question.trim() || q.options.some(o => !o.trim())
-      );
-      if (incomplete) return alert('Please fill in all quiz questions and options.');
-      if (quizQuestions.length === 0) return alert('Add at least one quiz question.');
+      if (!newTaskTopic) return alert('Select a lesson so the quiz appears under that topic for students.');
+      const problem = validateQuizQuestions(quizQuestions);
+      if (problem) return alert(problem);
     }
+    const maxPoints = Number(newTaskMax);
+    if (!Number.isFinite(maxPoints) || maxPoints <= 0) return alert('Max points must be a number greater than 0.');
+    if (!targetAll && targetStudentIds.length === 0) return alert('Select at least one student, or send to all.');
 
     // Resolve final target list
     const resolvedTargets = targetAll
@@ -307,8 +401,9 @@ export default function TutorDashboard({ user }) {
         title: newTaskTitle,
         description: newTaskDesc,
         task_type: newTaskType,
-        max_points: newTaskType === 'quiz' ? quizQuestions.length * 10 : newTaskMax,
+        max_points: maxPoints,
         status,
+        created_by: myTutorId,
         target_student_ids: resolvedTargets,
         ...(newTaskType === 'quiz' && { quiz_questions: quizQuestions })
       };
@@ -337,9 +432,15 @@ export default function TutorDashboard({ user }) {
 
   const handleGradeSubmission = async (e) => {
     e.preventDefault();
-    if (!activeSubmissionId || !gradeInput) return alert('Enter grade details.');
+    if (!activeSubmissionId || gradeInput === '') return alert('Enter grade details.');
+    const sub = submissions.find(x => x.id === activeSubmissionId);
+    const maxPts = Number(tasks.find(t => t.id === sub?.task_id)?.max_points) || 100;
+    const gradeNum = Number(gradeInput);
+    if (!Number.isFinite(gradeNum) || gradeNum < 0 || gradeNum > maxPts) {
+      return alert(`Score must be between 0 and ${maxPts} points.`);
+    }
     try {
-      const saved = await gradeStudentTask(activeSubmissionId, Number(gradeInput), feedbackInput, tutorInfo?.id || tutorId);
+      const saved = await gradeStudentTask(activeSubmissionId, gradeNum, feedbackInput, myTutorId);
       setSubmissions(prev => prev.map(s => s.id === activeSubmissionId ? saved : s));
       setActiveSubmissionId(null);
       setGradeInput('');
@@ -398,6 +499,9 @@ export default function TutorDashboard({ user }) {
       if (!schStart || !schEnd) {
         return alert('Please specify start and end dates/times for the single class.');
       }
+      if (new Date(schEnd) <= new Date(schStart)) {
+        return alert('End time must be after the start time.');
+      }
       try {
         const saved = await saveSchedule({
           student_id: schStudentId,
@@ -431,9 +535,17 @@ export default function TutorDashboard({ user }) {
       if (schRecurDays.length === 0) {
         return alert('Please select at least one weekday to repeat.');
       }
-      
+      if (schRecurEndTime <= schRecurStartTime) {
+        return alert('Daily end time must be after the start time.');
+      }
+      if (schRecurEndDate < schRecurStartDate) {
+        return alert('Series end date must be on or after the start date.');
+      }
+
+      // Saved one by one; if a save fails part-way, the sessions already created are real rows,
+      // so they must still be shown and reported.
+      const generated = [];
       try {
-        const generated = [];
         const [yr, mo, dy] = schRecurStartDate.split('-').map(Number);
         const [endYr, endMo, endDy] = schRecurEndDate.split('-').map(Number);
         
@@ -469,7 +581,7 @@ export default function TutorDashboard({ user }) {
         if (generated.length === 0) {
           alert('No classes scheduled. Verify that selected weekdays fall within your start and end date range.');
         } else {
-          setSchedules(prev => [...prev, ...generated]);
+          setSchedules(prev => [...prev, ...generated.filter(Boolean)]);
           setSchTitle('');
           setSchLink('');
           setSchLink2('');
@@ -481,7 +593,16 @@ export default function TutorDashboard({ user }) {
           alert(`Successfully scheduled ${generated.length} recurring class sessions!`);
         }
       } catch (err) {
-        alert('Error generating recurring sessions: ' + err.message);
+        const ok = generated.filter(Boolean);
+        if (ok.length > 0) setSchedules(prev => [...prev, ...ok]);
+        alert(
+          `Error generating recurring sessions: ${err.message}
+
+` +
+          (ok.length > 0
+            ? `${ok.length} session(s) were scheduled before the error and have been kept. Check the timetable before retrying to avoid duplicates.`
+            : 'No sessions were scheduled.')
+        );
       }
     }
   };
@@ -497,17 +618,28 @@ export default function TutorDashboard({ user }) {
     }
   };
 
+  // datetime-local inputs take LOCAL wall time; toISOString() gives UTC, which made
+  // every save shift the class by the tutor's UTC offset.
+  const toLocalInputValue = (iso) => {
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+
   const handleEditScheduleClick = (sch) => {
     setEditingSchedule({
       ...sch,
-      start_time: sch.start_time ? new Date(sch.start_time).toISOString().slice(0, 16) : '',
-      end_time: sch.end_time ? new Date(sch.end_time).toISOString().slice(0, 16) : ''
+      start_time: sch.start_time ? toLocalInputValue(sch.start_time) : '',
+      end_time: sch.end_time ? toLocalInputValue(sch.end_time) : ''
     });
     setShowEditScheduleModal(true);
   };
 
   const handleEditScheduleSubmit = async (e) => {
     e.preventDefault();
+    if (!editingSchedule.start_time) return alert('Start time is required.');
+    if (editingSchedule.end_time && new Date(editingSchedule.end_time) <= new Date(editingSchedule.start_time)) {
+      return alert('End time must be after the start time.');
+    }
     try {
       const updates = {
         title: editingSchedule.title,
@@ -592,6 +724,8 @@ export default function TutorDashboard({ user }) {
         })
       );
       setChatMessages(prev => [...prev, ...sentMessages]);
+      // Capture the count before clearing the selection; the banner renders after the reset
+      setBroadcastSentCount(sentMessages.length);
       setBroadcastText('');
       setBroadcastSelected([]);
       setBroadcastSuccess(true);
@@ -604,11 +738,16 @@ export default function TutorDashboard({ user }) {
   };
 
   // Find students mapped to this tutor
+  // Includes students enrolled without a named tutor in a course this tutor is assigned to,
+  // so both sides of the chat see each other.
   const tutorStudents = students.filter(s =>
-    enrollments.some(sc => sc.student_id === s.id && sc.tutor_id === (tutorInfo?.id || tutorId))
+    enrollments.some(sc => sc.student_id === s.id && (
+      sc.tutor_id === (tutorInfo?.id || tutorId) ||
+      (!sc.tutor_id && courseTutors.some(ct => ct.course_id === sc.course_id && ct.tutor_id === (tutorInfo?.id || tutorId)))
+    ))
   );
 
-  const unreadMessageCount = chatMessages.filter(m => m.receiver_id === (tutorInfo?.id || tutorId) && !m.read).length;
+  const unreadMessageCount = chatMessages.filter(m => isOneOf(m.receiver_id, personIds(tutorInfo, tutorId)) && !m.read).length;
 
   if (loading) {
     return (
@@ -1033,7 +1172,7 @@ export default function TutorDashboard({ user }) {
                       topic_id: activeTopicIdToUse,
                       title: newMaterialTitle.trim(),
                       file_url: fileUrl,
-                      file_type: isHtmlSlide ? 'html_slide' : (materialFile.type || 'file')
+                      file_type: isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile)
                     });
                     setMaterials(prev => [...prev, saved]);
                     setNewMaterialTitle('');
@@ -1203,7 +1342,7 @@ export default function TutorDashboard({ user }) {
                                           {tk.task_type === 'quiz' ? '🧩 Quiz' : '📝 Homework'}
                                         </span>
                                       </div>
-                                      <span style={{ fontSize: '0.72rem', color: '#718096' }}>Max: {tk.max_points} pts</span>
+                                      <span style={{ fontSize: '0.72rem', color: '#718096' }}>Max: {tk.max_points ?? 100} pts</span>
                                     </li>
                                   ))}
                                 </ul>
@@ -1249,7 +1388,7 @@ export default function TutorDashboard({ user }) {
                               {s.avatar_url ? (
                                 <img src={s.avatar_url} alt={s.full_name} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
                               ) : (
-                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>{s.full_name[0]}</div>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '0.8rem' }}>{s.full_name?.[0] || '?'}</div>
                               )}
                               <span style={{ fontWeight: 'bold' }}>{s.full_name}</span>
                             </td>
@@ -1323,7 +1462,7 @@ export default function TutorDashboard({ user }) {
                   {/* Success banner */}
                   {broadcastSuccess && (
                     <div style={{ padding: '0.6rem 1rem', background: 'rgba(40,167,69,0.12)', border: '1px solid #28a745', borderRadius: '8px', color: '#276c3a', fontSize: '0.83rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      ✅ Broadcast sent successfully to {broadcastSelected.length || 0} student{broadcastSelected.length !== 1 ? 's' : ''}!
+                      ✅ Broadcast sent successfully to {broadcastSentCount} student{broadcastSentCount !== 1 ? 's' : ''}!
                     </div>
                   )}
 
@@ -1434,8 +1573,7 @@ export default function TutorDashboard({ user }) {
                 ) : (
                   tutorStudents.map(s => {
                     const thread = chatMessages.filter(m =>
-                      (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (s.profile_id || s.id)) ||
-                      (m.sender_id === (s.profile_id || s.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                      inThread(m, personIds(tutorInfo, tutorId), personIds(s))
                     );
                     const lastMsg = thread[thread.length - 1];
                     const isActive = activeStudentChat?.id === s.id;
@@ -1490,8 +1628,7 @@ export default function TutorDashboard({ user }) {
                 {/* Messages scroll area */}
                 <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
                   {chatMessages.filter(m =>
-                    (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (activeStudentChat.profile_id || activeStudentChat.id)) ||
-                    (m.sender_id === (activeStudentChat.profile_id || activeStudentChat.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                    inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))
                   ).length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#a0aec0', padding: '3rem', fontSize: '0.9rem' }}>
                       <MessageSquare size={32} style={{ marginBottom: '0.5rem', opacity: 0.4 }} />
@@ -1499,10 +1636,9 @@ export default function TutorDashboard({ user }) {
                     </div>
                   ) : (
                     chatMessages.filter(m =>
-                      (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (activeStudentChat.profile_id || activeStudentChat.id)) ||
-                      (m.sender_id === (activeStudentChat.profile_id || activeStudentChat.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                      inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))
                     ).map(m => {
-                      const isMe = m.sender_id === (tutorInfo?.id || tutorId);
+                      const isMe = isOneOf(m.sender_id, personIds(tutorInfo, tutorId));
                       return (
                         <div key={m.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                           <div style={{
@@ -1643,13 +1779,17 @@ export default function TutorDashboard({ user }) {
                     />
                   </div>
 
+                  <div className="form-group">
+                    <label>Max Grading Points</label>
+                    <input type="number" min={1} value={newTaskMax} onChange={(e) => setNewTaskMax(e.target.value === '' ? '' : Number(e.target.value))} required />
+                    {newTaskType === 'quiz' && (
+                      <small style={{ color: '#718096', fontSize: '0.72rem' }}>Quizzes are auto-graded: the score is scaled to this many points.</small>
+                    )}
+                  </div>
+
                   {/* Description (only for assignments) */}
                   {newTaskType === 'assignment' && (
                     <>
-                      <div className="form-group">
-                        <label>Max Grading Points</label>
-                        <input type="number" value={newTaskMax} onChange={(e) => setNewTaskMax(Number(e.target.value))} required />
-                      </div>
                       <div className="form-group">
                         <label>Task Description / Instructions</label>
                         <textarea value={newTaskDesc} onChange={(e) => setNewTaskDesc(e.target.value)} placeholder="Describe the task and grading criteria..." rows={3}></textarea>
@@ -1661,7 +1801,7 @@ export default function TutorDashboard({ user }) {
                   {newTaskType === 'quiz' && (
                     <div className="form-group">
                       <label>Quiz Instructions (Optional)</label>
-                      <textarea value={newTaskDesc} onChange={(e) => setNewTaskDesc(e.target.value)} placeholder="e.g. Read Chapter 3 before attempting. Each question is worth 10 points." rows={2}></textarea>
+                      <textarea value={newTaskDesc} onChange={(e) => setNewTaskDesc(e.target.value)} placeholder="e.g. Read Chapter 3 before attempting." rows={2}></textarea>
                     </div>
                   )}
 
@@ -1870,12 +2010,12 @@ export default function TutorDashboard({ user }) {
                     <button
                       type="button"
                       onClick={(e) => handleCreateTask(e, 'draft')}
-                      disabled={!newTaskTitle || !newTaskCourse || (!targetAll && targetStudentIds.length === 0)}
+                      disabled={!newTaskTitle || !newTaskCourse || (newTaskType === 'quiz' && !newTaskTopic) || (!targetAll && targetStudentIds.length === 0)}
                       style={{
                         flex: 1, padding: '0.75rem', borderRadius: '10px',
                         border: '2px solid #cbd5e0', background: 'white',
                         color: '#4a5568', fontWeight: '700', cursor: 'pointer',
-                        fontSize: '0.85rem', opacity: (!newTaskTitle || !newTaskCourse) ? 0.5 : 1
+                        fontSize: '0.85rem', opacity: (!newTaskTitle || !newTaskCourse || (newTaskType === 'quiz' && !newTaskTopic)) ? 0.5 : 1
                       }}
                     >
                       💾 Save Draft
@@ -1899,24 +2039,21 @@ export default function TutorDashboard({ user }) {
               <div className="dashboard-card">
                 <h3><CheckSquare size={18} /> Student Homework Inbox</h3>
                 
-                {submissions.filter(sub => 
-                  tasks.some(t => t.id === sub.task_id && enrollments.some(sc => sc.course_id === t.course_id && sc.tutor_id === (tutorInfo?.id || tutorId)))
-                ).length === 0 ? (
+                {submissions.filter(isMySubmission).length === 0 ? (
                   <div style={{ color: '#a0aec0', padding: '1rem' }}>No student homework submissions found.</div>
                 ) : (
                   <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                    {submissions.filter(sub => 
-                      tasks.some(t => t.id === sub.task_id && enrollments.some(sc => sc.course_id === t.course_id && sc.tutor_id === (tutorInfo?.id || tutorId)))
-                    ).map(sub => {
+                    {submissions.filter(isMySubmission).map(sub => {
                       const sName = students.find(s => s.id === sub.student_id)?.full_name || 'Student';
                       const tObj = tasks.find(t => t.id === sub.task_id);
                       const isGraded = sub.grade !== null && sub.grade !== undefined;
+                      const maxPts = Number(tObj?.max_points) || 100;
                       
                       return (
                         <li key={sub.id} style={{ padding: '1rem', border: '1px solid #edf2f7', borderRadius: '12px', background: activeSubmissionId === sub.id ? '#edf2f7' : '#fcfdfe' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                             <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{sName}</span>
-                            <span className={`badge ${isGraded ? 'badge-approved' : 'badge-pending'}`}>{isGraded ? `Score: ${sub.grade}/${tObj?.max_points || 100}` : 'Needs Grade'}</span>
+                            <span className={`badge ${isGraded ? 'badge-approved' : 'badge-pending'}`}>{isGraded ? `Score: ${sub.grade}/${maxPts} pts` : 'Needs Grade'}</span>
                           </div>
                           <div style={{ fontSize: '0.85rem', color: '#718096', marginBottom: '0.5rem' }}>Task: <strong>{tObj?.title}</strong></div>
                           <p style={{ fontSize: '0.8rem', margin: '0.2rem 0', background: 'white', padding: '0.5rem', borderRadius: '6px', border: '1px dashed #e2e8f0' }}>"{sub.submission_text}"</p>
@@ -1935,8 +2072,8 @@ export default function TutorDashboard({ user }) {
                             <form onSubmit={handleGradeSubmission} style={{ marginTop: '1rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                               <div className="form-group" style={{ flexDirection: 'row', gap: '0.5rem', alignItems: 'center' }}>
                                 <label style={{ fontSize: '0.8rem', minWidth: '100px' }}>Score Points *</label>
-                                <input type="number" value={gradeInput} onChange={(e) => setGradeInput(e.target.value)} required max={tObj?.max_points || 100} style={{ padding: '0.4rem', maxWidth: '100px' }} />
-                                <span style={{ fontSize: '0.8rem', color: '#718096' }}>/ {tObj?.max_points || 100}</span>
+                                <input type="number" value={gradeInput} onChange={(e) => setGradeInput(e.target.value)} required min={0} max={maxPts} step="any" style={{ padding: '0.4rem', maxWidth: '100px' }} />
+                                <span style={{ fontSize: '0.8rem', color: '#718096' }}>/ {maxPts} pts</span>
                               </div>
                               <div className="form-group">
                                 <label style={{ fontSize: '0.8rem' }}>Tutor Feedback Remarks</label>
@@ -1958,14 +2095,15 @@ export default function TutorDashboard({ user }) {
               {/* My Published Quizzes \u2014 view + edit */}
               <div className="dashboard-card">
                 <h3>🧩 My Published Quizzes</h3>
-                {tasks.filter(t => t.task_type === 'quiz' && enrollments.some(sc => sc.course_id === t.course_id && sc.tutor_id === (tutorInfo?.id || tutorId))).length === 0 ? (
+                {tasks.filter(t => t.task_type === 'quiz' && canEditTask(t)).length === 0 ? (
                   <div style={{ color: '#a0aec0', padding: '1rem' }}>No quizzes published yet. Create one using the form above.</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     {tasks
-                      .filter(t => t.task_type === 'quiz' && enrollments.some(sc => sc.course_id === t.course_id && sc.tutor_id === (tutorInfo?.id || tutorId)))
+                      .filter(t => t.task_type === 'quiz' && canEditTask(t))
                       .map(quizTask => {
-                        const completions = submissions.filter(s => s.task_id === quizTask.id);
+                        const completions = submissions.filter(s => s.task_id === quizTask.id && myStudentIds.has(s.student_id));
+                        const quizMax = Number(quizTask.max_points) || 100;
                         const cName = courses.find(c => c.id === quizTask.course_id)?.title || 'Course';
                         const tName = topics.find(tp => tp.id === quizTask.topic_id)?.title || null;
                         const isEditing = editingQuizId === quizTask.id;
@@ -2032,7 +2170,7 @@ export default function TutorDashboard({ user }) {
                                     const sName = students.find(s => s.id === c.student_id)?.full_name || 'Student';
                                     return (
                                       <span key={c.id} style={{ background: '#d1fae5', color: '#166534', fontSize: '0.72rem', fontWeight: '600', padding: '0.2rem 0.5rem', borderRadius: '5px' }}>
-                                        {sName}: {c.grade ?? '?'}%
+                                        {sName}: {c.grade !== null && c.grade !== undefined ? `${c.grade}/${quizMax} pts` : 'pending'}
                                       </span>
                                     );
                                   })}
@@ -2212,12 +2350,15 @@ export default function TutorDashboard({ user }) {
                                     className="btn-action approve"
                                     style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem' }}
                                     onClick={async () => {
+                                      const problem = validateQuizQuestions(editQuizQuestions);
+                                      if (problem) return alert(problem);
                                       try {
                                         const updated = await saveTask({
                                           ...quizTask,
                                           quiz_questions: editQuizQuestions,
                                           target_student_ids: editQuizTargets,
-                                          max_points: editQuizQuestions.length * 10
+                                          // Keep the task's existing max_points; scores are scaled to it server-side
+                                          max_points: quizTask.max_points ?? 100
                                         });
                                         setTasks(prev => prev.map(t => t.id === quizTask.id ? updated : t));
                                         setEditingQuizId(null);
