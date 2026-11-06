@@ -17,6 +17,7 @@ import {
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import '../styles/Dashboard.css';
+import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -201,10 +202,10 @@ export default function StudentDashboard({ user }) {
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
     if (!activeTutorChat) return;
-    const actualStudentId = studentInfo?.profile_id || studentInfo?.id || studentId;
-    const otherId = activeTutorChat.profile_id || activeTutorChat.id;
+    const actualStudentId = personIds(studentInfo, studentId);
+    const otherId = personIds(activeTutorChat);
     const unreadIds = chatMessages
-      .filter(m => m.sender_id === otherId && m.receiver_id === actualStudentId && !m.read)
+      .filter(m => isOneOf(m.sender_id, otherId) && isOneOf(m.receiver_id, actualStudentId) && !m.read)
       .map(m => m.id);
     if (unreadIds.length === 0) return;
     markMessagesRead(unreadIds)
@@ -214,8 +215,8 @@ export default function StudentDashboard({ user }) {
 
   // Reflect unread count on the installed app's icon, where supported
   useEffect(() => {
-    const actualStudentId = studentInfo?.profile_id || studentInfo?.id || studentId;
-    const count = chatMessages.filter(m => m.receiver_id === actualStudentId && !m.read).length;
+    const actualStudentId = personIds(studentInfo, studentId);
+    const count = chatMessages.filter(m => isOneOf(m.receiver_id, actualStudentId) && !m.read).length;
     if ('setAppBadge' in navigator) {
       if (count > 0) navigator.setAppBadge(count).catch(() => {});
       else navigator.clearAppBadge().catch(() => {});
@@ -398,7 +399,7 @@ export default function StudentDashboard({ user }) {
       {/* Floating Unread Messages Badge FAB */}
       {(() => {
         const unreadCount = chatMessages.filter(
-          m => m.receiver_id === (studentInfo?.profile_id || studentInfo?.id) && !m.read
+          m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read
         ).length;
         return unreadCount > 0 ? (
           <button
@@ -1174,8 +1175,7 @@ export default function StudentDashboard({ user }) {
 
                   // Extract last message
                   const threadMessages = chatMessages.filter(m =>
-                    (m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId) && m.receiver_id === (t.profile_id || t.id)) ||
-                    (m.sender_id === (t.profile_id || t.id) && m.receiver_id === (studentInfo?.profile_id || studentInfo?.id || studentId))
+                    inThread(m, personIds(studentInfo, studentId), personIds(t))
                   );
                   const lastMsg = threadMessages[threadMessages.length - 1];
                   const lastMsgText = lastMsg ? lastMsg.message_text : `Start learning in ${c?.title || 'course'}`;
@@ -1236,10 +1236,9 @@ export default function StudentDashboard({ user }) {
                   {/* Messages Logs view container */}
                   <div className="whatsapp-messages-container">
                     {chatMessages.filter(m =>
-                      (m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId) && m.receiver_id === (activeTutorChat.profile_id || activeTutorChat.id)) ||
-                      (m.sender_id === (activeTutorChat.profile_id || activeTutorChat.id) && m.receiver_id === (studentInfo?.profile_id || studentInfo?.id || studentId))
+                      inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))
                     ).map(m => {
-                      const isMe = m.sender_id === (studentInfo?.profile_id || studentInfo?.id || studentId);
+                      const isMe = isOneOf(m.sender_id, personIds(studentInfo, studentId));
                       return (
                         <div
                           key={m.id}

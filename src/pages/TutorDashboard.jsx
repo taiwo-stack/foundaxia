@@ -21,6 +21,7 @@ import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
+import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -298,10 +299,10 @@ export default function TutorDashboard({ user }) {
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
     if (!activeStudentChat) return;
-    const actualTutorId = tutorInfo?.id || tutorId;
-    const otherId = activeStudentChat.profile_id || activeStudentChat.id;
+    const actualTutorId = personIds(tutorInfo, tutorId);
+    const otherId = personIds(activeStudentChat);
     const unreadIds = chatMessages
-      .filter(m => m.sender_id === otherId && m.receiver_id === actualTutorId && !m.read)
+      .filter(m => isOneOf(m.sender_id, otherId) && isOneOf(m.receiver_id, actualTutorId) && !m.read)
       .map(m => m.id);
     if (unreadIds.length === 0) return;
     markMessagesRead(unreadIds)
@@ -311,7 +312,7 @@ export default function TutorDashboard({ user }) {
 
   // Reflect unread count on the installed app's icon, where supported
   useEffect(() => {
-    const count = chatMessages.filter(m => m.receiver_id === (tutorInfo?.id || tutorId) && !m.read).length;
+    const count = chatMessages.filter(m => isOneOf(m.receiver_id, personIds(tutorInfo, tutorId)) && !m.read).length;
     if ('setAppBadge' in navigator) {
       if (count > 0) navigator.setAppBadge(count).catch(() => {});
       else navigator.clearAppBadge().catch(() => {});
@@ -741,7 +742,7 @@ export default function TutorDashboard({ user }) {
     enrollments.some(sc => sc.student_id === s.id && sc.tutor_id === (tutorInfo?.id || tutorId))
   );
 
-  const unreadMessageCount = chatMessages.filter(m => m.receiver_id === (tutorInfo?.id || tutorId) && !m.read).length;
+  const unreadMessageCount = chatMessages.filter(m => isOneOf(m.receiver_id, personIds(tutorInfo, tutorId)) && !m.read).length;
 
   if (loading) {
     return (
@@ -1567,8 +1568,7 @@ export default function TutorDashboard({ user }) {
                 ) : (
                   tutorStudents.map(s => {
                     const thread = chatMessages.filter(m =>
-                      (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (s.profile_id || s.id)) ||
-                      (m.sender_id === (s.profile_id || s.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                      inThread(m, personIds(tutorInfo, tutorId), personIds(s))
                     );
                     const lastMsg = thread[thread.length - 1];
                     const isActive = activeStudentChat?.id === s.id;
@@ -1623,8 +1623,7 @@ export default function TutorDashboard({ user }) {
                 {/* Messages scroll area */}
                 <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
                   {chatMessages.filter(m =>
-                    (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (activeStudentChat.profile_id || activeStudentChat.id)) ||
-                    (m.sender_id === (activeStudentChat.profile_id || activeStudentChat.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                    inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))
                   ).length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#a0aec0', padding: '3rem', fontSize: '0.9rem' }}>
                       <MessageSquare size={32} style={{ marginBottom: '0.5rem', opacity: 0.4 }} />
@@ -1632,10 +1631,9 @@ export default function TutorDashboard({ user }) {
                     </div>
                   ) : (
                     chatMessages.filter(m =>
-                      (m.sender_id === (tutorInfo?.id || tutorId) && m.receiver_id === (activeStudentChat.profile_id || activeStudentChat.id)) ||
-                      (m.sender_id === (activeStudentChat.profile_id || activeStudentChat.id) && m.receiver_id === (tutorInfo?.id || tutorId))
+                      inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))
                     ).map(m => {
-                      const isMe = m.sender_id === (tutorInfo?.id || tutorId);
+                      const isMe = isOneOf(m.sender_id, personIds(tutorInfo, tutorId));
                       return (
                         <div key={m.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
                           <div style={{

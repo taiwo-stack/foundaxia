@@ -22,6 +22,7 @@ import {
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
+import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 // Material file_type convention shared with the tutor and student dashboards:
 // 'html_slide' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
@@ -2243,8 +2244,8 @@ export default function AdminDashboard({ user }) {
                     const pairs = [];
                     const seen = new Set();
                     allChatMessages.forEach(m => {
-                      const tutorParticipant = tutors.find(t => t.id === m.sender_id || t.id === m.receiver_id);
-                      const studentParticipant = students.find(s => (s.profile_id || s.id) === m.sender_id || (s.profile_id || s.id) === m.receiver_id);
+                      const tutorParticipant = tutors.find(t => isOneOf(m.sender_id, personIds(t)) || isOneOf(m.receiver_id, personIds(t)));
+                      const studentParticipant = students.find(s => isOneOf(m.sender_id, personIds(s)) || isOneOf(m.receiver_id, personIds(s)));
                       if (!tutorParticipant || !studentParticipant) return;
                       const key = [tutorParticipant.id, studentParticipant.id].sort().join('-');
                       if (!seen.has(key)) {
@@ -2264,8 +2265,7 @@ export default function AdminDashboard({ user }) {
 
                     return filtered.map(pair => {
                       const thread = allChatMessages.filter(m =>
-                        (m.sender_id === pair.tutor.id && (m.receiver_id === (pair.student.profile_id || pair.student.id))) ||
-                        (m.sender_id === (pair.student.profile_id || pair.student.id) && m.receiver_id === pair.tutor.id)
+                        inThread(m, personIds(pair.tutor), personIds(pair.student))
                       );
                       const lastMsg = thread[thread.length - 1];
                       const isSelected = chatMonitorTutor === pair.tutor.id && chatMonitorStudent === (pair.student.profile_id || pair.student.id);
@@ -2296,10 +2296,11 @@ export default function AdminDashboard({ user }) {
               {/* Right: Read-only thread viewer */}
               {(chatMonitorTutor && chatMonitorStudent) ? (() => {
                 const activeTutor = tutors.find(t => t.id === chatMonitorTutor);
+                const tutorIdSet = personIds(activeTutor, chatMonitorTutor);
+                const studentIdSet = personIds(students.find(s => (s.profile_id || s.id) === chatMonitorStudent || s.id === chatMonitorStudent), chatMonitorStudent);
                 const activeStudent = students.find(s => (s.profile_id || s.id) === chatMonitorStudent || s.id === chatMonitorStudent);
                 const thread = allChatMessages.filter(m =>
-                  (m.sender_id === chatMonitorTutor && m.receiver_id === chatMonitorStudent) ||
-                  (m.sender_id === chatMonitorStudent && m.receiver_id === chatMonitorTutor)
+                  inThread(m, tutorIdSet, studentIdSet)
                 );
                 return (
                   <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', marginBottom: 0 }}>
@@ -2327,7 +2328,7 @@ export default function AdminDashboard({ user }) {
                         </div>
                       ) : (
                         thread.map(m => {
-                          const isTutor = m.sender_id === chatMonitorTutor;
+                          const isTutor = isOneOf(m.sender_id, tutorIdSet);
                           const senderLabel = isTutor ? `Tutor: ${activeTutor?.full_name}` : `Student: ${activeStudent?.full_name}`;
                           return (
                             <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isTutor ? 'flex-end' : 'flex-start' }}>
