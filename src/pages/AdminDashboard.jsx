@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getStudents, getTutors, getContactMessages,
@@ -22,6 +22,9 @@ import {
   Lock, User as UserIcon, Award, Star, UserPlus
 } from 'lucide-react';
 import ParentFeesModal from '../components/ParentFeesModal';
+import MobileTabBar from '../components/MobileTabBar';
+import useResponsiveTables from '../hooks/useResponsiveTables';
+import '../styles/DashboardMobile.css';
 
 // Readable random password (no look-alike characters) for new accounts.
 const generatePassword = (length = 12) => {
@@ -60,6 +63,12 @@ export default function AdminDashboard({ user }) {
   const [tutors, setTutors] = useState([]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const mainRef = useRef(null);
+  useResponsiveTables(mainRef, !loading);
+  // On phones, start each section at the top.
+  useEffect(() => {
+    if (window.innerWidth <= 800) window.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   // LMS Data lists
   const [courses, setCourses] = useState([]);
@@ -95,6 +104,7 @@ export default function AdminDashboard({ user }) {
   // Add Student Modal state
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [feesStudent, setFeesStudent] = useState(null); // student whose Parent & Fees window is open
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile menu drawer
   
   // Activation Modal State
   const [showActivationModal, setShowActivationModal] = useState(false);
@@ -1067,8 +1077,13 @@ export default function AdminDashboard({ user }) {
 
   return (
     <div className="dashboard-container">
-      {/* Sidebar */}
-      <aside className="dashboard-sidebar">
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+
+      {/* Sidebar (a slide-in drawer on phones); picking any item closes it */}
+      <aside
+        className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`}
+        onClick={(e) => { if (e.target.closest('button')) setSidebarOpen(false); }}
+      >
         <div className="sidebar-brand">Admin Console</div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`}>
@@ -1106,8 +1121,21 @@ export default function AdminDashboard({ user }) {
         </ul>
       </aside>
 
+      <MobileTabBar
+        items={[
+          { key: 'overview', label: 'Home', Icon: Layers },
+          { key: 'students', label: 'Students', Icon: Users },
+          { key: 'tutors', label: 'Tutors', Icon: UserCheck },
+          { key: 'bookings', label: 'Bookings', Icon: Calendar }
+        ]}
+        active={activeTab}
+        onSelect={(key) => { setActiveTab(key); setSidebarOpen(false); }}
+        onMore={() => setSidebarOpen(o => !o)}
+        moreActive={sidebarOpen}
+      />
+
       {/* Main Content Workspace */}
-      <main className="dashboard-main">
+      <main className="dashboard-main" ref={mainRef}>
         
         {/* Tab 0: Overview Dashboard */}
         {activeTab === 'overview' && (
