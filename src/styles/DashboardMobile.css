@@ -275,8 +275,11 @@
   .menu-sheet-account .drawer-account-btn { flex: 1 1 0; min-width: 0; width: auto; justify-content: center; white-space: nowrap; }
 
   /* The Menu button replaces the old floating menu + unread buttons */
-  .sidebar-toggle-btn,
-  .unread-fab { display: none !important; }
+  /* Scoped under .dashboard-container so these beat Dashboard.css's own !important
+     rules whichever order the two stylesheets load in (they are separate chunks in
+     production, so order isn't guaranteed). */
+  .dashboard-container .sidebar-toggle-btn,
+  .dashboard-container .unread-fab { display: none !important; }
 
   /* ---------- Menu drawer ----------
      Header (title + close) pinned at the top, Install / Log out pinned at the bottom,
@@ -333,7 +336,7 @@
     padding: 0.6rem 0.85rem !important;
     font-size: 0.93rem !important;
   }
-  .sidebar-item button:hover { transform: none; }
+  .dashboard-container .sidebar-item button:hover { transform: none; }
 
   /* Room for the floating Menu button */
   .dashboard-main {
