@@ -1,7 +1,8 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { authenticate, getUserIds, setCors, sendError, HttpError } from './_lib.js';
 import {
-  paystack, confirmPayment, checkDb, hashCode, checkCode, signParentToken, readParentToken
+  paystack, confirmPayment, checkDb, hashCode, checkCode, signParentToken, readParentToken,
+  normalizeCode, isCodeShaped, newParentCode, encryptCode, decryptCode
 } from './_paystack.js';
 
 // Parent Area: a code-protected section of the student dashboard where parents see and
@@ -9,14 +10,16 @@ import {
 // everything goes through here.
 //
 // Parent actions (signed-in student login):
-//   status                       -> { hasCode, lockedUntil }
-//   unlock   { code }            -> { token, expiresAt }       (5 wrong tries = 15 min lock)
+//   status                       -> { hasCode, lockedUntil, hardLocked }
+//   unlock   { code }            -> { token, expiresAt }
+//            5 wrong tries = 15 min lock; 10 wrong in a day = locked until an admin resets the code
 //   fees     { token }           -> { fees, payments }
 //   pay      { token, feeId }    -> { accessCode, authorizationUrl, reference }
 //   verify   { reference }       -> { status }
 // Admin actions (profile role 'admin'):
-//   admin-student       { studentId }                               -> { hasCode, codeSetAt, fees, payments }
-//   admin-generate-code { studentId }                               -> { code }   (shown once)
+//   admin-student       { studentId }                               -> { hasCode, codeSetAt, canShow, hardLocked, fees, payments }
+//   admin-generate-code { studentId }                               -> { code }   e.g. foundaxia-mango-42
+//   admin-show-code     { studentId }                               -> { code }
 //   admin-add-fee       { studentId, description, amount, dueDate } -> { fee }
 //   admin-cancel-fee    { feeId }
 //   admin-mark-paid     { feeId, note }                             (cash / bank transfer)
@@ -24,6 +27,7 @@ import {
 const SESSION_MS = 10 * 60 * 1000;
 const MAX_TRIES = 5;
 const LOCK_MS = 15 * 60 * 1000;
+const MAX_DAILY_TRIES = 10;
 const MAX_FEE_NAIRA = 10_000_000;
 
 async function isAdmin(adminClient, userId) {
@@ -78,26 +82,48 @@ export default async function handler(req, res) {
       if (action === 'admin-student') {
         if (!p.studentId) throw new HttpError(400, 'studentId is required');
         const { data: access, error } = await adminClient
-          .from('parent_access').select('updated_at').eq('student_id', String(p.studentId)).maybeSingle();
+          .from('parent_access').select('updated_at, code_encrypted, hard_locked').eq('student_id', String(p.studentId)).maybeSingle();
         checkDb(error);
         const { fees, payments } = await feesFor(adminClient, String(p.studentId));
-        return res.status(200).json({ hasCode: !!access, codeSetAt: access?.updated_at || null, fees, payments });
+        return res.status(200).json({
+          hasCode: !!access,
+          codeSetAt: access?.updated_at || null,
+          canShow: !!access?.code_encrypted,
+          hardLocked: !!access?.hard_locked,
+          fees,
+          payments
+        });
+      }
+
+      if (action === 'admin-show-code') {
+        if (!p.studentId) throw new HttpError(400, 'studentId is required');
+        const { data: access, error } = await adminClient
+          .from('parent_access').select('code_encrypted').eq('student_id', String(p.studentId)).maybeSingle();
+        checkDb(error);
+        if (!access) throw new HttpError(404, 'No parent code has been created yet');
+        const code = access.code_encrypted ? decryptCode(access.code_encrypted) : null;
+        if (!code) throw new HttpError(409, "This code can't be shown. Reset it to create a new one.");
+        return res.status(200).json({ code });
       }
 
       if (action === 'admin-generate-code') {
         if (!p.studentId) throw new HttpError(400, 'studentId is required');
         const { data: student } = await adminClient.from('students').select('id').eq('id', p.studentId).maybeSingle();
         if (!student) throw new HttpError(404, 'Student not found');
-        const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+        const { display, normalized } = newParentCode();
         const { error } = await adminClient.from('parent_access').upsert({
           student_id: String(student.id),
-          code_hash: hashCode(code),
+          code_hash: hashCode(normalized),
+          code_encrypted: encryptCode(display),
           failed_attempts: 0,
           locked_until: null,
+          daily_failed: 0,
+          daily_failed_on: null,
+          hard_locked: false,
           updated_at: new Date().toISOString()
         });
         checkDb(error);
-        return res.status(200).json({ code });
+        return res.status(200).json({ code: display });
       }
 
       if (action === 'admin-add-fee') {
@@ -155,33 +181,43 @@ export default async function handler(req, res) {
 
     if (action === 'status') {
       const { data, error } = await adminClient
-        .from('parent_access').select('locked_until').eq('student_id', studentId).maybeSingle();
+        .from('parent_access').select('locked_until, hard_locked').eq('student_id', studentId).maybeSingle();
       checkDb(error);
       const lockedUntil = data?.locked_until && new Date(data.locked_until) > new Date() ? data.locked_until : null;
-      return res.status(200).json({ hasCode: !!data, lockedUntil });
+      return res.status(200).json({ hasCode: !!data, lockedUntil, hardLocked: !!data?.hard_locked });
     }
 
     if (action === 'unlock') {
-      const code = String(p.code || '');
-      if (!/^\d{6}$/.test(code)) throw new HttpError(400, 'Enter the 6-digit parent code');
+      const code = normalizeCode(p.code);
+      if (!isCodeShaped(code)) throw new HttpError(400, 'Enter the parent code, e.g. mango-42');
       const { data: access, error } = await adminClient
         .from('parent_access').select('*').eq('student_id', studentId).maybeSingle();
       checkDb(error);
       if (!access) throw new HttpError(404, 'No parent code has been set up yet. Ask FoundaXia for one.');
+      if (access.hard_locked) {
+        throw new HttpError(423, 'The Parent Area is locked after too many wrong attempts. Please contact FoundaXia for a new code.');
+      }
       if (access.locked_until && new Date(access.locked_until) > new Date()) {
         const mins = Math.ceil((new Date(access.locked_until) - Date.now()) / 60000);
         throw new HttpError(429, `Too many wrong attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`);
       }
       if (!checkCode(code, access.code_hash)) {
+        const today = new Date().toISOString().slice(0, 10);
+        const daily = (access.daily_failed_on === today ? access.daily_failed || 0 : 0) + 1;
         const tries = (access.failed_attempts || 0) + 1;
-        const locked = tries >= MAX_TRIES;
-        await adminClient.from('parent_access').update({
-          failed_attempts: locked ? 0 : tries,
-          locked_until: locked ? new Date(Date.now() + LOCK_MS).toISOString() : null
+        const hardLock = daily >= MAX_DAILY_TRIES;
+        const shortLock = !hardLock && tries >= MAX_TRIES;
+        const { error: updErr } = await adminClient.from('parent_access').update({
+          failed_attempts: shortLock || hardLock ? 0 : tries,
+          locked_until: shortLock ? new Date(Date.now() + LOCK_MS).toISOString() : null,
+          daily_failed: daily,
+          daily_failed_on: today,
+          hard_locked: hardLock
         }).eq('student_id', studentId);
-        throw new HttpError(401, locked
-          ? 'Too many wrong attempts. The Parent Area is locked for 15 minutes.'
-          : `Incorrect code. ${MAX_TRIES - tries} attempt${MAX_TRIES - tries === 1 ? '' : 's'} left.`);
+        checkDb(updErr);
+        if (hardLock) throw new HttpError(423, 'Too many wrong attempts today. The Parent Area is now locked. Please contact FoundaXia for a new code.');
+        if (shortLock) throw new HttpError(401, 'Too many wrong attempts. The Parent Area is locked for 15 minutes.');
+        throw new HttpError(401, `Incorrect code. ${MAX_TRIES - tries} attempt${MAX_TRIES - tries === 1 ? '' : 's'} left.`);
       }
       if (access.failed_attempts) {
         await adminClient.from('parent_access').update({ failed_attempts: 0 }).eq('student_id', studentId);

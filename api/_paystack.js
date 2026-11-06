@@ -1,7 +1,10 @@
 // Parent Area helpers: Paystack calls, payment confirmation, parent-code hashing and
 // short-lived parent session tokens. Import-only (files starting with "_" aren't routes).
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomInt, scryptSync, timingSafeEqual
+} from 'node:crypto';
 import { HttpError } from './_lib.js';
+import { CODE_WORDS } from './_codewords.js';
 
 const PAYSTACK_API = 'https://api.paystack.co';
 
@@ -29,6 +32,9 @@ export function checkDb(error) {
   if (!error) return;
   if (error.code === '42P01' || error.code === 'PGRST205' || /relation .* does not exist|Could not find the table/i.test(error.message || '')) {
     throw new HttpError(500, 'The Parent Area tables are missing. Run parent_area.sql in the Supabase SQL editor.');
+  }
+  if ((error.code === '42703' || error.code === 'PGRST204') && /code_encrypted|daily_failed|hard_locked/.test(error.message || '')) {
+    throw new HttpError(500, 'The database needs the latest Parent Area update. Run parent_area.sql in the Supabase SQL editor again.');
   }
   throw error;
 }
@@ -77,7 +83,48 @@ export async function confirmPayment(adminClient, reference) {
   return updated || { ...payment, status: 'success', paid_at: paidAt };
 }
 
-// ---- Parent codes (6 digits), stored as salted scrypt hashes ----
+// ---- Parent codes: foundaxia-{object}-{2 digits} ----
+// Stored twice: a salted scrypt hash (used to check what the parent types) and an
+// AES-256-GCM encrypted copy (so an admin can show it again). The encryption key exists
+// only on the server (PARENT_CODE_KEY, falling back to the service role key).
+
+// "Foundaxia-Mango-42", "mango 42", "MANGO42" -> "mango42"
+export function normalizeCode(input) {
+  return String(input || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^foundaxia/, '');
+}
+
+export const isCodeShaped = (normalized) => /^[a-z]{2,20}\d{2}$/.test(normalized);
+
+export function newParentCode() {
+  const word = CODE_WORDS[randomInt(0, CODE_WORDS.length)];
+  const digits = String(randomInt(0, 100)).padStart(2, '0');
+  return { display: `foundaxia-${word}-${digits}`, normalized: `${word}${digits}` };
+}
+
+function codeKey() {
+  const secret = process.env.PARENT_CODE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new HttpError(500, 'No secret available to protect parent codes');
+  return createHash('sha256').update('parent-code:' + secret).digest();
+}
+
+export function encryptCode(display) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', codeKey(), iv);
+  const data = Buffer.concat([cipher.update(display, 'utf8'), cipher.final()]);
+  return [iv, cipher.getAuthTag(), data].map(b => b.toString('base64url')).join('.');
+}
+
+// null if it can't be decrypted (e.g. the key changed) - the admin can reset the code.
+export function decryptCode(stored) {
+  try {
+    const [iv, tag, data] = String(stored || '').split('.').map(s => Buffer.from(s, 'base64url'));
+    const decipher = createDecipheriv('aes-256-gcm', codeKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
 
 export function hashCode(code) {
   const salt = randomBytes(16);

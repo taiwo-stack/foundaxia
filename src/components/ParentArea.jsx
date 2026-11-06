@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle } from 'lucide-react';
+import { Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { parentApi } from '../services/dataService';
 import '../styles/ParentArea.css';
 
@@ -39,10 +39,15 @@ const loadPaystack = () => {
   return paystackScript;
 };
 
+// Same rules as the server: "Foundaxia-Mango-42", "mango 42", "MANGO42" -> "mango42"
+const normalizeCode = (input) => String(input || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^foundaxia/, '');
+const isCodeShaped = (normalized) => /^[a-z]{2,20}\d{2}$/.test(normalized);
+
 const CHANNEL_LABELS = { card: 'Card', bank: 'Bank', bank_transfer: 'Bank transfer', ussd: 'USSD', manual: 'Paid at school / transfer', mobile_money: 'Mobile money', qr: 'QR' };
 
 export default function ParentArea({ studentName, initialReference, onReferenceHandled }) {
-  const [status, setStatus] = useState(null); // { hasCode, lockedUntil }
+  const [status, setStatus] = useState(null); // { hasCode, lockedUntil, hardLocked }
+  const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState('');
   const [session, setSession] = useState(null); // { token, expiresAt }
   const [data, setData] = useState({ fees: [], payments: [] });
@@ -112,7 +117,7 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
     if (busy) return;
     setError('');
     setNotice('');
-    if (!/^\d{6}$/.test(code)) { setError('Enter the 6-digit parent code.'); return; }
+    if (!isCodeShaped(normalizeCode(code))) { setError('Enter the parent code, e.g. mango-42.'); return; }
     setBusy(true);
     try {
       const s = await parentApi('unlock', { code });
@@ -123,7 +128,7 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
     } catch (err) {
       setError(err.message);
       setCode('');
-      if (/locked for|try again in/i.test(err.message)) loadStatus();
+      if (/locked|try again in/i.test(err.message)) loadStatus();
       codeInputRef.current?.focus();
     } finally {
       setBusy(false);
@@ -171,12 +176,14 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
   // ---------- Locked view ----------
   if (!session) {
     const lockedUntil = status?.lockedUntil && new Date(status.lockedUntil) > new Date() ? status.lockedUntil : null;
+    const hardLocked = !!status?.hardLocked;
+    const blocked = !!lockedUntil || hardLocked;
     return (
       <div className="pa-wrap">
         <div className="dashboard-card pa-lock-card">
           <div className="pa-lock-icon"><Lock size={26} /></div>
           <h2>Parent Area</h2>
-          <p className="pa-lock-sub">For parents and guardians of {studentName || 'this student'}. Enter your 6-digit parent code to view and pay fees.</p>
+          <p className="pa-lock-sub">For parents and guardians of {studentName || 'this student'}. Enter your parent code to view and pay fees.</p>
 
           {notice && <div className="pa-alert pa-alert-ok"><CheckCircle2 size={16} /> {notice}</div>}
 
@@ -188,27 +195,38 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
             </div>
           ) : (
             <form onSubmit={handleUnlock} className="pa-code-form">
-              <input
-                ref={codeInputRef}
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={6}
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="••••••"
-                aria-label="Parent code"
-                className="pa-code-input"
-                disabled={busy || !!lockedUntil}
-              />
-              <button type="submit" className="pa-btn-primary" disabled={busy || code.length !== 6 || !!lockedUntil}>
+              <div className={`pa-code-field ${blocked ? 'is-disabled' : ''}`}>
+                <span className="pa-code-prefix">foundaxia-</span>
+                <input
+                  ref={codeInputRef}
+                  type={showCode ? 'text' : 'password'}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={40}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="mango-42"
+                  aria-label="Parent code"
+                  className="pa-code-input"
+                  disabled={busy || blocked}
+                />
+                <button type="button" className="pa-code-eye" onClick={() => setShowCode(v => !v)} aria-label={showCode ? 'Hide code' : 'Show code'} disabled={blocked}>
+                  {showCode ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              <button type="submit" className="pa-btn-primary" disabled={busy || !isCodeShaped(normalizeCode(code)) || blocked}>
                 <Unlock size={16} /> {busy ? 'Checking...' : 'Unlock'}
               </button>
             </form>
           )}
 
           {error && <div className="pa-alert pa-alert-err"><AlertCircle size={16} /> {error}</div>}
-          {lockedUntil && !error && (
+          {hardLocked && !error && (
+            <div className="pa-alert pa-alert-err"><AlertCircle size={16} /> The Parent Area is locked after too many wrong attempts. Please contact FoundaXia for a new code.</div>
+          )}
+          {lockedUntil && !hardLocked && !error && (
             <div className="pa-alert pa-alert-err"><AlertCircle size={16} /> Too many wrong attempts. Try again after {fmtDate(lockedUntil, true)}.</div>
           )}
           <p className="pa-foot"><ShieldCheck size={14} /> Forgot the code? FoundaXia can send you a new one.</p>

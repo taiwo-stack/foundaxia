@@ -29,22 +29,48 @@
 .pa-lock-card h2 { margin: 0.2rem 0 0; font-family: var(--font-heading); color: var(--text-dark); font-size: 1.4rem; }
 .pa-lock-sub { margin: 0; color: var(--text-light); font-size: 0.9rem; line-height: 1.5; }
 .pa-code-form { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; margin-top: 0.4rem; }
-.pa-code-input {
+.pa-code-field {
+  display: flex;
+  align-items: center;
   width: 100%;
   box-sizing: border-box;
-  text-align: center;
-  font-size: 1.6rem;
-  letter-spacing: 0.6em;
-  padding: 0.7rem 0.5rem 0.7rem 1.1rem;
   border: 2px solid #e2e8f0;
   border-radius: 14px;
   background: #f8fafc;
-  color: var(--primary-color);
-  font-weight: 700;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
-.pa-code-input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(242, 122, 36, 0.15); background: white; }
+.pa-code-field:focus-within { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(242, 122, 36, 0.15); background: white; }
+.pa-code-field.is-disabled { opacity: 0.6; }
+.pa-code-prefix {
+  padding-left: 0.9rem;
+  color: #a0aec0;
+  font-weight: 600;
+  font-size: 1.05rem;
+  white-space: nowrap;
+  user-select: none;
+}
+.pa-code-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 0.8rem 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  font-family: var(--font-body);
+  outline: none;
+}
+.pa-code-input::placeholder { color: #cbd5e0; font-weight: 500; }
+.pa-code-eye {
+  border: none;
+  background: none;
+  color: #a0aec0;
+  cursor: pointer;
+  padding: 0.5rem 0.8rem;
+  display: flex;
+}
+.pa-code-eye:hover { color: var(--primary-color); }
 .pa-foot { display: flex; align-items: center; gap: 0.35rem; margin: 0.4rem 0 0; font-size: 0.78rem; color: #a0aec0; }
 
 /* ---- Alerts ---- */
@@ -181,7 +207,7 @@
   border: 1px solid #fed7aa;
   text-align: center;
 }
-.pfm-code-digits { font-size: 2rem; font-weight: 800; letter-spacing: 0.35em; color: var(--primary-color); font-family: monospace; padding-left: 0.35em; }
+.pfm-code-text { font-size: 1.5rem; font-weight: 800; color: var(--primary-color); font-family: monospace; overflow-wrap: anywhere; }
 .pfm-code p { margin: 0.35rem 0 0.75rem; font-size: 0.8rem; color: #9a3412; }
 .pfm-code-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 .pfm-code-actions a { text-decoration: none; }

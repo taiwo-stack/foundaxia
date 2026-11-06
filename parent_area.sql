@@ -15,6 +15,15 @@ CREATE TABLE IF NOT EXISTS public.parent_access (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Parent codes look like foundaxia-mango-42.
+--   code_encrypted: encrypted copy so an admin can show the code again (key lives on the server only)
+--   daily_failed / daily_failed_on: wrong attempts today; 10 in a day sets hard_locked
+--   hard_locked: stays locked until an admin resets the code
+ALTER TABLE public.parent_access ADD COLUMN IF NOT EXISTS code_encrypted  TEXT;
+ALTER TABLE public.parent_access ADD COLUMN IF NOT EXISTS daily_failed    INT     NOT NULL DEFAULT 0;
+ALTER TABLE public.parent_access ADD COLUMN IF NOT EXISTS daily_failed_on DATE;
+ALTER TABLE public.parent_access ADD COLUMN IF NOT EXISTS hard_locked     BOOLEAN NOT NULL DEFAULT false;
+
 -- Fees the school asks a family to pay. Amounts differ per student, so each fee has its own.
 CREATE TABLE IF NOT EXISTS public.student_fees (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

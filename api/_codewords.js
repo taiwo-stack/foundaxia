@@ -1,0 +1,35 @@
+// Objects used in parent codes: foundaxia-{object}-{2 digits}, e.g. foundaxia-mango-42.
+// Rules: familiar to children and parents, one common spelling, letters only, nothing
+// negative, and no pairs that sound alike over the phone (pen/pin/pan, hat/hut, ...).
+export const CODE_WORDS = [
+  'acorn', 'album', 'anchor', 'apple', 'apron', 'atlas', 'backpack', 'badge', 'bag', 'ball',
+  'balloon', 'bamboo', 'banana', 'barrel', 'basin', 'basket', 'beacon', 'bead', 'beehive', 'bell',
+  'bench', 'bicycle', 'blanket', 'blender', 'blossom', 'boat', 'bonnet', 'bookcase', 'boomerang', 'bottle',
+  'bowl', 'box', 'bracelet', 'bread', 'brick', 'bridge', 'broom', 'brush', 'bubble', 'bucket',
+  'buckle', 'bus', 'button', 'cabin', 'cactus', 'cake', 'calabash', 'calendar', 'camera', 'candle',
+  'canoe', 'canvas', 'cap', 'car', 'caravan', 'card', 'carpet', 'carrot', 'cart', 'cassava',
+  'castle', 'chair', 'chalk', 'cherry', 'chess', 'chimney', 'clock', 'cloud', 'cocoa', 'coconut',
+  'coin', 'collar', 'comb', 'compass', 'cone', 'cookie', 'cork', 'cottage', 'cowrie', 'crate',
+  'crayon', 'crown', 'cup', 'cupcake', 'curtain', 'cushion', 'daisy', 'desk', 'diamond', 'dice',
+  'dish', 'domino', 'door', 'doorbell', 'drawer', 'drum', 'easel', 'envelope', 'eraser', 'fan',
+  'feather', 'fence', 'flag', 'flute', 'fork', 'fountain', 'funnel', 'garden', 'gate', 'gift',
+  'globe', 'glove', 'goggles', 'gourd', 'guitar', 'hammer', 'hammock', 'harmonica', 'harp', 'helmet',
+  'honey', 'hook', 'igloo', 'island', 'jacket', 'jar', 'jigsaw', 'kayak', 'kettle', 'key',
+  'keyboard', 'kite', 'kola', 'ladder', 'lamp', 'lantern', 'leaf', 'lemon', 'letter', 'locket',
+  'lollipop', 'lunchbox', 'magnet', 'mango', 'map', 'marble', 'mask', 'mattress', 'medal', 'melon',
+  'microphone', 'mirror', 'mitten', 'moon', 'muffin', 'napkin', 'needle', 'nest', 'notebook', 'oar',
+  'orange', 'oven', 'paddle', 'padlock', 'paint', 'palette', 'pancake', 'paper', 'parasol', 'parcel',
+  'pawpaw', 'peanut', 'pearl', 'pebble', 'pencil', 'pendant', 'pepper', 'perfume', 'piano', 'pillar',
+  'pillow', 'pineapple', 'pizza', 'planet', 'plantain', 'plate', 'plum', 'pocket', 'popcorn', 'postcard',
+  'pouch', 'pump', 'pumpkin', 'purse', 'puzzle', 'pyramid', 'quill', 'quilt', 'racket', 'radio',
+  'raffia', 'raft', 'rainbow', 'rattle', 'ribbon', 'ring', 'river', 'robot', 'rocket', 'rope',
+  'ruler', 'sail', 'sandal', 'sandcastle', 'satchel', 'saucer', 'saxophone', 'scarf', 'scissors', 'scooter',
+  'scroll', 'seesaw', 'shell', 'shield', 'ship', 'shoe', 'shovel', 'skateboard', 'slipper', 'soap',
+  'sock', 'sofa', 'spade', 'sponge', 'spoon', 'star', 'statue', 'sticker', 'stool', 'stopwatch',
+  'stove', 'strawberry', 'sugar', 'suitcase', 'sundial', 'sunflower', 'swing', 'table', 'tambourine', 'teapot',
+  'telescope', 'tent', 'thimble', 'ticket', 'tile', 'toaster', 'toffee', 'toothbrush', 'torch', 'towel',
+  'tower', 'tractor', 'train', 'tray', 'treasure', 'tree', 'triangle', 'tricycle', 'trophy', 'truck',
+  'trumpet', 'tuba', 'tulip', 'tunnel', 'typewriter', 'umbrella', 'unicycle', 'vase', 'violin', 'volcano',
+  'wagon', 'wallet', 'wardrobe', 'watch', 'waterfall', 'watermelon', 'wheel', 'whistle', 'windmill', 'window',
+  'xylophone', 'yam', 'yoyo'
+];

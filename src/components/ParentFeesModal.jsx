@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, KeyRound, Copy, Check, Plus, MessageCircle, Wallet } from 'lucide-react';
+import { X, KeyRound, Copy, Check, Plus, MessageCircle, Wallet, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { parentApi } from '../services/dataService';
 import '../styles/ParentArea.css';
 
@@ -25,7 +25,7 @@ const waNumber = (phone) => {
 export default function ParentFeesModal({ student, onClose }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
-  const [newCode, setNewCode] = useState(null);
+  const [shownCode, setShownCode] = useState(null); // code currently revealed (new or shown again)
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ description: '', amount: '', dueDate: '' });
@@ -51,9 +51,16 @@ export default function ParentFeesModal({ student, onClose }) {
   const generateCode = () => run(async () => {
     if (info?.hasCode && !window.confirm('Replace the current parent code? The old code will stop working.')) return;
     const { code } = await parentApi('admin-generate-code', { studentId: student.id });
-    setNewCode(code);
+    setShownCode(code);
     setCopied(false);
     await load();
+  });
+
+  const toggleShow = () => run(async () => {
+    if (shownCode) { setShownCode(null); return; }
+    const { code } = await parentApi('admin-show-code', { studentId: student.id });
+    setShownCode(code);
+    setCopied(false);
   });
 
   const addFee = (e) => {
@@ -79,12 +86,12 @@ export default function ParentFeesModal({ student, onClose }) {
   });
 
   const copyCode = async () => {
-    try { await navigator.clipboard.writeText(newCode); setCopied(true); } catch { /* ignore */ }
+    try { await navigator.clipboard.writeText(shownCode); setCopied(true); } catch { /* ignore */ }
   };
 
   const phone = waNumber(student.phone);
   const waText = encodeURIComponent(
-    `Hello, this is FoundaXia Academy. Your Parent Area code for ${student.full_name} is ${newCode}. ` +
+    `Hello, this is FoundaXia Academy. Your Parent Area code for ${student.full_name} is ${shownCode}. ` +
     `Log in to ${student.full_name}'s student dashboard, open "Parent Area" and enter this code to view and pay fees. Please keep it private.`
   );
 
@@ -105,17 +112,34 @@ export default function ParentFeesModal({ student, onClose }) {
             <div>
               <h4><KeyRound size={16} /> Parent code</h4>
               <p className="pa-muted" style={{ margin: 0 }}>
-                {info === null ? 'Loading...' : info.hasCode ? `Code set on ${fmtDate(info.codeSetAt)}.` : 'No code yet. Parents can\'t open the Parent Area until you create one.'}
+                {info === null ? 'Loading...' : info.hasCode ? `Created ${fmtDate(info.codeSetAt)}.` : "No code yet. Parents can't open the Parent Area until you create one."}
               </p>
             </div>
-            <button type="button" className="pa-btn-ghost" onClick={generateCode} disabled={busy || info === null}>
-              {info?.hasCode ? 'Reset code' : 'Generate code'}
-            </button>
+            <div className="pfm-code-actions">
+              {info?.canShow && (
+                <button type="button" className="pa-btn-ghost" onClick={toggleShow} disabled={busy}>
+                  {shownCode ? <EyeOff size={15} /> : <Eye size={15} />} {shownCode ? 'Hide' : 'Show'}
+                </button>
+              )}
+              <button type="button" className="pa-btn-ghost" onClick={generateCode} disabled={busy || info === null}>
+                {info?.hasCode ? 'Reset code' : 'Generate code'}
+              </button>
+            </div>
           </div>
-          {newCode && (
+
+          {info?.hardLocked && (
+            <div className="pa-alert pa-alert-err" style={{ marginTop: '0.75rem' }}>
+              <AlertCircle size={16} /> Locked after 10 wrong attempts in one day. Someone may be guessing. Reset the code and send the new one to the parent.
+            </div>
+          )}
+          {info?.hasCode && !info.canShow && !shownCode && (
+            <p className="pa-muted" style={{ margin: '0.6rem 0 0' }}>This is an older code that can't be shown. Reset it to get a new one you can see again.</p>
+          )}
+
+          {shownCode && (
             <div className="pfm-code">
-              <div className="pfm-code-digits">{newCode}</div>
-              <p>Send this to the parent now. It is shown only once; if it's lost, reset it.</p>
+              <div className="pfm-code-text">{shownCode}</div>
+              <p>Parents can type just the last part, e.g. <b>{shownCode.replace(/^foundaxia-/, '')}</b>. Capital letters and spaces don't matter.</p>
               <div className="pfm-code-actions">
                 <button type="button" className="pa-btn-ghost" onClick={copyCode}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? 'Copied' : 'Copy'}</button>
                 <a className="pa-btn-primary" href={`https://wa.me/${phone}?text=${waText}`} target="_blank" rel="noreferrer">
