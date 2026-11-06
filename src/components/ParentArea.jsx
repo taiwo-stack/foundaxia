@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import {
+  Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle, Eye, EyeOff,
+  LayoutDashboard, TrendingUp, CalendarCheck, MessageSquareQuote
+} from 'lucide-react';
+import { OverviewTab, ProgressTab, AttendanceTab, NotesTab } from './ParentInsights';
+import { buildInsights } from '../utils/parentInsights';
 import { parentApi } from '../services/dataService';
 import '../styles/ParentArea.css';
 
@@ -45,7 +50,18 @@ const isCodeShaped = (normalized) => /^[a-z]{2,20}\d{2}$/.test(normalized);
 
 const CHANNEL_LABELS = { card: 'Card', bank: 'Bank', bank_transfer: 'Bank transfer', ussd: 'USSD', manual: 'Paid at school / transfer', mobile_money: 'Mobile money', qr: 'QR' };
 
-export default function ParentArea({ studentName, initialReference, onReferenceHandled }) {
+const TABS = [
+  { key: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { key: 'progress', label: 'Progress', Icon: TrendingUp },
+  { key: 'attendance', label: 'Attendance', Icon: CalendarCheck },
+  { key: 'notes', label: 'Tutor Notes', Icon: MessageSquareQuote },
+  { key: 'payments', label: 'Payments', Icon: Wallet }
+];
+
+export default function ParentArea({ studentName, insights, initialReference, onReferenceHandled }) {
+  const [tab, setTab] = useState('overview');
+  const [notes, setNotes] = useState(null);
+  const [notesError, setNotesError] = useState('');
   const [status, setStatus] = useState(null); // { hasCode, lockedUntil, hardLocked }
   const [showCode, setShowCode] = useState(false);
   const [code, setCode] = useState('');
@@ -62,6 +78,9 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
   const lock = useCallback((message = '') => {
     setSession(null);
     setData({ fees: [], payments: [] });
+    setNotes(null);
+    setNotesError('');
+    setTab('overview');
     setCode('');
     setReceipt(null);
     if (message) setNotice(message);
@@ -112,6 +131,17 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
     }
   }, [lock]);
 
+  const loadNotes = useCallback(async (token) => {
+    try {
+      const r = await parentApi('notes', { token });
+      setNotes(r.notes || []);
+      setNotesError('');
+    } catch (err) {
+      setNotes([]);
+      setNotesError(/missing|update/i.test(err.message) ? err.message : 'Tutor notes could not be loaded right now.');
+    }
+  }, []);
+
   const handleUnlock = async (e) => {
     e.preventDefault();
     if (busy) return;
@@ -124,7 +154,7 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
       setSession(s);
       setNow(Date.now());
       setCode('');
-      await loadFees(s.token);
+      await Promise.all([loadFees(s.token), loadNotes(s.token)]);
     } catch (err) {
       setError(err.message);
       setCode('');
@@ -243,13 +273,15 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
   const minsLeft = Math.max(1, Math.ceil((session.expiresAt - now) / 60000));
   const today = todayStr();
   const paymentFor = (feeId) => data.payments.find(p => p.fee_id === feeId);
+  const ins = buildInsights(insights || {});
+  const outstandingText = unpaid.length > 0 ? `${naira(outstanding)} to pay (${unpaid.length} fee${unpaid.length === 1 ? '' : 's'})` : '';
 
   return (
     <div className="pa-wrap">
       <div className="pa-header">
         <div>
-          <h2><Wallet size={22} /> Parent Area</h2>
-          <span className="pa-muted">Fees and payments for {studentName || 'your child'} · locks in {minsLeft} min</span>
+          <h2><Unlock size={22} /> Parent Area</h2>
+          <span className="pa-muted">{studentName || 'Your child'}'s learning and payments · locks in {minsLeft} min</span>
         </div>
         <button type="button" className="pa-btn-ghost" onClick={() => lock()}><Lock size={15} /> Lock</button>
       </div>
@@ -257,6 +289,22 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
       {notice && <div className="pa-alert pa-alert-ok"><CheckCircle2 size={16} /> {notice}</div>}
       {error && <div className="pa-alert pa-alert-err"><AlertCircle size={16} /> {error}</div>}
 
+      <nav className="pa-tabs" role="tablist" aria-label="Parent Area sections">
+        {TABS.map(({ key, label, Icon }) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key}
+            className={`pa-tab ${tab === key ? 'is-active' : ''}`} onClick={() => setTab(key)}>
+            <Icon size={16} /> <span>{label}</span>
+            {key === 'payments' && unpaid.length > 0 && <b className="pa-tab-dot">{unpaid.length}</b>}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'overview' && <OverviewTab ins={ins} notes={notes} outstandingText={outstandingText} onGo={setTab} />}
+      {tab === 'progress' && <ProgressTab ins={ins} />}
+      {tab === 'attendance' && <AttendanceTab ins={ins} />}
+      {tab === 'notes' && <NotesTab notes={notes} notesError={notesError} ins={ins} />}
+
+      {tab === 'payments' && (<>
       <div className="pa-stats">
         <div className="pa-stat pa-stat-due">
           <span>Outstanding</span>
@@ -320,6 +368,7 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
           </ul>
         )}
       </section>
+      </>)}
 
       {receipt && (
         <div className="modal-overlay pa-receipt-overlay" onClick={(e) => { if (e.target === e.currentTarget) setReceipt(null); }}>

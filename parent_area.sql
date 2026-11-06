@@ -53,6 +53,19 @@ CREATE TABLE IF NOT EXISTS public.fee_payments (
 CREATE INDEX IF NOT EXISTS fee_payments_student_idx ON public.fee_payments (student_id);
 CREATE INDEX IF NOT EXISTS fee_payments_fee_idx     ON public.fee_payments (fee_id);
 
+-- Notes from tutors to parents (shown only inside the Parent Area).
+CREATE TABLE IF NOT EXISTS public.parent_notes (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id  TEXT        NOT NULL,
+  author_id   TEXT        NOT NULL,
+  author_name TEXT,
+  course_id   TEXT,
+  note        TEXT        NOT NULL CHECK (char_length(note) BETWEEN 1 AND 2000),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS parent_notes_student_idx ON public.parent_notes (student_id, created_at DESC);
+
 ALTER TABLE public.parent_access ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_fees  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fee_payments  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parent_notes  ENABLE ROW LEVEL SECURITY;

@@ -16,6 +16,11 @@ import {
 //   fees     { token }           -> { fees, payments }
 //   pay      { token, feeId }    -> { accessCode, authorizationUrl, reference }
 //   verify   { reference }       -> { status }
+//   notes    { token }           -> { notes }                  tutor notes to the parent
+// Tutor actions (profile role 'tutor' teaching this student, or 'admin'):
+//   tutor-list-notes  { studentId }               -> { notes }
+//   tutor-add-note    { studentId, note, courseId } -> { note }
+//   tutor-delete-note { noteId }                  (own notes only; admins any)
 // Admin actions (profile role 'admin'):
 //   admin-student       { studentId }                               -> { hasCode, codeSetAt, canShow, hardLocked, fees, payments }
 //   admin-generate-code { studentId }                               -> { code }   e.g. foundaxia-mango-42
@@ -33,6 +38,27 @@ const MAX_FEE_NAIRA = 10_000_000;
 async function isAdmin(adminClient, userId) {
   const { data } = await adminClient.from('profiles').select('role').eq('id', userId).maybeSingle();
   return data?.role === 'admin';
+}
+
+async function roleOf(adminClient, userId) {
+  const { data } = await adminClient.from('profiles').select('role').eq('id', userId).maybeSingle();
+  return data?.role || null;
+}
+
+// A tutor may write to a student's parents only if they teach that student: assigned on
+// the enrollment itself, or assigned to one of the student's courses.
+async function tutorTeaches(adminClient, tutorIds, studentId) {
+  const ids = [...tutorIds];
+  const { data: enrolls, error } = await adminClient
+    .from('student_courses').select('course_id, tutor_id').eq('student_id', studentId);
+  if (error) throw error;
+  if ((enrolls || []).some(e => e.tutor_id && ids.includes(String(e.tutor_id)))) return true;
+  const courseIds = (enrolls || []).map(e => e.course_id).filter(Boolean);
+  if (courseIds.length === 0) return false;
+  const { data: assigned, error: ctErr } = await adminClient
+    .from('course_tutors').select('tutor_id').in('course_id', courseIds).in('tutor_id', ids);
+  if (ctErr) throw ctErr;
+  return (assigned || []).length > 0;
 }
 
 async function myStudentId(adminClient, userId) {
@@ -176,6 +202,62 @@ export default async function handler(req, res) {
       throw new HttpError(400, 'Unknown action');
     }
 
+    // ---------------- Tutor notes ----------------
+    if (typeof action === 'string' && action.startsWith('tutor-')) {
+      const role = await roleOf(adminClient, user.id);
+      if (role !== 'tutor' && role !== 'admin') throw new HttpError(403, 'Only tutors can write notes to parents');
+      const { ids: myIds } = await getUserIds(adminClient, user.id);
+      const assertTeaches = async (studentId) => {
+        if (!studentId) throw new HttpError(400, 'studentId is required');
+        if (role === 'admin') return;
+        if (!(await tutorTeaches(adminClient, myIds, String(studentId)))) {
+          throw new HttpError(403, 'You can only write to parents of students you teach');
+        }
+      };
+
+      if (action === 'tutor-list-notes') {
+        await assertTeaches(p.studentId);
+        const { data, error } = await adminClient
+          .from('parent_notes').select('*').eq('student_id', String(p.studentId)).order('created_at', { ascending: false }).limit(50);
+        checkDb(error);
+        return res.status(200).json({ notes: data || [] });
+      }
+
+      if (action === 'tutor-add-note') {
+        await assertTeaches(p.studentId);
+        const note = String(p.note || '').trim();
+        if (!note) throw new HttpError(400, 'Write a note first');
+        if (note.length > 2000) throw new HttpError(400, 'Notes can be up to 2000 characters');
+        let authorName = null;
+        const { data: tutorRows } = await adminClient.from('tutors').select('full_name').in('id', [...myIds]).limit(1);
+        authorName = tutorRows?.[0]?.full_name || null;
+        if (!authorName) {
+          const { data: prof } = await adminClient.from('profiles').select('full_name').eq('id', user.id).maybeSingle();
+          authorName = prof?.full_name || (role === 'admin' ? 'FoundaXia' : 'Tutor');
+        }
+        const { data, error } = await adminClient.from('parent_notes').insert([{
+          student_id: String(p.studentId),
+          author_id: String(user.id),
+          author_name: authorName,
+          course_id: p.courseId ? String(p.courseId) : null,
+          note
+        }]).select().single();
+        checkDb(error);
+        return res.status(200).json({ note: data });
+      }
+
+      if (action === 'tutor-delete-note') {
+        if (typeof p.noteId !== 'string' || !p.noteId) throw new HttpError(400, 'noteId is required');
+        let q = adminClient.from('parent_notes').delete().eq('id', p.noteId);
+        if (role !== 'admin') q = q.eq('author_id', String(user.id));
+        const { error } = await q;
+        checkDb(error);
+        return res.status(200).json({ ok: true });
+      }
+
+      throw new HttpError(400, 'Unknown action');
+    }
+
     // ---------------- Parent ----------------
     const studentId = await myStudentId(adminClient, user.id);
 
@@ -223,6 +305,15 @@ export default async function handler(req, res) {
         await adminClient.from('parent_access').update({ failed_attempts: 0 }).eq('student_id', studentId);
       }
       return res.status(200).json(signParentToken(user.id, studentId, SESSION_MS));
+    }
+
+    if (action === 'notes') {
+      const sid = readParentToken(p.token, user.id);
+      const { data, error } = await adminClient
+        .from('parent_notes').select('id, author_name, course_id, note, created_at')
+        .eq('student_id', sid).order('created_at', { ascending: false }).limit(50);
+      checkDb(error);
+      return res.status(200).json({ notes: data || [] });
     }
 
     if (action === 'fees') {

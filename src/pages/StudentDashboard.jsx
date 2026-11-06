@@ -1693,6 +1693,14 @@ export default function StudentDashboard({ user }) {
         {activeTab === 'parent' && (
           <ParentArea
             studentName={studentInfo?.full_name || user?.full_name}
+            insights={{
+              schedules,
+              attendanceLogs,
+              tasks: activeStudentTasks,
+              submissions,
+              courses,
+              tutorContacts: chatEnrollments
+            }}
             initialReference={paymentReturnRef}
             onReferenceHandled={clearPaymentReturn}
           />
