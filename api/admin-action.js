@@ -1,4 +1,4 @@
-import { authenticate, setCors, sendError, HttpError } from './_lib.js';
+import { authenticate, getPersonRow, isMissingColumnError, setCors, sendError, HttpError } from './_lib.js';
 
 // Admin-only account management. Every action requires the caller's profile role to be
 // 'admin'; the work itself uses the service-role client.
@@ -63,7 +63,7 @@ async function findOrCreateAuthUser(adminClient, email, password, targetRole) {
 // rows link to their login via profile_id instead.
 async function resolveAuthUserId(adminClient, id) {
   for (const table of ['students', 'tutors']) {
-    const { data } = await adminClient.from(table).select('id, profile_id').eq('id', id).maybeSingle();
+    const data = await getPersonRow(adminClient, table, id);
     if (data) return data.profile_id || data.id;
   }
   return id;
@@ -145,6 +145,9 @@ export default async function handler(req, res) {
         .update({ profile_id: String(authUserId), email, status: 'approved' })
         .eq('id', studentId)
         .select();
+      if (isMissingColumnError(updError)) {
+        throw new HttpError(500, 'The database is missing the students.profile_id column. Run enable_rls.sql in the Supabase SQL editor, then try again.');
+      }
       if (updError) throw updError;
       return res.status(200).json(student[0]);
     }
@@ -185,8 +188,7 @@ export default async function handler(req, res) {
       const table = kind === 'student' ? 'students' : kind === 'tutor' ? 'tutors' : null;
       if (!table || !id) throw new HttpError(400, 'kind (student|tutor) and id are required');
 
-      const { data: row, error: rowErr } = await adminClient.from(table).select('id, profile_id').eq('id', id).maybeSingle();
-      if (rowErr) throw rowErr;
+      const row = await getPersonRow(adminClient, table, id);
       if (!row) throw new HttpError(404, `${kind} not found`);
 
       const authUserId = row.profile_id || row.id;

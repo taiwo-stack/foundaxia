@@ -46,6 +46,35 @@ export async function authenticate(req) {
   return { user, adminClient };
 }
 
+// The profile_id column is added by enable_rls.sql. Until that migration has run,
+// queries that mention it fail with "column ... does not exist" (42703); fall back to
+// matching on id alone so the app keeps working either way.
+export const isMissingColumnError = (err) =>
+  Boolean(err) && (err.code === '42703' || /column .*profile_id.* does not exist/i.test(err.message || ''));
+
+// students/tutors rows that refer to someId by id or profile_id.
+export async function findPersonRows(adminClient, table, someId) {
+  let { data, error } = await adminClient
+    .from(table)
+    .select('id, profile_id')
+    .or(`id.eq.${someId},profile_id.eq.${someId}`);
+  if (isMissingColumnError(error)) {
+    ({ data, error } = await adminClient.from(table).select('id').eq('id', someId));
+  }
+  if (error) throw error;
+  return data || [];
+}
+
+// One students/tutors row by its id, with profile_id when that column exists.
+export async function getPersonRow(adminClient, table, id) {
+  let { data, error } = await adminClient.from(table).select('id, profile_id').eq('id', id).maybeSingle();
+  if (isMissingColumnError(error)) {
+    ({ data, error } = await adminClient.from(table).select('id').eq('id', id).maybeSingle());
+  }
+  if (error) throw error;
+  return data;
+}
+
 // Every id that refers to this user: the auth uid plus any students/tutors row linked
 // to it by id or profile_id (legacy rows can have id <> auth uid).
 export async function getUserIds(adminClient, userId) {
@@ -53,12 +82,8 @@ export async function getUserIds(adminClient, userId) {
   const studentIds = [];
   const tutorIds = [];
   for (const [table, bucket] of [['students', studentIds], ['tutors', tutorIds]]) {
-    const { data, error } = await adminClient
-      .from(table)
-      .select('id')
-      .or(`id.eq.${userId},profile_id.eq.${userId}`);
-    if (error) throw error;
-    (data || []).forEach(r => { ids.add(String(r.id)); bucket.push(String(r.id)); });
+    const rows = await findPersonRows(adminClient, table, userId);
+    rows.forEach(r => { ids.add(String(r.id)); bucket.push(String(r.id)); });
   }
   return { ids, studentIds, tutorIds };
 }

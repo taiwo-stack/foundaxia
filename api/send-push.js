@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import { authenticate, getUserIds, setCors, sendError, HttpError } from './_lib.js';
+import { authenticate, getUserIds, findPersonRows, setCors, sendError, HttpError } from './_lib.js';
 
 // Sends a Web Push notification for one chat message.
 // Body: { messageId }. The message is loaded server-side and must have been sent by the
@@ -47,9 +47,8 @@ export default async function handler(req, res) {
     // subscriptions saved under either.
     const receiverIds = new Set([String(message.receiver_id)]);
     for (const table of ['students', 'tutors']) {
-      const { data } = await adminClient.from(table).select('id, profile_id')
-        .or(`id.eq.${message.receiver_id},profile_id.eq.${message.receiver_id}`);
-      (data || []).forEach(r => { receiverIds.add(String(r.id)); if (r.profile_id) receiverIds.add(String(r.profile_id)); });
+      const data = await findPersonRows(adminClient, table, message.receiver_id);
+      data.forEach(r => { receiverIds.add(String(r.id)); if (r.profile_id) receiverIds.add(String(r.profile_id)); });
     }
 
     const { data: subs, error: subsError } = await adminClient
