@@ -23,6 +23,8 @@ export default function Header({ currentUser, onLogout }) {
   };
 
   const isDashboard = ['/student', '/tutor', '/admin'].some(path => location.pathname.startsWith(path));
+  // On phones these dashboards show only Refresh up here; Install/Log out live in their menu drawer.
+  const slimOnMobile = ['/student', '/admin'].some(path => location.pathname.startsWith(path));
 
   // Navigate to a landing-page section. The target is passed via navigation state and
   // LandingPage scrolls to it once mounted (it may still be lazy-loading). extraState can
@@ -61,7 +63,7 @@ export default function Header({ currentUser, onLogout }) {
   };
 
   return (
-    <header>
+    <header className={slimOnMobile ? 'header--dashboard' : undefined}>
       <nav>
         <div className="logo" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }} onClick={() => navigate('/')}>
           <img src="/images/logo_icon.png" alt="Foundaxia Icon" style={{ height: '48px', objectFit: 'contain', flexShrink: 0 }} />

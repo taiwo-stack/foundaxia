@@ -74,7 +74,7 @@ function AppContent() {
             path="/student"
             element={
               <ProtectedRoute allowedRoles={['student']} user={currentUser}>
-                <StudentDashboard user={currentUser} />
+                <StudentDashboard user={currentUser} onLogout={handleLogout} />
               </ProtectedRoute>
             }
           />
@@ -90,7 +90,7 @@ function AppContent() {
             path="/admin"
             element={
               <ProtectedRoute allowedRoles={['admin']} user={currentUser}>
-                <AdminDashboard user={currentUser} />
+                <AdminDashboard user={currentUser} onLogout={handleLogout} />
               </ProtectedRoute>
             }
           />
