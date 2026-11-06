@@ -154,7 +154,7 @@ export default function ParentFeesModal({ student, onClose }) {
                   <div className="pa-fee-main">
                     <div className="pa-fee-title">{fee.description}</div>
                     <div className="pa-fee-due">
-                      {fee.status === 'paid' ? `Paid ${fmtDate(fee.paid_at)}${fee.parent_initiated ? ' · amount entered by parent' : ''}` : fee.due_date ? `Due ${fmtDate(fee.due_date)}` : 'No due date'}
+                      {fee.status === 'paid' ? `Paid ${fmtDate(fee.paid_at)}` : fee.due_date ? `Due ${fmtDate(fee.due_date)}` : 'No due date'}
                     </div>
                   </div>
                   <div className="pa-fee-amount">{naira(fee.amount_kobo)}</div>

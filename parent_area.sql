@@ -27,8 +27,6 @@ CREATE TABLE IF NOT EXISTS public.student_fees (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS student_fees_student_idx ON public.student_fees (student_id);
--- true when the parent typed the amount themselves ("Make a payment").
-ALTER TABLE public.student_fees ADD COLUMN IF NOT EXISTS parent_initiated BOOLEAN NOT NULL DEFAULT false;
 
 -- Payment attempts (Paystack) and payments recorded by an admin (cash / bank transfer).
 CREATE TABLE IF NOT EXISTS public.fee_payments (

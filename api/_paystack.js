@@ -30,9 +30,6 @@ export function checkDb(error) {
   if (error.code === '42P01' || error.code === 'PGRST205' || /relation .* does not exist|Could not find the table/i.test(error.message || '')) {
     throw new HttpError(500, 'The Parent Area tables are missing. Run parent_area.sql in the Supabase SQL editor.');
   }
-  if ((error.code === '42703' || error.code === 'PGRST204') && /parent_initiated/.test(error.message || '')) {
-    throw new HttpError(500, 'The database needs the latest Parent Area update. Run parent_area.sql in the Supabase SQL editor again.');
-  }
   throw error;
 }
 
