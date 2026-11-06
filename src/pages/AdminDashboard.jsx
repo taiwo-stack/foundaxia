@@ -2389,7 +2389,7 @@ export default function AdminDashboard({ user }) {
       {/* Add Tutor Modal Overlay */}
       {showTutorModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content ff-modal">
             <button className="modal-close" onClick={() => setShowTutorModal(false)}><X size={20} /></button>
             <h3 className="modal-title">Add a New Tutor</h3>
             <p className="ff-subtitle">Creates the tutor's login and their public profile.</p>
