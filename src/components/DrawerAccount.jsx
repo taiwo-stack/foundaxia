@@ -7,7 +7,7 @@ import { isInstallAvailable, isRunningStandalone, subscribeToInstallAvailability
 // Install + Log out at the bottom of the dashboard menu drawer on phones. On phones the
 // site header shows only Refresh, so these live here instead (hidden on desktop by CSS,
 // where the header still has them).
-export default function DrawerAccount({ user, onLogout }) {
+export default function DrawerAccount({ user, onLogout, className = 'drawer-account' }) {
   const navigate = useNavigate();
   const [canInstall, setCanInstall] = useState(isInstallAvailable());
   useEffect(() => subscribeToInstallAvailability(setCanInstall), []);
@@ -21,7 +21,7 @@ export default function DrawerAccount({ user, onLogout }) {
   const name = user?.full_name ? user.full_name.split(' ')[0] : user?.email;
 
   return (
-    <div className="drawer-account">
+    <div className={className}>
       {name && <div className="drawer-account-name">Signed in as <strong>{name}</strong></div>}
       {canInstall && !isRunningStandalone() && (
         <button type="button" className="drawer-account-btn" onClick={() => promptInstall()}>

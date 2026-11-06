@@ -22,7 +22,7 @@ import {
   Lock, User as UserIcon, Award, Star, UserPlus
 } from 'lucide-react';
 import ParentFeesModal from '../components/ParentFeesModal';
-import MobileTabBar from '../components/MobileTabBar';
+import MobileMenuSheet from '../components/MobileMenuSheet';
 import DrawerAccount from '../components/DrawerAccount';
 import useResponsiveTables from '../hooks/useResponsiveTables';
 import '../styles/DashboardMobile.css';
@@ -1127,17 +1127,24 @@ export default function AdminDashboard({ user, onLogout }) {
         <DrawerAccount user={user} onLogout={onLogout} />
       </aside>
 
-      <MobileTabBar
+      <MobileMenuSheet
+        title="Admin Console"
         items={[
-          { key: 'overview', label: 'Home', Icon: Layers },
+          { key: 'overview', label: 'Overview', Icon: Layers },
           { key: 'students', label: 'Students', Icon: Users },
           { key: 'tutors', label: 'Tutors', Icon: UserCheck },
-          { key: 'bookings', label: 'Bookings', Icon: Calendar }
+          { key: 'bookings', label: 'Bookings', Icon: Calendar },
+          { key: 'courses', label: 'Course Builder', Icon: BookOpen },
+          { key: 'enrollments', label: 'Enrollments', Icon: BookOpenCheck },
+          { key: 'schedules', label: 'Schedules', Icon: Clock },
+          { key: 'inquiries', label: 'Inquiries', Icon: Mail },
+          { key: 'chatmonitor', label: 'Chat Monitor', Icon: MessageSquare },
+          { key: 'whiteboard', label: 'Live Whiteboard', Icon: MonitorPlay, accent: true, onClick: () => setShowStartSessionModal(true) }
         ]}
         active={activeTab}
         onSelect={(key) => { setActiveTab(key); setSidebarOpen(false); }}
-        onMore={() => setSidebarOpen(o => !o)}
-        moreActive={sidebarOpen}
+        user={user}
+        onLogout={onLogout}
       />
 
       {/* Main Content Workspace */}

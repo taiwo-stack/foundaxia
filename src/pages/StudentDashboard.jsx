@@ -16,7 +16,7 @@ import {
   Camera, Mail, Phone, GraduationCap, Copy, Check, Video, MapPin, Lock
 } from 'lucide-react';
 import ParentArea from '../components/ParentArea';
-import MobileTabBar from '../components/MobileTabBar';
+import MobileMenuSheet from '../components/MobileMenuSheet';
 import DrawerAccount from '../components/DrawerAccount';
 import useResponsiveTables from '../hooks/useResponsiveTables';
 import HtmlSlideModal from '../components/HtmlSlideModal';
@@ -597,20 +597,25 @@ export default function StudentDashboard({ user, onLogout }) {
       </aside>
 
       {/* Main Panel */}
-      <MobileTabBar
+      <MobileMenuSheet
+        title="Student Portal"
         items={[
-          { key: 'overview', label: 'Home', Icon: LayoutDashboard },
-          { key: 'courses', label: 'Courses', Icon: BookOpen },
+          { key: 'overview', label: 'Dashboard', Icon: LayoutDashboard },
+          { key: 'courses', label: 'My Courses', Icon: BookOpen },
           { key: 'timetable', label: 'Timetable', Icon: Clock },
           {
-            key: 'chat', label: 'Chat', Icon: MessageSquare,
+            key: 'chat', label: 'Tutor Chat', Icon: MessageSquare,
             badge: chatMessages.filter(m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read).length
-          }
+          },
+          { key: 'homework', label: 'Tasks & Grades', Icon: CheckSquare },
+          { key: 'bookings', label: 'Consultations', Icon: Calendar },
+          { key: 'profile', label: 'Personal Info', Icon: User },
+          { key: 'parent', label: 'Parent Area', Icon: Lock }
         ]}
         active={activeTab}
         onSelect={(key) => { setActiveTab(key); setSidebarOpen(false); }}
-        onMore={() => setSidebarOpen(o => !o)}
-        moreActive={sidebarOpen}
+        user={user}
+        onLogout={onLogout}
       />
 
       <main className="dashboard-main" ref={mainRef}>
