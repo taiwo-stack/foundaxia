@@ -21,6 +21,7 @@ import {
   Eye, EyeOff, RefreshCw, Upload, Image as ImageIcon,
   Lock, User as UserIcon, Award, Star, UserPlus
 } from 'lucide-react';
+import ParentFeesModal from '../components/ParentFeesModal';
 
 // Readable random password (no look-alike characters) for new accounts.
 const generatePassword = (length = 12) => {
@@ -93,6 +94,7 @@ export default function AdminDashboard({ user }) {
 
   // Add Student Modal state
   const [showStudentModal, setShowStudentModal] = useState(false);
+  const [feesStudent, setFeesStudent] = useState(null); // student whose Parent & Fees window is open
   
   // Activation Modal State
   const [showActivationModal, setShowActivationModal] = useState(false);
@@ -1375,6 +1377,14 @@ export default function AdminDashboard({ user }) {
                               >
                                 Edit
                               </button>
+                              <button
+                                className="btn-action complete"
+                                onClick={() => setFeesStudent(s)}
+                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                                title="Parent code and fees"
+                              >
+                                Parent &amp; Fees
+                              </button>
                               <button className="btn-action delete" onClick={() => handleDeleteStudent(s.id)}>Remove</button>
                             </div>
                           </td>
@@ -2621,6 +2631,8 @@ export default function AdminDashboard({ user }) {
           </div>
         </div>
       )}
+
+      {feesStudent && <ParentFeesModal student={feesStudent} onClose={() => setFeesStudent(null)} />}
 
       {/* Student Account Activation Modal */}
       {showActivationModal && studentToActivate && (

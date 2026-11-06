@@ -1,0 +1,209 @@
+/* Parent Area (student dashboard, code-protected fees & payments) */
+.pa-wrap { display: flex; flex-direction: column; gap: 1.25rem; max-width: 880px; margin: 0 auto; width: 100%; }
+.pa-wrap .dashboard-card { margin-bottom: 0; }
+.pa-muted { color: var(--text-light); font-size: 0.85rem; }
+
+/* ---- Locked ---- */
+.pa-lock-card {
+  max-width: 440px;
+  width: 100%;
+  margin: 2rem auto 0;
+  text-align: center;
+  padding: 2rem 1.75rem !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+}
+.pa-lock-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
+  background: var(--primary-gradient);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(15, 44, 89, 0.25);
+}
+.pa-lock-card h2 { margin: 0.2rem 0 0; font-family: var(--font-heading); color: var(--text-dark); font-size: 1.4rem; }
+.pa-lock-sub { margin: 0; color: var(--text-light); font-size: 0.9rem; line-height: 1.5; }
+.pa-code-form { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; margin-top: 0.4rem; }
+.pa-code-input {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 1.6rem;
+  letter-spacing: 0.6em;
+  padding: 0.7rem 0.5rem 0.7rem 1.1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: var(--primary-color);
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.pa-code-input:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(242, 122, 36, 0.15); background: white; }
+.pa-foot { display: flex; align-items: center; gap: 0.35rem; margin: 0.4rem 0 0; font-size: 0.78rem; color: #a0aec0; }
+
+/* ---- Alerts ---- */
+.pa-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.pa-alert svg { flex-shrink: 0; margin-top: 1px; }
+.pa-alert-ok { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.pa-alert-err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.pa-alert-info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+
+/* ---- Buttons ---- */
+.pa-btn-primary,
+.pa-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.86rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+.pa-btn-primary { border: none; background: var(--accent-color); color: white; }
+.pa-btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+.pa-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.pa-btn-ghost { border: 1.5px solid #e2e8f0; background: white; color: #4a5568; }
+.pa-btn-ghost:hover { background: #f7fafc; }
+.pa-code-form .pa-btn-primary { padding: 0.75rem; font-size: 0.95rem; }
+
+/* ---- Unlocked ---- */
+.pa-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.pa-header h2 { margin: 0 0 0.2rem; display: flex; align-items: center; gap: 0.5rem; font-family: var(--font-heading); color: var(--text-dark); font-size: 1.35rem; }
+
+.pa-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.pa-stat {
+  background: white;
+  border: 1px solid rgba(15, 44, 89, 0.06);
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.pa-stat span { font-size: 0.8rem; color: var(--text-light); font-weight: 600; }
+.pa-stat strong { font-size: 1.45rem; color: var(--text-dark); font-family: var(--font-heading); }
+.pa-stat small { font-size: 0.76rem; color: #a0aec0; }
+.pa-stat-due { background: var(--primary-gradient); border: none; }
+.pa-stat-due span, .pa-stat-due small { color: rgba(255, 255, 255, 0.8); }
+.pa-stat-due strong { color: white; }
+
+.pa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.pa-fee {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+.pa-fee-main { flex: 1; min-width: 0; }
+.pa-fee-title { font-weight: 700; color: var(--text-dark); font-size: 0.95rem; overflow-wrap: anywhere; }
+.pa-fee-due { font-size: 0.8rem; color: var(--text-light); margin-top: 0.15rem; }
+.pa-fee-due.is-overdue { color: #c53030; font-weight: 600; }
+.pa-fee-amount { font-weight: 800; color: var(--primary-color); font-size: 1.02rem; white-space: nowrap; }
+.pa-fee.is-paid .pa-fee-amount { color: #2f855a; }
+
+.pa-empty { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.5rem 1rem; color: #2f855a; font-weight: 600; font-size: 0.9rem; text-align: center; }
+.pa-empty-muted { color: #a0aec0; font-weight: 500; }
+.pa-secure { display: flex; align-items: center; gap: 0.35rem; margin: 0.9rem 0 0; font-size: 0.76rem; color: #a0aec0; }
+
+@media (max-width: 600px) {
+  .pa-stats { grid-template-columns: minmax(0, 1fr); }
+  .pa-fee { flex-wrap: wrap; }
+  .pa-fee-main { flex-basis: 100%; }
+  .pa-fee-amount { flex: 1; }
+  .pa-lock-card { margin-top: 0.5rem; }
+}
+
+/* ---- Receipt ---- */
+.pa-receipt {
+  position: relative;
+  background: white;
+  border-radius: 18px;
+  padding: 1.75rem 1.5rem 1.5rem;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  text-align: center;
+}
+.pa-receipt-close { position: absolute; top: 0.75rem; right: 0.75rem; border: none; background: none; color: #a0aec0; cursor: pointer; padding: 0.25rem; }
+.pa-receipt-logo { width: 110px; height: auto; margin: 0 auto 0.5rem; display: block; }
+.pa-receipt h3 { margin: 0 0 1rem; font-family: var(--font-heading); color: var(--text-dark); }
+.pa-receipt dl { margin: 0 0 1.25rem; text-align: left; }
+.pa-receipt dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px dashed #edf2f7; font-size: 0.86rem; }
+.pa-receipt dt { color: var(--text-light); margin: 0; flex-shrink: 0; }
+.pa-receipt dd { margin: 0; font-weight: 600; color: var(--text-dark); text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.pa-ref { font-family: monospace; font-size: 0.78rem; }
+.pa-print { width: 100%; }
+
+@media print {
+  body:has(.pa-receipt) * { visibility: hidden; }
+  body:has(.pa-receipt) .pa-receipt,
+  body:has(.pa-receipt) .pa-receipt * { visibility: visible; }
+  .pa-receipt { position: fixed; top: 0; left: 50%; transform: translateX(-50%); box-shadow: none; }
+  .pa-receipt-close, .pa-print { display: none !important; }
+}
+
+/* ---- Admin: Parent & Fees modal ---- */
+.pfm-section { padding: 1rem 0; border-top: 1px solid #edf2f7; }
+.pfm-section:first-of-type { border-top: none; padding-top: 0.25rem; }
+.pfm-section h4 { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.6rem; font-size: 0.95rem; color: var(--text-dark); }
+.pfm-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.pfm-row h4 { margin-bottom: 0.25rem; }
+.pfm-code {
+  margin-top: 0.9rem;
+  padding: 1rem;
+  border-radius: 14px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  text-align: center;
+}
+.pfm-code-digits { font-size: 2rem; font-weight: 800; letter-spacing: 0.35em; color: var(--primary-color); font-family: monospace; padding-left: 0.35em; }
+.pfm-code p { margin: 0.35rem 0 0.75rem; font-size: 0.8rem; color: #9a3412; }
+.pfm-code-actions { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+.pfm-code-actions a { text-decoration: none; }
+.pfm-form { display: flex; flex-direction: column; gap: 0.6rem; }
+.pfm-form-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 0.6rem; }
+.pfm-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  outline: none;
+}
+.pfm-form input:focus { border-color: var(--accent-color); background: white; }
+.pfm-fee-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+.pfm .pa-fee { padding: 0.7rem 0.85rem; }
+
+@media (max-width: 600px) {
+  .pfm-form-row { grid-template-columns: minmax(0, 1fr); }
+  .pfm-fee-actions { width: 100%; }
+  .pfm-fee-actions .btn-action { flex: 1; }
+}
