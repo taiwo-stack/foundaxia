@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getTutors, updateTutor, updateBookingStatus, uploadAvatar,
@@ -83,6 +83,7 @@ export default function TutorDashboard({ user }) {
   
   // Chat Inbox states
   const [chatMessages, setChatMessages] = useState([]);
+  const chatScrollRef = useRef(null);
   const [topics, setTopics] = useState([]); // lesson topics for task/quiz linking
   const [activeStudentChat, setActiveStudentChat] = useState(null);
   const [activeCourseChat, setActiveCourseChat] = useState(null);
@@ -295,6 +296,15 @@ export default function TutorDashboard({ user }) {
     const timer = setInterval(poll, 10000);
     return () => { cancelled = true; clearInterval(timer); };
   }, []);
+
+  // Keep the open conversation scrolled to the newest message
+  const activeThreadLength = activeStudentChat
+    ? chatMessages.filter(m => inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))).length
+    : 0;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeStudentChat, activeThreadLength, activeTab]);
 
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
@@ -1560,7 +1570,7 @@ export default function TutorDashboard({ user }) {
             </div>
 
             {/* ── Chat split-pane ── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem', height: 'calc(100vh - 280px)', minHeight: '420px', maxHeight: '620px' }}>
+            <div className="tutor-chat-split" style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gridTemplateRows: 'minmax(0, 1fr)', gap: '1.5rem', height: 'calc(100vh - 280px)', minHeight: '420px', maxHeight: '620px' }}>
 
             {/* Left: Student contact list */}
             <div className="dashboard-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', marginBottom: 0 }}>
@@ -1610,7 +1620,7 @@ export default function TutorDashboard({ user }) {
 
             {/* Right: Chat thread panel */}
             {activeStudentChat ? (
-              <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', marginBottom: 0 }}>
+              <div className="dashboard-card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', marginBottom: 0, minHeight: 0 }}>
                 {/* Thread Header */}
                 <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #edf2f7', background: '#f7fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -1626,7 +1636,7 @@ export default function TutorDashboard({ user }) {
                 </div>
 
                 {/* Messages scroll area */}
-                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
+                <div ref={chatScrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
                   {chatMessages.filter(m =>
                     inThread(m, personIds(tutorInfo, tutorId), personIds(activeStudentChat))
                   ).length === 0 ? (
@@ -1663,7 +1673,7 @@ export default function TutorDashboard({ user }) {
                 </div>
 
                 {/* Compose area */}
-                <div style={{ borderTop: '1px solid #edf2f7', padding: '1rem 1.5rem', background: '#fafafa' }}>
+                <div style={{ borderTop: '1px solid #edf2f7', padding: '1rem 1.5rem', background: '#fafafa', flexShrink: 0 }}>
                   <form onSubmit={handleSendChat} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
                     <input
                       type="text"

@@ -1620,25 +1620,19 @@ const notifyNewMessage = async (message) => {
   } catch (_) {}
 };
 
+// Saved through the server: a browser's endpoint may already be registered to another
+// account that used this device, which RLS rightly won't let this user overwrite.
 export const savePushSubscription = async (userId, subscription) => {
   if (!hasSupabaseConfig) return;
   const { endpoint, keys } = subscription.toJSON ? subscription.toJSON() : subscription;
-  // Derive the id from a hash of the WHOLE endpoint. Endpoints from one push service
-  // (e.g. every Chrome user on FCM) share a long common prefix, so truncating the
-  // base64 endpoint gave every such device the same primary key.
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(endpoint));
-  const endpointHash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-  const { error } = await supabase.from('push_subscriptions').upsert([{
-    id: 'push_' + endpointHash,
-    user_id: userId,
-    endpoint,
-    p256dh: keys.p256dh,
-    auth: keys.auth
-  }], { onConflict: 'endpoint' });
-  if (error) throw error;
+  await callAuthedApi('/api/push-subscription', { action: 'save', userId, subscription: { endpoint, keys } });
 };
 
 export const removePushSubscription = async (endpoint) => {
   if (!hasSupabaseConfig) return;
-  await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
+  try {
+    await callAuthedApi('/api/push-subscription', { action: 'remove', endpoint });
+  } catch (err) {
+    console.warn('Could not remove push subscription:', err.message);
+  }
 };

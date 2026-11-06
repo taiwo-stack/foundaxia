@@ -18,7 +18,8 @@ import {
   Users, Calendar, UserCheck, Mail, Plus, Trash2, AlertCircle, Layers, X,
   BookOpen, BookOpenCheck, Paperclip, Clock,
   ArrowUp, ArrowDown, Edit, MessageSquare, MonitorPlay,
-  Eye, EyeOff, RefreshCw, Upload, Image as ImageIcon
+  Eye, EyeOff, RefreshCw, Upload, Image as ImageIcon,
+  Lock, User as UserIcon, Award, Star, UserPlus
 } from 'lucide-react';
 
 // Readable random password (no look-alike characters) for new accounts.
@@ -2388,87 +2389,142 @@ export default function AdminDashboard({ user }) {
 
       {/* Add Tutor Modal Overlay */}
       {showTutorModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <button className="modal-close" onClick={() => setShowTutorModal(false)}><X size={20} /></button>
-            <h3 className="modal-title">Add a New Tutor</h3>
-            <p className="ff-subtitle">Creates the tutor's login and their public profile.</p>
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget && !addingTutor) setShowTutorModal(false); }}>
+          <div className="modal-content tf-modal" role="dialog" aria-modal="true" aria-labelledby="tf-title">
+            <div className="tf-header">
+              <div className="tf-header-icon"><UserPlus size={22} /></div>
+              <div className="tf-header-text">
+                <h3 id="tf-title">Add a new tutor</h3>
+                <p>Set up their login and the profile students will see.</p>
+              </div>
+              <button type="button" className="tf-close" onClick={() => setShowTutorModal(false)} disabled={addingTutor} aria-label="Close"><X size={18} /></button>
+            </div>
+
             {/* autoComplete="off" + new-password stop the browser autofilling the admin's own login here */}
-            <form onSubmit={handleAddTutorSubmit} autoComplete="off" className="ff-form">
-              <fieldset className="ff-section">
-                <legend>Login details</legend>
-                <div className="ff-grid">
-                  <div className="form-group">
-                    <label htmlFor="nt-email">Tutor's email <span className="ff-req">*</span></label>
-                    <input id="nt-email" name="new-tutor-email" type="email" autoComplete="off" value={newTutor.email} onChange={(e) => setNewTutor(prev => ({ ...prev, email: e.target.value }))} placeholder="tutor@example.com" required />
-                    <small className="ff-hint">They'll sign in with this address.</small>
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="nt-password">Temporary password <span className="ff-req">*</span></label>
-                    <div className="ff-password">
-                      <input id="nt-password" name="new-tutor-password" type={showTutorPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newTutor.password} onChange={(e) => setNewTutor(prev => ({ ...prev, password: e.target.value }))} placeholder="At least 8 characters" required />
-                      <button type="button" className="ff-icon-btn" onClick={() => setShowTutorPassword(v => !v)} aria-label={showTutorPassword ? 'Hide password' : 'Show password'}>
-                        {showTutorPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
+            <form onSubmit={handleAddTutorSubmit} autoComplete="off" className="tf-form">
+              <div className="tf-body">
+                <div className="tf-section">
+                  <div className="tf-section-head">
+                    <span className="tf-step">1</span>
+                    <div>
+                      <h4>Login details</h4>
+                      <p>Share these with the tutor so they can sign in.</p>
                     </div>
-                    <button type="button" className="ff-link-btn" onClick={() => { setNewTutor(prev => ({ ...prev, password: generatePassword() })); setShowTutorPassword(true); }}>
-                      <RefreshCw size={12} /> Generate a strong password
-                    </button>
                   </div>
-                </div>
-              </fieldset>
-
-              <fieldset className="ff-section">
-                <legend>Public profile</legend>
-                <div className="ff-avatar-row">
-                  <div className="ff-avatar">
-                    {newTutor.avatar_url
-                      ? <img src={newTutor.avatar_url} alt="Tutor avatar preview" />
-                      : <span>{newTutor.full_name?.trim()?.[0]?.toUpperCase() || <ImageIcon size={22} />}</span>}
-                  </div>
-                  <div className="ff-avatar-actions">
-                    <label className={`ff-upload-btn ${uploading ? 'disabled' : ''}`}>
-                      <Upload size={14} /> {uploading ? 'Uploading…' : newTutor.avatar_url ? 'Change photo' : 'Upload photo'}
-                      <input type="file" accept="image/*" onChange={handleModalTutorAvatarChange} disabled={uploading} hidden />
-                    </label>
-                    {newTutor.avatar_url && (
-                      <button type="button" className="ff-link-btn" onClick={() => setNewTutor(prev => ({ ...prev, avatar_url: '' }))}>Remove</button>
-                    )}
-                    <small className="ff-hint">Optional. A square photo works best.</small>
-                  </div>
-                </div>
-
-                <div className="ff-grid">
-                  <div className="form-group">
-                    <label htmlFor="nt-name">Full name <span className="ff-req">*</span></label>
-                    <input id="nt-name" type="text" autoComplete="off" value={newTutor.full_name} onChange={(e) => setNewTutor(prev => ({ ...prev, full_name: e.target.value }))} placeholder="e.g. Chioma Okafor" required />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="nt-subject">Subjects <span className="ff-req">*</span></label>
-                    <input id="nt-subject" type="text" value={newTutor.subject} onChange={(e) => setNewTutor(prev => ({ ...prev, subject: e.target.value }))} placeholder="e.g. Mathematics, English" required />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="nt-exp">Experience &amp; qualifications <span className="ff-req">*</span></label>
-                    <input id="nt-exp" type="text" value={newTutor.experience} onChange={(e) => setNewTutor(prev => ({ ...prev, experience: e.target.value }))} placeholder="e.g. B.Sc Chemistry, 5+ years" required />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="nt-rating">Rating</label>
-                    <input id="nt-rating" type="number" step="0.1" min="1" max="5" value={newTutor.rating} onChange={(e) => setNewTutor(prev => ({ ...prev, rating: e.target.value }))} placeholder="5.0" />
-                    <small className="ff-hint">1.0 – 5.0</small>
+                  <div className="tf-grid">
+                    <div className="tf-field">
+                      <label htmlFor="nt-email">Email address <span className="tf-req">*</span></label>
+                      <div className="tf-control">
+                        <Mail size={16} className="tf-icon" />
+                        <input id="nt-email" name="new-tutor-email" type="email" autoComplete="off" value={newTutor.email} onChange={(e) => setNewTutor(prev => ({ ...prev, email: e.target.value }))} placeholder="tutor@example.com" required />
+                      </div>
+                    </div>
+                    <div className="tf-field">
+                      <div className="tf-label-row">
+                        <label htmlFor="nt-password">Temporary password <span className="tf-req">*</span></label>
+                        <button type="button" className="tf-text-btn" onClick={() => { setNewTutor(prev => ({ ...prev, password: generatePassword() })); setShowTutorPassword(true); }}>
+                          <RefreshCw size={12} /> Generate
+                        </button>
+                      </div>
+                      <div className="tf-control">
+                        <Lock size={16} className="tf-icon" />
+                        <input id="nt-password" name="new-tutor-password" type={showTutorPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newTutor.password} onChange={(e) => setNewTutor(prev => ({ ...prev, password: e.target.value }))} placeholder="Min. 8 characters" required />
+                        <button type="button" className="tf-eye" onClick={() => setShowTutorPassword(v => !v)} aria-label={showTutorPassword ? 'Hide password' : 'Show password'}>
+                          {showTutorPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="form-group">
-                  <label htmlFor="nt-bio">Short bio</label>
-                  <textarea id="nt-bio" value={newTutor.bio} onChange={(e) => setNewTutor(prev => ({ ...prev, bio: e.target.value }))} placeholder="A few sentences students will see: teaching style, background, what they help with." rows={3} maxLength={500}></textarea>
-                  <small className="ff-hint ff-count">{(newTutor.bio || '').length}/500</small>
-                </div>
-              </fieldset>
+                <div className="tf-section">
+                  <div className="tf-section-head">
+                    <span className="tf-step">2</span>
+                    <div>
+                      <h4>Public profile</h4>
+                      <p>Shown to students and on the website.</p>
+                    </div>
+                  </div>
 
-              <div className="ff-actions">
-                <button type="button" className="btn-prev" onClick={() => setShowTutorModal(false)} disabled={addingTutor}>Cancel</button>
-                <button type="submit" className="btn-submit" disabled={addingTutor || uploading}>
-                  {addingTutor ? 'Creating account…' : 'Add tutor'}
+                  <div className="tf-photo">
+                    <div className="tf-avatar">
+                      {newTutor.avatar_url
+                        ? <img src={newTutor.avatar_url} alt="Tutor photo preview" />
+                        : newTutor.full_name?.trim()
+                          ? <span>{newTutor.full_name.trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('')}</span>
+                          : <ImageIcon size={22} />}
+                    </div>
+                    <div className="tf-photo-text">
+                      <strong>Profile photo</strong>
+                      <span>Optional · JPG or PNG, square works best</span>
+                      <div className="tf-photo-actions">
+                        <label className={`tf-upload ${uploading ? 'is-busy' : ''}`}>
+                          <Upload size={14} /> {uploading ? 'Uploading…' : newTutor.avatar_url ? 'Change' : 'Upload'}
+                          <input type="file" accept="image/*" onChange={handleModalTutorAvatarChange} disabled={uploading} hidden />
+                        </label>
+                        {newTutor.avatar_url && (
+                          <button type="button" className="tf-text-btn tf-danger" onClick={() => setNewTutor(prev => ({ ...prev, avatar_url: '' }))}>Remove</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="tf-field">
+                    <label htmlFor="nt-name">Full name <span className="tf-req">*</span></label>
+                    <div className="tf-control">
+                      <UserIcon size={16} className="tf-icon" />
+                      <input id="nt-name" type="text" autoComplete="off" value={newTutor.full_name} onChange={(e) => setNewTutor(prev => ({ ...prev, full_name: e.target.value }))} placeholder="e.g. Chioma Okafor" required />
+                    </div>
+                  </div>
+
+                  <div className="tf-grid">
+                    <div className="tf-field">
+                      <label htmlFor="nt-subject">Subjects <span className="tf-req">*</span></label>
+                      <div className="tf-control">
+                        <BookOpen size={16} className="tf-icon" />
+                        <input id="nt-subject" type="text" value={newTutor.subject} onChange={(e) => setNewTutor(prev => ({ ...prev, subject: e.target.value }))} placeholder="e.g. Maths, English" required />
+                      </div>
+                    </div>
+                    <div className="tf-field">
+                      <label htmlFor="nt-exp">Experience <span className="tf-req">*</span></label>
+                      <div className="tf-control">
+                        <Award size={16} className="tf-icon" />
+                        <input id="nt-exp" type="text" value={newTutor.experience} onChange={(e) => setNewTutor(prev => ({ ...prev, experience: e.target.value }))} placeholder="e.g. B.Sc Chemistry, 5 yrs" required />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="tf-field">
+                    <label>Rating</label>
+                    <div className="tf-stars" role="radiogroup" aria-label="Rating">
+                      {[1, 2, 3, 4, 5].map(n => {
+                        const filled = n <= Math.round(parseFloat(newTutor.rating) || 0);
+                        return (
+                          <button key={n} type="button" role="radio" aria-checked={Math.round(parseFloat(newTutor.rating) || 0) === n} aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                            className={`tf-star ${filled ? 'is-on' : ''}`}
+                            onClick={() => setNewTutor(prev => ({ ...prev, rating: n.toFixed(1) }))}>
+                            <Star size={22} fill={filled ? 'currentColor' : 'none'} />
+                          </button>
+                        );
+                      })}
+                      <span className="tf-star-value">{(parseFloat(newTutor.rating) || 0).toFixed(1)}</span>
+                    </div>
+                  </div>
+
+                  <div className="tf-field">
+                    <div className="tf-label-row">
+                      <label htmlFor="nt-bio">Short bio</label>
+                      <span className="tf-count">{(newTutor.bio || '').length}/500</span>
+                    </div>
+                    <textarea id="nt-bio" className="tf-textarea" value={newTutor.bio} onChange={(e) => setNewTutor(prev => ({ ...prev, bio: e.target.value }))} placeholder="Teaching style, background and what they help students with." rows={4} maxLength={500}></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tf-footer">
+                <button type="button" className="tf-btn tf-btn-ghost" onClick={() => setShowTutorModal(false)} disabled={addingTutor}>Cancel</button>
+                <button type="submit" className="tf-btn tf-btn-primary" disabled={addingTutor || uploading}>
+                  <UserPlus size={16} /> {addingTutor ? 'Creating account…' : 'Add tutor'}
                 </button>
               </div>
             </form>

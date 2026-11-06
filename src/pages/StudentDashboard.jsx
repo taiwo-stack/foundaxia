@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
   getStudentCourses, getCourses, getTutors, getCourseTutors,
@@ -12,7 +12,7 @@ import {
 import {
   Calendar, User, BookOpen, Clock, Save,
   MessageSquare, FileText, Send, CheckSquare, Award, X, Megaphone, Play, LayoutDashboard, Menu,
-  ChevronLeft
+  ChevronLeft, History, PanelLeftClose, PanelLeftOpen, CheckCircle2, XCircle, HelpCircle
 } from 'lucide-react';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
@@ -54,6 +54,15 @@ export default function StudentDashboard({ user }) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Desktop: sidebar can be collapsed to an icon rail; remembered per browser.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('studentSidebarCollapsed') === '1'; } catch { return false; }
+  });
+  const toggleSidebarCollapsed = () => setSidebarCollapsed(prev => {
+    const next = !prev;
+    try { localStorage.setItem('studentSidebarCollapsed', next ? '1' : '0'); } catch { /* storage unavailable */ }
+    return next;
+  });
   const [mobileChatView, setMobileChatView] = useState('list');
   const [viewingSlide, setViewingSlide] = useState(null); // material row being viewed in the embedded HTML slide modal
 
@@ -68,6 +77,8 @@ export default function StudentDashboard({ user }) {
   const [submissions, setSubmissions] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [historyFilter, setHistoryFilter] = useState('all');
+  const [historyLimit, setHistoryLimit] = useState(10);
   const [announcements, setAnnouncements] = useState([]);
 
   // Active LMS states
@@ -87,6 +98,7 @@ export default function StudentDashboard({ user }) {
 
   // Chat states
   const [chatMessages, setChatMessages] = useState([]);
+  const chatScrollRef = useRef(null);
   const [activeTutorChat, setActiveTutorChat] = useState(null);
   const [chatInput, setChatInput] = useState('');
 
@@ -132,6 +144,9 @@ export default function StudentDashboard({ user }) {
       setStudentInfo(currentStudent);
 
       const actualStudentId = currentStudent?.id || studentId;
+      // Records may reference the student by row id or by login id (profile_id).
+      const myIds = personIds(currentStudent, studentId);
+      const isMine = (x) => isOneOf(x.student_id, myIds);
 
       // Filter bookings for Tobi Coker (or matching by student_name)
       const nameToMatch = currentStudent ? currentStudent.full_name : (user?.full_name || 'Tobi Coker');
@@ -145,7 +160,7 @@ export default function StudentDashboard({ user }) {
       });
       setBookings(filtered);
 
-      const studEnroll = scList.filter(x => x.student_id === actualStudentId);
+      const studEnroll = scList.filter(isMine);
       setEnrollments(studEnroll);
       setCourses(cList);
       setTutors(tList);
@@ -153,9 +168,9 @@ export default function StudentDashboard({ user }) {
       setTopics(tpList);
       setMaterials(matList);
       setTasks(tkList);
-      setSubmissions(subList.filter(x => x.student_id === actualStudentId));
-      setSchedules(schList.filter(x => x.student_id === actualStudentId));
-      setAttendanceLogs(attList.filter(x => x.student_id === actualStudentId));
+      setSubmissions(subList.filter(isMine));
+      setSchedules(schList.filter(isMine));
+      setAttendanceLogs(attList.filter(isMine));
       setAnnouncements(annList);
       setChatMessages(msgList);
 
@@ -207,6 +222,15 @@ export default function StudentDashboard({ user }) {
     const interval = setInterval(refreshChat, 10000);
     return () => clearInterval(interval);
   }, [studentId]);
+
+  // Keep the open conversation scrolled to the newest message
+  const activeThreadLength = activeTutorChat
+    ? chatMessages.filter(m => inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))).length
+    : 0;
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeTutorChat, activeThreadLength, activeTab]);
 
   // Mark the open conversation's incoming messages read as soon as it's opened
   useEffect(() => {
@@ -346,6 +370,23 @@ export default function StudentDashboard({ user }) {
     ? new Date(sch.end_time)
     : new Date(new Date(sch.start_time).getTime() + 60 * 60 * 1000);
   const enrolledCourseIds = new Set(enrollments.map(en => en.course_id));
+  const courseTitleOf = (id) => courses.find(c => c.id === id)?.title || 'Course';
+  const tutorNameOf = (id) => tutors.find(t => t.id === id || t.profile_id === id)?.full_name || 'Tutor';
+  const fmtDay = (d) => d.toLocaleDateString([], {
+    weekday: 'short', day: 'numeric', month: 'short',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
+  });
+  const fmtTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // Class log: every class that has ended, newest first, with its attendance mark.
+  const attendanceBySchedule = new Map(attendanceLogs.map(a => [a.schedule_id, a]));
+  const pastSchedules = schedules
+    .filter(sch => classEnd(sch) < now)
+    .sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+  const historyStatusOf = (sch) => attendanceBySchedule.get(sch.id)?.status || 'unmarked';
+  const filteredHistory = historyFilter === 'all'
+    ? pastSchedules
+    : pastSchedules.filter(sch => historyStatusOf(sch) === historyFilter);
+  const lastClass = pastSchedules[0] || null;
   // Timetable: classes that haven't ended yet, soonest first.
   const upcomingSchedules = schedules
     .filter(sch => classEnd(sch) >= now)
@@ -427,6 +468,7 @@ export default function StudentDashboard({ user }) {
         ).length;
         return unreadCount > 0 ? (
           <button
+            className="unread-fab"
             onClick={() => { setActiveTab('chat'); setSidebarOpen(false); }}
             title={`${unreadCount} unread message${unreadCount > 1 ? 's' : ''}`}
             style={{
@@ -475,29 +517,40 @@ export default function StudentDashboard({ user }) {
       })()}
 
       {/* Sidebar */}
-      <aside className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">Student Portal</div>
+      <aside className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand">Student Portal</div>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={toggleSidebarCollapsed}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+        </div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('overview'); setSidebarOpen(false); }}><LayoutDashboard size={18} /> Dashboard</button>
+            <button title={sidebarCollapsed ? 'Dashboard' : undefined} onClick={() => { setActiveTab('overview'); setSidebarOpen(false); }}><LayoutDashboard size={18} /> <span className="sidebar-label">Dashboard</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'courses' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('courses'); setSidebarOpen(false); }}><BookOpen size={18} /> My Courses</button>
+            <button title={sidebarCollapsed ? 'My Courses' : undefined} onClick={() => { setActiveTab('courses'); setSidebarOpen(false); }}><BookOpen size={18} /> <span className="sidebar-label">My Courses</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'timetable' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('timetable'); setSidebarOpen(false); }}><Clock size={18} /> Timetable</button>
+            <button title={sidebarCollapsed ? 'Timetable' : undefined} onClick={() => { setActiveTab('timetable'); setSidebarOpen(false); }}><Clock size={18} /> <span className="sidebar-label">Timetable</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'chat' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('chat'); setSidebarOpen(false); }}><MessageSquare size={18} /> Tutor Chat</button>
+            <button title={sidebarCollapsed ? 'Tutor Chat' : undefined} onClick={() => { setActiveTab('chat'); setSidebarOpen(false); }}><MessageSquare size={18} /> <span className="sidebar-label">Tutor Chat</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'homework' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('homework'); setSidebarOpen(false); }}><CheckSquare size={18} /> Tasks & Grades</button>
+            <button title={sidebarCollapsed ? 'Tasks & Grades' : undefined} onClick={() => { setActiveTab('homework'); setSidebarOpen(false); }}><CheckSquare size={18} /> <span className="sidebar-label">Tasks & Grades</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'bookings' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('bookings'); setSidebarOpen(false); }}><Calendar size={18} /> Consultations</button>
+            <button title={sidebarCollapsed ? 'Consultations' : undefined} onClick={() => { setActiveTab('bookings'); setSidebarOpen(false); }}><Calendar size={18} /> <span className="sidebar-label">Consultations</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'profile' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}><User size={18} /> Personal Info</button>
+            <button title={sidebarCollapsed ? 'Personal Info' : undefined} onClick={() => { setActiveTab('profile'); setSidebarOpen(false); }}><User size={18} /> <span className="sidebar-label">Personal Info</span></button>
           </li>
         </ul>
       </aside>
@@ -604,7 +657,7 @@ export default function StudentDashboard({ user }) {
                   </h3>
                   {nextClass ? (() => {
                     const cTitle = courses.find(c => c.id === nextClass.course_id)?.title || 'Course';
-                    const tName = tutors.find(t => t.id === nextClass.tutor_id)?.full_name || 'Tutor';
+                    const tName = tutorNameOf(nextClass.tutor_id);
                     const classTime = new Date(nextClass.start_time);
 
                     return (
@@ -680,8 +733,18 @@ export default function StudentDashboard({ user }) {
                       </div>
                     );
                   })() : (
-                    <div style={{ color: '#718096', fontSize: '0.88rem', padding: '0.5rem 0' }}>
-                      No future classes scheduled.
+                    <div style={{ color: '#718096', fontSize: '0.88rem', padding: '0.5rem 0', display: 'flex', flexDirection: 'column', gap: '0.6rem', alignItems: 'flex-start' }}>
+                      <span>No upcoming classes scheduled yet. Your tutor will add them here.</span>
+                      {lastClass && (
+                        <span style={{ fontSize: '0.82rem' }}>
+                          Last class: <strong style={{ color: 'var(--text-dark)' }}>{lastClass.title}</strong> on {fmtDay(new Date(lastClass.start_time))}
+                        </span>
+                      )}
+                      {pastSchedules.length > 0 && (
+                        <button type="button" className="ch-link-btn" onClick={() => setActiveTab('timetable')}>
+                          <History size={14} /> View class history
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -699,7 +762,7 @@ export default function StudentDashboard({ user }) {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                       {todayClasses.map(sch => {
                         const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
-                        const tName = tutors.find(t => t.id === sch.tutor_id)?.full_name || 'Tutor';
+                        const tName = tutorNameOf(sch.tutor_id);
                         const classTime = new Date(sch.start_time);
                         const isPast = classEnd(sch) < now;
 
@@ -1115,7 +1178,7 @@ export default function StudentDashboard({ user }) {
         {activeTab === 'timetable' && (
           <div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem', alignItems: 'start' }}>
+            <div className="timetable-grid">
 
               {/* Left Column: Attendance rate */}
               <div className="dashboard-card" style={{ textAlign: 'center', padding: '2rem' }}>
@@ -1134,8 +1197,8 @@ export default function StudentDashboard({ user }) {
               {/* Right Column: Schedules Timetable list */}
               <div className="dashboard-card">
                 <h3>Upcoming Class Timetable</h3>
-                {schedules.length === 0 ? (
-                  <div style={{ color: '#a0aec0', padding: '2rem', textAlign: 'center' }}>No live classes scheduled for you.</div>
+                {upcomingSchedules.length === 0 ? (
+                  <div style={{ color: '#a0aec0', padding: '2rem', textAlign: 'center' }}>No upcoming classes scheduled yet.</div>
                 ) : (
                   <div className="table-container">
                     <table className="dashboard-table">
@@ -1148,17 +1211,14 @@ export default function StudentDashboard({ user }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {upcomingSchedules.length === 0 && (
-                          <tr><td colSpan={4} style={{ color: '#a0aec0', textAlign: 'center' }}>No upcoming classes.</td></tr>
-                        )}
                         {upcomingSchedules.map(sch => {
                           const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
-                          const tName = tutors.find(t => t.id === sch.tutor_id)?.full_name || 'Tutor';
+                          const tName = tutorNameOf(sch.tutor_id);
                           return (
                             <tr key={sch.id}>
                               <td style={{ fontWeight: 'bold' }}>{sch.title} <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#718096' }}>{cTitle}</div></td>
                               <td>{tName}</td>
-                              <td style={{ fontSize: '0.8rem' }}>{new Date(sch.start_time).toLocaleString()}</td>
+                              <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{fmtDay(new Date(sch.start_time))}<div style={{ color: '#718096' }}>{fmtTime(new Date(sch.start_time))} – {fmtTime(classEnd(sch))}</div></td>
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
@@ -1177,6 +1237,72 @@ export default function StudentDashboard({ user }) {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Class History: every class that has ended, with its attendance mark */}
+            <div className="dashboard-card ch-card">
+              <div className="ch-head">
+                <h3><History size={20} color="var(--primary-color)" /> Class History</h3>
+                <div className="ch-filters" role="tablist">
+                  {[
+                    ['all', `All (${pastSchedules.length})`],
+                    ['attended', `Attended (${pastSchedules.filter(x => historyStatusOf(x) === 'attended').length})`],
+                    ['missed', `Missed (${pastSchedules.filter(x => historyStatusOf(x) === 'missed').length})`],
+                    ['unmarked', `Not marked (${pastSchedules.filter(x => historyStatusOf(x) === 'unmarked').length})`]
+                  ].map(([key, label]) => (
+                    <button key={key} type="button" role="tab" aria-selected={historyFilter === key}
+                      className={`ch-chip ${historyFilter === key ? 'is-active' : ''}`}
+                      onClick={() => { setHistoryFilter(key); setHistoryLimit(10); }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {filteredHistory.length === 0 ? (
+                <div className="ch-empty">
+                  {pastSchedules.length === 0
+                    ? 'No past classes yet. Classes you have taken will appear here.'
+                    : 'No classes match this filter.'}
+                </div>
+              ) : (
+                <>
+                  <ul className="ch-list">
+                    {filteredHistory.slice(0, historyLimit).map(sch => {
+                      const start = new Date(sch.start_time);
+                      const end = classEnd(sch);
+                      const mins = Math.max(0, Math.round((end - start) / 60000));
+                      const status = historyStatusOf(sch);
+                      return (
+                        <li key={sch.id} className="ch-item">
+                          <div className="ch-date">
+                            <span className="ch-date-month">{start.toLocaleDateString([], { month: 'short' })}</span>
+                            <span className="ch-date-day">{start.getDate()}</span>
+                          </div>
+                          <div className="ch-info">
+                            <div className="ch-title">{sch.title || 'Class'}</div>
+                            <div className="ch-meta">{courseTitleOf(sch.course_id)} · {tutorNameOf(sch.tutor_id)}</div>
+                            <div className="ch-meta">
+                              {start.toLocaleDateString([], { weekday: 'long' })}, {fmtTime(start)} – {fmtTime(end)}
+                              {mins > 0 && <> · {mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${mins}m`}</>}
+                            </div>
+                          </div>
+                          <span className={`ch-status ch-status-${status}`}>
+                            {status === 'attended' && <><CheckCircle2 size={14} /> Attended</>}
+                            {status === 'missed' && <><XCircle size={14} /> Missed</>}
+                            {status === 'unmarked' && <><HelpCircle size={14} /> Not marked</>}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {filteredHistory.length > historyLimit && (
+                    <button type="button" className="ch-more" onClick={() => setHistoryLimit(l => l + 10)}>
+                      Show more ({filteredHistory.length - historyLimit} older)
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1257,7 +1383,7 @@ export default function StudentDashboard({ user }) {
                   </div>
 
                   {/* Messages Logs view container */}
-                  <div className="whatsapp-messages-container">
+                  <div className="whatsapp-messages-container" ref={chatScrollRef}>
                     {chatMessages.filter(m =>
                       inThread(m, personIds(studentInfo, studentId), personIds(activeTutorChat))
                     ).map(m => {
