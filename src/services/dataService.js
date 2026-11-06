@@ -340,13 +340,12 @@ export const registerStudent = async (student) => {
     }
 
     const studentId = self.crypto.randomUUID();
-    const { data, error } = await supabase.from('students').insert([{
-      id: studentId,
-      status: 'pending',
-      ...dbPayload
-    }]).select();
+    // No .select(): anonymous visitors may INSERT a pending registration but are not
+    // allowed to read the students table back (see enable_rls.sql).
+    const newStudent = { id: studentId, status: 'pending', ...dbPayload };
+    const { error } = await supabase.from('students').insert([newStudent]);
     if (error) throw error;
-    savedStudent = data[0];
+    savedStudent = newStudent;
   } else {
     initLocalStorage();
     const students = JSON.parse(localStorage.getItem('lc_students'));
@@ -415,7 +414,8 @@ export const createBooking = async (booking) => {
 
   let savedBooking;
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from('bookings').insert([cleanBooking]).select();
+    // No .select(): public visitors can create bookings but not read them back.
+    const { error } = await supabase.from('bookings').insert([cleanBooking]);
     if (error) {
       // If the error is about missing columns (timezone/message not yet migrated),
       // retry without those fields so the booking still saves.
@@ -434,14 +434,14 @@ export const createBooking = async (booking) => {
           'Saving booking without those fields for now.'
         );
         const { timezone, message, ...coreBooking } = cleanBooking;
-        const { data: retryData, error: retryError } = await supabase.from('bookings').insert([coreBooking]).select();
+        const { error: retryError } = await supabase.from('bookings').insert([coreBooking]);
         if (retryError) throw retryError;
-        savedBooking = retryData[0];
+        savedBooking = coreBooking;
       } else {
         throw error;
       }
     } else {
-      savedBooking = data[0];
+      savedBooking = cleanBooking;
     }
   } else {
     initLocalStorage();
@@ -502,9 +502,10 @@ export const getContactMessages = async () => {
 
 export const createContactMessage = async (msg) => {
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from('contact_messages').insert([msg]).select();
+    // No .select(): public visitors can send messages but not read them back.
+    const { error } = await supabase.from('contact_messages').insert([msg]);
     if (error) throw error;
-    return data[0];
+    return msg;
   } else {
     initLocalStorage();
     const messages = JSON.parse(localStorage.getItem('lc_messages'));
@@ -765,7 +766,7 @@ export const uploadAvatar = async (userId, file) => {
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
       if (uploadError) {
         throw uploadError;
@@ -973,7 +974,7 @@ export const uploadMaterialFile = async (fileName, file) => {
 
       const { error: uploadError } = await supabase.storage
         .from('materials')
-        .upload(uniquePath, file, { cacheControl: '3600', upsert: true });
+        .upload(uniquePath, file, { cacheControl: '3600', upsert: false });
 
       if (uploadError) {
         throw uploadError;

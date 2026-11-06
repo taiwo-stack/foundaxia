@@ -206,7 +206,9 @@ The root of the directory contains the SQL files for setting up the tables, inde
    ```env
    VITE_SUPABASE_URL=https://your-project-id.supabase.co
    VITE_SUPABASE_ANON_KEY=your-anon-key-here
-   VITE_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+   # Server-only (used by /api functions). NEVER prefix this with VITE_ -
+   # Vite ships every VITE_ variable to the browser, and this key bypasses RLS.
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
    ```
    *If `.env.local` is omitted, the application will automatically start in **Mock Mode** using local storage data.*
 
