@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle } from 'lucide-react';
+import { Lock, Unlock, ShieldCheck, Wallet, CheckCircle2, Receipt, X, Printer, AlertCircle, CreditCard } from 'lucide-react';
 import { parentApi } from '../services/dataService';
 import '../styles/ParentArea.css';
 
@@ -141,13 +141,25 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
     if (session) await loadFees(session.token);
   };
 
-  const handlePay = async (fee) => {
+  const [custom, setCustom] = useState({ amount: '', description: '' });
+
+  const handleCustomPay = (e) => {
+    e.preventDefault();
+    const amount = Number(custom.amount);
+    if (!Number.isFinite(amount) || amount < 100) { setError('Enter an amount of at least ₦100.'); return; }
+    startPayment('custom', { action: 'pay-custom', amount, description: custom.description }, () => setCustom({ amount: '', description: '' }));
+  };
+
+  const handlePay = (fee) => startPayment(fee.id, { action: 'pay', feeId: fee.id });
+
+  // key: which button shows "Opening..."; onPaid: extra cleanup after a confirmed payment.
+  const startPayment = async (key, { action, ...payload }, onPaid) => {
     if (!session || payingId) return;
     setError('');
     setNotice('');
-    setPayingId(fee.id);
+    setPayingId(key);
     try {
-      const { accessCode, authorizationUrl, reference } = await parentApi('pay', { token: session.token, feeId: fee.id });
+      const { accessCode, authorizationUrl, reference } = await parentApi(action, { token: session.token, ...payload });
       let Pop;
       try {
         Pop = await loadPaystack();
@@ -157,7 +169,7 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
       }
       const popup = new Pop();
       popup.resumeTransaction(accessCode, {
-        onSuccess: () => { setPayingId(null); confirm(reference); },
+        onSuccess: () => { setPayingId(null); onPaid?.(); confirm(reference); },
         onCancel: () => { setPayingId(null); },
         onError: (err) => { setPayingId(null); setError(err?.message || 'Payment could not be completed.'); }
       });
@@ -252,11 +264,10 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
         </div>
       </div>
 
+      {unpaid.length > 0 && (
       <section className="dashboard-card">
         <h3><Wallet size={18} color="var(--primary-color)" /> Fees to Pay</h3>
-        {unpaid.length === 0 ? (
-          <div className="pa-empty"><CheckCircle2 size={26} /> You're all paid up. Nothing is due right now.</div>
-        ) : (
+        {(
           <ul className="pa-list">
             {unpaid.map(fee => {
               const overdue = fee.due_date && fee.due_date < today;
@@ -277,6 +288,32 @@ export default function ParentArea({ studentName, initialReference, onReferenceH
             })}
           </ul>
         )}
+      </section>
+      )}
+
+      <section className="dashboard-card">
+        <h3><CreditCard size={18} color="var(--primary-color)" /> Make a Payment</h3>
+        <p className="pa-muted" style={{ margin: '0 0 0.85rem' }}>
+          Enter the amount you agreed with FoundaXia{unpaid.length > 0 ? ', or use the Pay buttons above for listed fees' : ''}.
+        </p>
+        <form onSubmit={handleCustomPay} className="pa-custom">
+          <label className="pa-custom-amount">
+            <span>Amount (₦)</span>
+            <div className="pa-naira-input">
+              <b>₦</b>
+              <input type="number" inputMode="decimal" min="100" step="0.01" placeholder="e.g. 25000" value={custom.amount}
+                onChange={(e) => setCustom(c => ({ ...c, amount: e.target.value }))} required />
+            </div>
+          </label>
+          <label className="pa-custom-desc">
+            <span>What is it for? (optional)</span>
+            <input type="text" maxLength={200} placeholder="e.g. November tutoring" value={custom.description}
+              onChange={(e) => setCustom(c => ({ ...c, description: e.target.value }))} />
+          </label>
+          <button type="submit" className="pa-btn-primary" disabled={!!payingId}>
+            {payingId === 'custom' ? 'Opening...' : `Pay${Number(custom.amount) >= 100 ? ' ' + naira(Number(custom.amount) * 100) : ''}`}
+          </button>
+        </form>
         <p className="pa-secure"><ShieldCheck size={14} /> Payments are processed securely by Paystack (card, bank transfer or USSD).</p>
       </section>
 

@@ -13,6 +13,7 @@ import {
 //   unlock   { code }            -> { token, expiresAt }       (5 wrong tries = 15 min lock)
 //   fees     { token }           -> { fees, payments }
 //   pay      { token, feeId }    -> { accessCode, authorizationUrl, reference }
+//   pay-custom { token, amount, description }  -> same; the parent chooses the amount
 //   verify   { reference }       -> { status }
 // Admin actions (profile role 'admin'):
 //   admin-student       { studentId }                               -> { hasCode, codeSetAt, fees, payments }
@@ -44,7 +45,9 @@ async function feesFor(adminClient, studentId) {
   const { data: payments, error: payErr } = await adminClient
     .from('fee_payments').select('*').eq('student_id', studentId).eq('status', 'success').order('paid_at', { ascending: false });
   checkDb(payErr);
-  return { fees: fees || [], payments: payments || [] };
+  // Hide parent-initiated payments that were never completed.
+  const visible = (fees || []).filter(f => !(f.parent_initiated && f.status !== 'paid'));
+  return { fees: visible, payments: payments || [] };
 }
 
 async function getFee(adminClient, feeId) {
@@ -194,11 +197,27 @@ export default async function handler(req, res) {
       return res.status(200).json(await feesFor(adminClient, sid));
     }
 
-    if (action === 'pay') {
+    if (action === 'pay' || action === 'pay-custom') {
       const sid = readParentToken(p.token, user.id);
-      const fee = await getFee(adminClient, p.feeId);
-      if (fee.student_id !== sid) throw new HttpError(404, 'Fee not found');
-      if (fee.status !== 'unpaid') throw new HttpError(409, 'This fee has already been paid or cancelled');
+      let fee;
+      if (action === 'pay') {
+        fee = await getFee(adminClient, p.feeId);
+        if (fee.student_id !== sid) throw new HttpError(404, 'Fee not found');
+        if (fee.status !== 'unpaid') throw new HttpError(409, 'This fee has already been paid or cancelled');
+      } else {
+        // Parent chooses the amount. Recorded as a fee flagged parent_initiated; until it's
+        // paid it stays hidden, so an abandoned attempt never shows up as money owed.
+        const amount = Number(p.amount);
+        if (!Number.isFinite(amount) || amount < 100 || amount > MAX_FEE_NAIRA) {
+          throw new HttpError(400, 'Enter an amount between ₦100 and ₦10,000,000');
+        }
+        const description = String(p.description || '').trim().slice(0, 200) || 'Tuition payment';
+        const { data, error } = await adminClient.from('student_fees').insert([{
+          student_id: sid, description, amount_kobo: Math.round(amount * 100), parent_initiated: true
+        }]).select().single();
+        checkDb(error);
+        fee = data;
+      }
 
       const { data: student } = await adminClient.from('students').select('full_name').eq('id', sid).maybeSingle();
       const reference = `FX-${Date.now()}-${randomUUID().slice(0, 8)}`;
