@@ -17,8 +17,16 @@ import {
 import { 
   Users, Calendar, UserCheck, Mail, Plus, Trash2, AlertCircle, Layers, X,
   BookOpen, BookOpenCheck, Paperclip, Clock,
-  ArrowUp, ArrowDown, Edit, MessageSquare, MonitorPlay
+  ArrowUp, ArrowDown, Edit, MessageSquare, MonitorPlay,
+  Eye, EyeOff, RefreshCw, Upload, Image as ImageIcon
 } from 'lucide-react';
+
+// Readable random password (no look-alike characters) for new accounts.
+const generatePassword = (length = 12) => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+  const bytes = crypto.getRandomValues(new Uint32Array(length));
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+};
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
@@ -174,6 +182,8 @@ export default function AdminDashboard({ user }) {
   const [schLink2, setSchLink2] = useState('');
 
   const [uploading, setUploading] = useState(false);
+  const [addingTutor, setAddingTutor] = useState(false);
+  const [showTutorPassword, setShowTutorPassword] = useState(false);
 
   const loadAllData = async () => {
     const safeLoad = async (promise, fallback = []) => {
@@ -356,6 +366,8 @@ export default function AdminDashboard({ user }) {
 
   const handleAddTutorSubmit = async (e) => {
     e.preventDefault();
+    if (addingTutor) return;
+    setAddingTutor(true);
     try {
       const tutorData = {
         full_name: newTutor.full_name,
@@ -378,6 +390,8 @@ export default function AdminDashboard({ user }) {
       alert('Tutor added successfully with login credentials!');
     } catch (err) {
       alert('Error adding tutor: ' + err.message);
+    } finally {
+      setAddingTutor(false);
     }
   };
 
@@ -2377,52 +2391,85 @@ export default function AdminDashboard({ user }) {
         <div className="modal-overlay">
           <div className="modal-content">
             <button className="modal-close" onClick={() => setShowTutorModal(false)}><X size={20} /></button>
-            <h3 className="modal-title">Register New Instructor</h3>
-            <form onSubmit={handleAddTutorSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label>Login Email *</label>
-                  <input type="email" value={newTutor.email} onChange={(e) => setNewTutor(prev => ({ ...prev, email: e.target.value }))} placeholder="tutor@foundaxia.com" required />
+            <h3 className="modal-title">Add a New Tutor</h3>
+            <p className="ff-subtitle">Creates the tutor's login and their public profile.</p>
+            {/* autoComplete="off" + new-password stop the browser autofilling the admin's own login here */}
+            <form onSubmit={handleAddTutorSubmit} autoComplete="off" className="ff-form">
+              <fieldset className="ff-section">
+                <legend>Login details</legend>
+                <div className="ff-grid">
+                  <div className="form-group">
+                    <label htmlFor="nt-email">Tutor's email <span className="ff-req">*</span></label>
+                    <input id="nt-email" name="new-tutor-email" type="email" autoComplete="off" value={newTutor.email} onChange={(e) => setNewTutor(prev => ({ ...prev, email: e.target.value }))} placeholder="tutor@example.com" required />
+                    <small className="ff-hint">They'll sign in with this address.</small>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="nt-password">Temporary password <span className="ff-req">*</span></label>
+                    <div className="ff-password">
+                      <input id="nt-password" name="new-tutor-password" type={showTutorPassword ? 'text' : 'password'} autoComplete="new-password" minLength={8} value={newTutor.password} onChange={(e) => setNewTutor(prev => ({ ...prev, password: e.target.value }))} placeholder="At least 8 characters" required />
+                      <button type="button" className="ff-icon-btn" onClick={() => setShowTutorPassword(v => !v)} aria-label={showTutorPassword ? 'Hide password' : 'Show password'}>
+                        {showTutorPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <button type="button" className="ff-link-btn" onClick={() => { setNewTutor(prev => ({ ...prev, password: generatePassword() })); setShowTutorPassword(true); }}>
+                      <RefreshCw size={12} /> Generate a strong password
+                    </button>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>Login Password *</label>
-                  <input type="password" value={newTutor.password} onChange={(e) => setNewTutor(prev => ({ ...prev, password: e.target.value }))} placeholder="Enter secure password" required />
-                </div>
-              </div>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Instructor Name *</label>
-                <input type="text" value={newTutor.full_name} onChange={(e) => setNewTutor(prev => ({ ...prev, full_name: e.target.value }))} placeholder="e.g. Chioma Okafor" required />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label>Subject Focus *</label>
-                  <input type="text" value={newTutor.subject} onChange={(e) => setNewTutor(prev => ({ ...prev, subject: e.target.value }))} placeholder="e.g. Mathematics, English" required />
-                </div>
-                <div className="form-group">
-                  <label>Experience / Credentials *</label>
-                  <input type="text" value={newTutor.experience} onChange={(e) => setNewTutor(prev => ({ ...prev, experience: e.target.value }))} placeholder="e.g. B.Sc Chemistry, 5+ years" required />
-                </div>
-                <div className="form-group">
-                  <label>Rating (1.0 - 5.0) *</label>
-                  <input type="number" step="0.1" min="1.0" max="5.0" value={newTutor.rating} onChange={(e) => setNewTutor(prev => ({ ...prev, rating: e.target.value }))} placeholder="5.0" required />
-                </div>
-              </div>
+              </fieldset>
 
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label>Instructor Avatar Photo (Optional)</label>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <input type="file" accept="image/*" onChange={handleModalTutorAvatarChange} disabled={uploading} style={{ flex: '1', border: 'none', background: 'transparent', padding: '0.5rem 0' }} />
-                  <input type="text" value={newTutor.avatar_url} onChange={(e) => setNewTutor(prev => ({ ...prev, avatar_url: e.target.value }))} placeholder="Avatar image URL (Auto-filled on upload)" style={{ flex: '2' }} />
+              <fieldset className="ff-section">
+                <legend>Public profile</legend>
+                <div className="ff-avatar-row">
+                  <div className="ff-avatar">
+                    {newTutor.avatar_url
+                      ? <img src={newTutor.avatar_url} alt="Tutor avatar preview" />
+                      : <span>{newTutor.full_name?.trim()?.[0]?.toUpperCase() || <ImageIcon size={22} />}</span>}
+                  </div>
+                  <div className="ff-avatar-actions">
+                    <label className={`ff-upload-btn ${uploading ? 'disabled' : ''}`}>
+                      <Upload size={14} /> {uploading ? 'Uploading…' : newTutor.avatar_url ? 'Change photo' : 'Upload photo'}
+                      <input type="file" accept="image/*" onChange={handleModalTutorAvatarChange} disabled={uploading} hidden />
+                    </label>
+                    {newTutor.avatar_url && (
+                      <button type="button" className="ff-link-btn" onClick={() => setNewTutor(prev => ({ ...prev, avatar_url: '' }))}>Remove</button>
+                    )}
+                    <small className="ff-hint">Optional. A square photo works best.</small>
+                  </div>
                 </div>
-              </div>
 
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label>Instructor Short Bio Details</label>
-                <textarea value={newTutor.bio} onChange={(e) => setNewTutor(prev => ({ ...prev, bio: e.target.value }))} placeholder="Describe credentials and rate details..." rows={3}></textarea>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                <button type="button" className="btn-prev" onClick={() => setShowTutorModal(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Add Tutor</button>
+                <div className="ff-grid">
+                  <div className="form-group">
+                    <label htmlFor="nt-name">Full name <span className="ff-req">*</span></label>
+                    <input id="nt-name" type="text" autoComplete="off" value={newTutor.full_name} onChange={(e) => setNewTutor(prev => ({ ...prev, full_name: e.target.value }))} placeholder="e.g. Chioma Okafor" required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="nt-subject">Subjects <span className="ff-req">*</span></label>
+                    <input id="nt-subject" type="text" value={newTutor.subject} onChange={(e) => setNewTutor(prev => ({ ...prev, subject: e.target.value }))} placeholder="e.g. Mathematics, English" required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="nt-exp">Experience &amp; qualifications <span className="ff-req">*</span></label>
+                    <input id="nt-exp" type="text" value={newTutor.experience} onChange={(e) => setNewTutor(prev => ({ ...prev, experience: e.target.value }))} placeholder="e.g. B.Sc Chemistry, 5+ years" required />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="nt-rating">Rating</label>
+                    <input id="nt-rating" type="number" step="0.1" min="1" max="5" value={newTutor.rating} onChange={(e) => setNewTutor(prev => ({ ...prev, rating: e.target.value }))} placeholder="5.0" />
+                    <small className="ff-hint">1.0 – 5.0</small>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="nt-bio">Short bio</label>
+                  <textarea id="nt-bio" value={newTutor.bio} onChange={(e) => setNewTutor(prev => ({ ...prev, bio: e.target.value }))} placeholder="A few sentences students will see: teaching style, background, what they help with." rows={3} maxLength={500}></textarea>
+                  <small className="ff-hint ff-count">{(newTutor.bio || '').length}/500</small>
+                </div>
+              </fieldset>
+
+              <div className="ff-actions">
+                <button type="button" className="btn-prev" onClick={() => setShowTutorModal(false)} disabled={addingTutor}>Cancel</button>
+                <button type="submit" className="btn-submit" disabled={addingTutor || uploading}>
+                  {addingTutor ? 'Creating account…' : 'Add tutor'}
+                </button>
               </div>
             </form>
           </div>
@@ -2435,15 +2482,15 @@ export default function AdminDashboard({ user }) {
           <div className="modal-content" style={{ maxWidth: '600px' }}>
             <button className="modal-close" onClick={() => setShowStudentModal(false)}><X size={20} /></button>
             <h3 className="modal-title">Register New Student Account</h3>
-            <form onSubmit={handleAddStudentSubmit}>
+            <form onSubmit={handleAddStudentSubmit} autoComplete="off">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label>Login Email *</label>
-                  <input type="email" value={newStudent.email} onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))} placeholder="student@foundaxia.com" required />
+                  <input type="email" value={newStudent.email} onChange={(e) => setNewStudent(prev => ({ ...prev, email: e.target.value }))} placeholder="student@example.com" autoComplete="off" name="new-student-email" required />
                 </div>
                 <div className="form-group">
                   <label>Login Password *</label>
-                  <input type="password" value={newStudent.password} onChange={(e) => setNewStudent(prev => ({ ...prev, password: e.target.value }))} placeholder="Create secure password" required />
+                  <input type="password" value={newStudent.password} onChange={(e) => setNewStudent(prev => ({ ...prev, password: e.target.value }))} placeholder="Create secure password" autoComplete="new-password" name="new-student-password" required />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
