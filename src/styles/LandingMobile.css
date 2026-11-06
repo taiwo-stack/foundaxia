@@ -1,0 +1,79 @@
+/* ==========================================================
+   Landing page on phones: spacing and alignment fixes.
+   Loaded after LandingPage.css.
+   ========================================================== */
+
+/* Tutors section when there are no public tutors yet */
+.teachers-empty {
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 1.75rem 1.5rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+}
+.teachers-empty p { margin: 0 0 1.1rem; line-height: 1.6; }
+
+@media (max-width: 768px) {
+  /* Hero: room between the fixed header and the headline */
+  .hero { padding-top: 6.75rem !important; }
+
+  /* Forms: labels line up with their fields (left), consistent spacing */
+  .hero-form-card form,
+  .contact-form form { text-align: left; }
+  .hero-form-card form > p { text-align: center; }
+  .hero-form-card label,
+  .contact-form .form-group label { display: block; text-align: left; margin-bottom: 0.35rem; }
+  .contact-form .form-group { margin-bottom: 1rem; }
+  .contact-form h3 { text-align: center; }
+  .contact-form button[type="submit"] { width: 100%; margin-top: 0.25rem; }
+
+  /* "Why families choose us": centred like every other section */
+  .why-choose-left { text-align: center !important; }
+  .why-choose-left > p { margin-left: auto; margin-right: auto; }
+
+  /* Footer: brand block full width, link groups two per row */
+  footer .footer-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 2rem 1.25rem !important;
+    padding: 2.5rem 1.25rem 2rem !important;
+  }
+  footer .footer-content > .footer-section:first-child { grid-column: 1 / -1; }
+  footer .footer-content h3, footer .footer-content h4 { font-size: 1.15rem; }
+  /* keep the copyright line above the floating Enroll bar */
+  footer .footer-bottom { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important; }
+
+  /* Floating call-to-action: one compact bar instead of two stacked pills that
+     cover the text (both buttons did the same thing) */
+  #sticky-cta-panel {
+    left: 1rem !important;
+    right: 1rem !important;
+    bottom: calc(0.85rem + env(safe-area-inset-bottom)) !important;
+  }
+  #sticky-register-btn { display: none !important; }
+  #sticky-enroll-btn {
+    justify-content: center;
+    width: 100%;
+    padding: 0.8rem 1rem !important;
+    font-size: 0.95rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero { padding-top: 6.25rem !important; }
+
+  /* Stats strip: 2 x 2 instead of four squeezed columns */
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    row-gap: 1.1rem !important;
+  }
+  .stats-grid > :nth-child(3) { border-left: none !important; }
+}
+
+/* Small phones (iPhone SE / 360px Androids): keep the logo clear of the header buttons */
+@media (max-width: 380px) {
+  header .logo img { height: 38px !important; width: auto !important; }
+  header .logo-text-block { transform: scale(0.88); transform-origin: left center; }
+}

@@ -108,6 +108,45 @@
 /* Bottom tab bar: phones only */
 .mobile-tabbar { display: none; }
 
+/* Install / Log out in the menu drawer: phones only (desktop keeps them in the header) */
+.drawer-account { display: none; }
+
+@media (max-width: 800px) {
+  /* Site header on student/admin dashboards: logo + Refresh only */
+  header.header--dashboard .mobile-menu-toggle,
+  header.header--dashboard .nav-links,
+  header.header--dashboard .btn-install { display: none !important; }
+
+  .drawer-account {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 1.25rem;
+    border-top: 1px solid rgba(15, 44, 89, 0.08);
+  }
+  .drawer-account-name { font-size: 0.82rem; color: var(--text-light); padding: 0 0.25rem 0.25rem; }
+  .drawer-account-name strong { color: var(--text-dark); }
+  .drawer-account-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: 100%;
+    min-height: 46px;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 12px;
+    background: white;
+    color: var(--primary-color);
+    font-weight: 700;
+    font-size: 0.95rem;
+    font-family: var(--font-body);
+    cursor: pointer;
+    text-align: left;
+  }
+  .drawer-account-btn.is-danger { color: #c53030; border-color: #fecaca; background: #fff5f5; }
+}
+
 @media (max-width: 800px) {
   /* ---------- Navigation ---------- */
   .mobile-tabbar {

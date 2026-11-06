@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import ParentArea from '../components/ParentArea';
 import MobileTabBar from '../components/MobileTabBar';
+import DrawerAccount from '../components/DrawerAccount';
 import useResponsiveTables from '../hooks/useResponsiveTables';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import BookingForm from '../components/BookingForm';
@@ -53,7 +54,7 @@ const parseQuizQuestions = (raw) => {
   try { return JSON.parse(raw); } catch { return []; }
 };
 
-export default function StudentDashboard({ user }) {
+export default function StudentDashboard({ user, onLogout }) {
   // Paystack sends parents back to /student?reference=... when its pop-up couldn't open.
   const [paymentReturnRef, setPaymentReturnRef] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('reference'); } catch { return null; }
@@ -591,6 +592,7 @@ export default function StudentDashboard({ user }) {
             <button title={sidebarCollapsed ? 'Parent Area' : undefined} onClick={() => { setActiveTab('parent'); setSidebarOpen(false); }}><Lock size={18} /> <span className="sidebar-label">Parent Area</span></button>
           </li>
         </ul>
+        <DrawerAccount user={user} onLogout={onLogout} />
       </aside>
 
       {/* Main Panel */}

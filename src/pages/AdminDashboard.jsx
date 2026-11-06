@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import ParentFeesModal from '../components/ParentFeesModal';
 import MobileTabBar from '../components/MobileTabBar';
+import DrawerAccount from '../components/DrawerAccount';
 import useResponsiveTables from '../hooks/useResponsiveTables';
 import '../styles/DashboardMobile.css';
 
@@ -49,7 +50,7 @@ const getMaterialFileType = (file) => {
   return 'other';
 };
 
-export default function AdminDashboard({ user }) {
+export default function AdminDashboard({ user, onLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
   const [viewingSlide, setViewingSlide] = useState(null); // material row being viewed in the embedded HTML slide modal
@@ -1119,6 +1120,7 @@ export default function AdminDashboard({ user }) {
             </button>
           </li>
         </ul>
+        <DrawerAccount user={user} onLogout={onLogout} />
       </aside>
 
       <MobileTabBar

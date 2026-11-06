@@ -8,6 +8,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import BookingForm from '../components/BookingForm';
 import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
+import '../styles/LandingMobile.css';
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
@@ -1411,6 +1412,18 @@ export default function LandingPage() {
             <h2>Tutors Who Show Up for Your Child</h2>
             <p style={{ maxWidth: '800px', margin: '0.8rem auto 0', color: 'white' }}>Every FoundaXia tutor is vetted for subject expertise and — just as important — for the ability to connect with kids. Tutoring isn't a side gig for them; it's a craft.</p>
           </div>
+          {!loadingTutors && tutors.length === 0 ? (
+            <div className="teachers-empty">
+              <p>Our tutor profiles are being updated. Tell us about your child and we'll hand-pick the right tutor for them.</p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => { setActiveTab('booking'); document.getElementById('register')?.scrollIntoView({ behavior: 'smooth' }); }}
+              >
+                Book a Free Consultation
+              </button>
+            </div>
+          ) : (
           <div className="teachers-container">
             <button className="teachers-nav prev" onClick={() => scrollTeachers('left')} aria-label="Scroll left">‹</button>
             <button className="teachers-nav next" onClick={() => scrollTeachers('right')} aria-label="Scroll right">›</button>
@@ -1543,6 +1556,7 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </section>
 
