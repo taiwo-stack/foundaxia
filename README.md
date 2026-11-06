@@ -180,6 +180,17 @@ The root of the directory contains the SQL files for setting up the tables, inde
 - `add_course_image.sql`: Appends the `image_url` column to course references.
 - `add_missing_task_columns.sql`: Configures task publishing options and student-specific assignments capability.
 
+### Security migrations
+Deploy the matching app code, then run these three **immediately, in this order** (until all three have run, the public forms and live whiteboard sessions may misbehave). Keep Realtime's "Allow public access" setting enabled - the main whiteboard channel is still public; only the host channel is private.
+1. `enable_rls.sql` — turns on Row Level Security for every table, with role-based policies (admin / tutor / student / public forms). Without it, anyone holding the public anon key can read and modify all data.
+2. `rls_followup.sql` — hides the quiz answer key from students (quizzes are listed and graded through `/api/quiz`), exposes only safe tutor fields to the public via the `public_tutors` view, adds `tasks.created_by`, and makes optional student dates nullable.
+3. `enable_realtime_auth.sql` — restricts whiteboard host commands to the session's host (Supabase Realtime Authorization).
+
+After each, log in as an admin, a tutor and a student and click through their dashboards, and submit the landing-page forms while logged out. `enable_rls.sql` ends with a commented rollback block.
+
+### Server environment variables (Vercel)
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server-only, never `VITE_`-prefixed), and for push notifications `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (+ `VITE_VAPID_PUBLIC_KEY` for the browser).
+
 ---
 
 ## Getting Started & Local Installation

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getStudents, getTutors, getContactMessages,
-  updateBookingStatus, deleteBooking, deleteStudent, deleteTutor, updateStudent, updateTutor,
+  updateBookingStatus, deleteBooking, deleteUserAccount, updateStudent, updateTutor,
   createStudentAccount, createTutorAccount, uploadAvatar, activateStudentAccount, resetUserPassword,
   getCourses, saveCourse, deleteCourse,
   getCourseCategories, saveCourseCategory, deleteCourseCategory,
@@ -16,12 +16,24 @@ import {
 } from '../services/dataService';
 import { 
   Users, Calendar, UserCheck, Mail, Plus, Trash2, AlertCircle, Layers, X,
-  BookOpen, FolderMinus, Link2, BookOpenCheck, Settings, Eye, Paperclip, Clock,
+  BookOpen, BookOpenCheck, Paperclip, Clock,
   ArrowUp, ArrowDown, Edit, MessageSquare, MonitorPlay
 } from 'lucide-react';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
+
+// Material file_type convention shared with the tutor and student dashboards:
+// 'html_slide' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
+const getMaterialFileType = (file) => {
+  const mime = (file?.type || '').toLowerCase();
+  const name = (file?.name || '').toLowerCase();
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return 'pdf';
+  if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)$/.test(name)) return 'image';
+  if (mime.startsWith('video/') || /\.(mp4|webm|mov|avi)$/.test(name)) return 'video';
+  if (mime.includes('msword') || mime.includes('wordprocessingml') || /\.docx?$/.test(name)) return 'doc';
+  return 'other';
+};
 
 export default function AdminDashboard({ user }) {
   const navigate = useNavigate();
@@ -158,6 +170,7 @@ export default function AdminDashboard({ user }) {
   const [schStart, setSchStart] = useState('');
   const [schEnd, setSchEnd] = useState('');
   const [schLink, setSchLink] = useState('');
+  const [schLink2, setSchLink2] = useState('');
 
   const [uploading, setUploading] = useState(false);
 
@@ -213,6 +226,35 @@ export default function AdminDashboard({ user }) {
   useEffect(() => {
     loadAllData();
   }, []);
+
+  // While the Chat Monitor tab is open, poll for new messages every 10s and merge them in
+  useEffect(() => {
+    if (activeTab !== 'chatmonitor') return undefined;
+    let cancelled = false;
+    const poll = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const fresh = await getChatMessages();
+        if (cancelled || !Array.isArray(fresh)) return;
+        setAllChatMessages(prev => {
+          const byId = new Map(prev.map(m => [m.id, m]));
+          let changed = false;
+          for (const m of fresh) {
+            const old = byId.get(m.id);
+            if (!old || old.read !== m.read || old.message_text !== m.message_text) changed = true;
+            byId.set(m.id, old ? { ...old, ...m } : m);
+          }
+          if (!changed) return prev;
+          return [...byId.values()].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        });
+      } catch (err) {
+        console.error('Failed to refresh chat monitor:', err);
+      }
+    };
+    poll();
+    const timer = setInterval(poll, 10000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [activeTab]);
 
   const handleModalTutorAvatarChange = async (e) => {
     const file = e.target.files[0];
@@ -289,10 +331,11 @@ export default function AdminDashboard({ user }) {
 
   // Student Actions
   const handleDeleteStudent = async (id) => {
-    if (!window.confirm('Remove this student registration permanently?')) return;
+    if (!window.confirm('Remove this student permanently? Their registration AND their login account will be deleted, so they will no longer be able to sign in. This cannot be undone.')) return;
     try {
-      await deleteStudent(id);
+      await deleteUserAccount('student', id);
       setStudents(prev => prev.filter(s => s.id !== id));
+      setStudentCourses(prev => prev.filter(sc => sc.student_id !== id));
     } catch (err) {
       alert('Error deleting student: ' + err.message);
     }
@@ -300,10 +343,11 @@ export default function AdminDashboard({ user }) {
 
   // Tutor Actions
   const handleDeleteTutor = async (id) => {
-    if (!window.confirm('Remove this tutor from academy registry?')) return;
+    if (!window.confirm('Remove this tutor permanently? Their tutor profile AND their login account will be deleted, so they will no longer be able to sign in. This cannot be undone.')) return;
     try {
-      await deleteTutor(id);
+      await deleteUserAccount('tutor', id);
       setTutors(prev => prev.filter(t => t.id !== id));
+      setCourseTutors(prev => prev.filter(ct => ct.tutor_id !== id));
     } catch (err) {
       alert('Error removing tutor: ' + err.message);
     }
@@ -472,8 +516,15 @@ export default function AdminDashboard({ user }) {
         await resetUserPassword(editingStudent.id, studentEditPassword);
       }
 
-      // Strip fields that shouldn't go to students table directly
-      const { id, email, is_active, profiles, created_at, ...updates } = activeStudent;
+      // Strip fields that shouldn't go to students table directly. Status is only sent when the
+      // admin actually changed it, so activation's 'approved' is never overwritten by a stale value.
+      const { id, email: _email, is_active: _isActive, profiles: _profiles, created_at: _createdAt, status, ...updates } = activeStudent;
+      const original = students.find(s => s.id === editingStudent.id);
+      if (original && status !== original.status) updates.status = status;
+      // Email is only editable (and only sent) for students without a login account
+      if (!editingStudent.is_active && original && (editingStudent.email || '') !== (original.email || '')) {
+        updates.email = editingStudent.email;
+      }
       await updateStudent(id, updates);
       
       alert('Student profile updated successfully!');
@@ -504,18 +555,58 @@ export default function AdminDashboard({ user }) {
 
   // --- LMS HANDLERS ---
 
-  const handleCreateCourse = async (e) => {
+  // Courses reference their category by NAME, so a rename/delete must be propagated to them.
+  const handleSaveEditedCategory = async (e) => {
     e.preventDefault();
+    const oldName = categories.find(c => c.id === editingCategory.id)?.name;
+    const newName = (editingCategory.name || '').trim();
+    if (!newName) return alert('Category name is required.');
+    if (categories.some(c => c.id !== editingCategory.id && (c.name || '').trim().toLowerCase() === newName.toLowerCase())) {
+      return alert('Another category already has that name.');
+    }
     try {
-      const saved = await saveCourse(newCourse);
-      setCourses(prev => [...prev, saved]);
-      setNewCourse({ title: '', description: '', course_type: 'regular', image_url: '' });
-      setSelectedCourseId(saved.id);
-      alert('Course created successfully!');
+      const saved = await saveCourseCategory({ ...editingCategory, name: newName });
+      setCategories(prev => prev.map(c => c.id === saved.id ? saved : c));
+      let failed = 0;
+      if (oldName && oldName !== newName) {
+        const affected = courses.filter(c => c.category === oldName);
+        const results = await Promise.allSettled(affected.map(c => saveCourse({ id: c.id, category: newName })));
+        const okIds = new Set(affected.filter((_, i) => results[i].status === 'fulfilled').map(c => c.id));
+        failed = affected.length - okIds.size;
+        setCourses(prev => prev.map(c => okIds.has(c.id) ? { ...c, category: newName } : c));
+      }
+      setShowEditCategoryModal(false);
+      setEditingCategory(null);
+      alert(failed > 0
+        ? `Category renamed, but ${failed} course(s) could not be moved to the new name. They will show as uncategorized; edit them to reassign.`
+        : 'Category updated successfully!');
     } catch (err) {
-      alert('Error creating course: ' + err.message);
+      alert('Error updating category: ' + err.message);
     }
   };
+
+  const handleDeleteCategory = async (cat) => {
+    const affected = courses.filter(c => c.category === cat.name);
+    const msg = `Are you sure you want to delete category "${cat.name}"?` +
+      (affected.length ? ` ${affected.length} course(s) inside will become uncategorized.` : '');
+    if (!window.confirm(msg)) return;
+    try {
+      await deleteCourseCategory(cat.id);
+      setCategories(prev => prev.filter(c => c.id !== cat.id));
+      const results = await Promise.allSettled(affected.map(c => saveCourse({ id: c.id, category: null })));
+      const okIds = new Set(affected.filter((_, i) => results[i].status === 'fulfilled').map(c => c.id));
+      setCourses(prev => prev.map(c => okIds.has(c.id) ? { ...c, category: null } : c));
+      if (okIds.size < affected.length) {
+        alert(`Category deleted, but ${affected.length - okIds.size} course(s) could not be cleared. They will still show as uncategorized.`);
+      }
+    } catch (err) {
+      alert('Error deleting category: ' + err.message);
+    }
+  };
+
+  // A course is uncategorized when its category matches no existing category
+  const isUncategorized = (c) =>
+    !categories.some(cat => (c.category && c.category === cat.name) || (c.category_id && c.category_id === cat.id));
 
   const handleDeleteCourse = async (id) => {
     if (!window.confirm('Delete this course, all its topics, and uploads?')) return;
@@ -600,7 +691,7 @@ export default function AdminDashboard({ user }) {
         fileToUpload = new File([html], materialFile.name.replace(/\.pptx$/i, '.html'), { type: 'text/html' });
       }
       const fileUrl = await uploadMaterialFile(fileToUpload.name, fileToUpload);
-      const fileType = isHtmlSlide ? 'html_slide' : (materialFile.type.includes('pdf') ? 'pdf' : (materialFile.type.includes('image') ? 'image' : 'other'));
+      const fileType = isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile);
       const saved = await saveMaterial({
         course_id: selectedCourseId,
         topic_id: selectedTopicId,
@@ -629,8 +720,11 @@ export default function AdminDashboard({ user }) {
     }
   };
 
+  const hasUnaddedQuestion = () =>
+    newQText.trim() !== '' || (newQType === 'multiple' && newQOptions.some(o => o.trim() !== ''));
+
   const handleAddQuizQuestion = () => {
-    if (!newQText) return alert('Enter question text.');
+    if (!newQText.trim()) return alert('Enter question text.');
     let options = [];
     if (newQType === 'boolean') {
       options = ['True', 'False'];
@@ -650,6 +744,11 @@ export default function AdminDashboard({ user }) {
   const handleAddTask = async (e) => {
     e.preventDefault();
     if (!selectedCourseId) return alert('Select a course.');
+    if (!Number.isFinite(Number(maxPoints)) || Number(maxPoints) <= 0) return alert('Max points must be greater than 0.');
+    if (taskType === 'quiz') {
+      if (hasUnaddedQuestion() && !window.confirm('You have a question that has not been added yet (click "+ Add Q" to keep it). Discard it and save the quiz?')) return;
+      if (quizQuestions.length === 0) return alert('Add at least one question before saving the quiz.');
+    }
     try {
       const actualType = taskType === 'true_false' ? 'quiz' : taskType;
       const actualQuestions = taskType === 'true_false' 
@@ -662,13 +761,17 @@ export default function AdminDashboard({ user }) {
         title: taskTitle,
         description: taskDesc,
         task_type: actualType,
-        max_points: maxPoints,
-        quiz_questions: actualQuestions
+        max_points: Number(maxPoints),
+        quiz_questions: actualQuestions,
+        created_by: user?.id || null
       });
       setTasks(prev => [...prev, saved]);
       setTaskTitle('');
       setTaskDesc('');
       setQuizQuestions([]);
+      setNewQText('');
+      setNewQOptions(['', '', '']);
+      setNewQCorrect(0);
       alert('Task created successfully!');
     } catch (err) {
       alert('Error saving task: ' + err.message);
@@ -742,8 +845,27 @@ export default function AdminDashboard({ user }) {
     setShowEditTaskModal(true);
   };
 
+  const handleEditTaskTypeChange = (newType) => {
+    const qs = editingTask.quiz_questions || [];
+    if (editingTask.task_type === 'quiz' && newType !== 'quiz' && qs.length > 0) {
+      const ok = window.confirm(`This quiz has ${qs.length} question(s). Switching the type will discard them when you save. Continue?`);
+      if (!ok) return;
+    }
+    setEditingTask(prev => ({ ...prev, task_type: newType }));
+  };
+
   const handleEditTaskSubmit = async (e) => {
     e.preventDefault();
+    if (!Number.isFinite(Number(editingTask.max_points)) || Number(editingTask.max_points) <= 0) {
+      return alert('Max points must be greater than 0.');
+    }
+    if (editingTask.task_type === 'quiz') {
+      const editInProgress = editQText.trim() !== '' || (editQType === 'multiple' && editQOptions.some(o => o.trim() !== ''));
+      if (editInProgress && !window.confirm('You have a question that has not been added yet. Discard it and save?')) return;
+      if (!editingTask.quiz_questions || editingTask.quiz_questions.length === 0) {
+        return alert('Add at least one question before saving the quiz.');
+      }
+    }
     try {
       const actualType = editingTask.task_type === 'true_false' ? 'quiz' : editingTask.task_type;
       const actualQuestions = editingTask.task_type === 'true_false'
@@ -765,7 +887,7 @@ export default function AdminDashboard({ user }) {
   };
 
   const handleAddEditQuizQuestion = () => {
-    if (!editQText) return alert('Enter question text.');
+    if (!editQText.trim()) return alert('Enter question text.');
     let options = [];
     if (editQType === 'boolean') {
       options = ['True', 'False'];
@@ -875,6 +997,9 @@ export default function AdminDashboard({ user }) {
     if (!schStudentId || !schCourseId || !schTutorId || !schTitle || !schStart || !schEnd) {
       return alert('Fill out all required class schedule details.');
     }
+    if (new Date(schEnd) <= new Date(schStart)) {
+      return alert('End time must be after the start time.');
+    }
     try {
       const saved = await saveSchedule({
         student_id: schStudentId,
@@ -883,13 +1008,15 @@ export default function AdminDashboard({ user }) {
         title: schTitle,
         start_time: new Date(schStart).toISOString(),
         end_time: new Date(schEnd).toISOString(),
-        meeting_link: schLink
+        meeting_link: schLink || null,
+        meeting_link_2: schLink2 || null
       });
       setSchedules(prev => [...prev, saved]);
       setSchTitle('');
       setSchStart('');
       setSchEnd('');
       setSchLink('');
+      setSchLink2('');
       alert('Class scheduled successfully!');
     } catch (err) {
       alert('Error: ' + err.message);
@@ -1350,16 +1477,7 @@ export default function AdminDashboard({ user }) {
                               <button 
                                 className="btn-action delete" 
                                 style={{ padding: '0.15rem 0.3rem', background: '#edf2f7', color: '#e53e3e', borderRadius: '4px', display: 'flex', alignItems: 'center' }}
-                                onClick={async () => {
-                                  if (window.confirm(`Are you sure you want to delete category "${cat.name}"? Courses inside will become uncategorized.`)) {
-                                    try {
-                                      await deleteCourseCategory(cat.id);
-                                      setCategories(prev => prev.filter(c => c.id !== cat.id));
-                                    } catch (err) {
-                                      alert(err.message);
-                                    }
-                                  }
-                                }}
+                                onClick={() => handleDeleteCategory(cat)}
                                 title="Delete Category"
                               >
                                 <Trash2 size={10} />
@@ -1423,16 +1541,16 @@ export default function AdminDashboard({ user }) {
                     })}
 
                     {/* Render Uncategorized Courses */}
-                    {courses.filter(c => !c.category && !c.category_id).length > 0 && (
+                    {courses.filter(isUncategorized).length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #edf2f7', paddingBottom: '0.3rem' }}>
                           <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#718096', fontStyle: 'italic' }}>Uncategorized</span>
                           <span style={{ background: '#edf2f7', color: '#718096', padding: '0.1rem 0.35rem', borderRadius: '10px', fontSize: '0.65rem', fontWeight: 'bold' }}>
-                            {courses.filter(c => !c.category && !c.category_id).length}
+                            {courses.filter(isUncategorized).length}
                           </span>
                         </div>
                         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                          {courses.filter(c => !c.category && !c.category_id).map(c => {
+                          {courses.filter(isUncategorized).map(c => {
                             const isSelected = selectedCourseId === c.id;
                             return (
                               <li 
@@ -1675,7 +1793,7 @@ export default function AdminDashboard({ user }) {
                                           <option value="true_false">True / False Question</option>
                                           <option value="instruction">Instructional Text</option>
                                         </select>
-                                        <input type="number" value={maxPoints} onChange={(e) => setMaxPoints(Number(e.target.value))} placeholder="Max Pts" required style={{ padding: '0.35rem', fontSize: '0.8rem' }} />
+                                        <input type="number" min={1} value={maxPoints} onChange={(e) => setMaxPoints(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Max Pts" required style={{ padding: '0.35rem', fontSize: '0.8rem' }} />
                                       </div>
                                       
                                       <input type="text" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Task Title" required style={{ padding: '0.35rem', fontSize: '0.8rem' }} />
@@ -1914,6 +2032,86 @@ export default function AdminDashboard({ user }) {
           <div>
 
             
+            {/* Create Class form */}
+            <div className="dashboard-card">
+              <h3><Calendar size={18} /> Schedule a Class</h3>
+              <form onSubmit={handleCreateSchedule} className="login-form" style={{ gap: '0.8rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
+                  <div className="form-group">
+                    <label>Student *</label>
+                    <select
+                      value={schStudentId}
+                      onChange={(e) => { setSchStudentId(e.target.value); setSchCourseId(''); setSchTutorId(''); }}
+                      required
+                      style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}
+                    >
+                      <option value="">-- Choose Student --</option>
+                      {students.map(st => <option key={st.id} value={st.id}>{st.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Course *</label>
+                    <select
+                      value={schCourseId}
+                      onChange={(e) => {
+                        const courseId = e.target.value;
+                        setSchCourseId(courseId);
+                        // Default the tutor to whoever teaches this student in that course
+                        const enr = studentCourses.find(sc => sc.student_id === schStudentId && sc.course_id === courseId);
+                        if (enr?.tutor_id) setSchTutorId(enr.tutor_id);
+                      }}
+                      required
+                      style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}
+                    >
+                      <option value="">-- Choose Course --</option>
+                      {(() => {
+                        const enrolledIds = new Set(studentCourses.filter(sc => sc.student_id === schStudentId).map(sc => sc.course_id));
+                        const list = enrolledIds.size > 0 ? courses.filter(c => enrolledIds.has(c.id)) : courses;
+                        return list.map(c => <option key={c.id} value={c.id}>{c.title}</option>);
+                      })()}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Tutor *</label>
+                    <select
+                      value={schTutorId}
+                      onChange={(e) => setSchTutorId(e.target.value)}
+                      required
+                      style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}
+                    >
+                      <option value="">-- Choose Tutor --</option>
+                      {tutors.map(tu => <option key={tu.id} value={tu.id}>{tu.full_name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Class Title *</label>
+                  <input type="text" value={schTitle} onChange={(e) => setSchTitle(e.target.value)} placeholder="e.g. Algebra Revision" required />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
+                  <div className="form-group">
+                    <label>Start Time *</label>
+                    <input type="datetime-local" value={schStart} onChange={(e) => setSchStart(e.target.value)} required />
+                  </div>
+                  <div className="form-group">
+                    <label>End Time *</label>
+                    <input type="datetime-local" value={schEnd} min={schStart || undefined} onChange={(e) => setSchEnd(e.target.value)} required />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
+                  <div className="form-group">
+                    <label>Meeting Link (First Half)</label>
+                    <input type="url" value={schLink} onChange={(e) => setSchLink(e.target.value)} placeholder="https://zoom.us/j/..." />
+                  </div>
+                  <div className="form-group">
+                    <label>Meeting Link (Second Half, optional)</label>
+                    <input type="url" value={schLink2} onChange={(e) => setSchLink2(e.target.value)} placeholder="https://zoom.us/j/..." />
+                  </div>
+                </div>
+                <button type="submit" className="btn-primary" style={{ padding: '0.75rem', alignSelf: 'flex-start' }}>Schedule Class</button>
+              </form>
+            </div>
+
             {/* Scheduled Lectures Registry Audit panel */}
             <div className="dashboard-card" style={{ marginBottom: 0 }}>
               <h3><Clock size={18} /> Scheduled Lectures Registry</h3>
@@ -2387,8 +2585,10 @@ export default function AdminDashboard({ user }) {
                       cursor: editingStudent.is_active ? 'not-allowed' : 'text'
                     }} 
                   />
-                  {editingStudent.is_active && (
-                    <span style={{ fontSize: '0.7rem', color: '#a0aec0' }}>Email is locked for active accounts</span>
+                  {editingStudent.is_active ? (
+                    <span style={{ fontSize: '0.7rem', color: '#a0aec0' }}>This is the student's login email and can't be changed here.</span>
+                  ) : (
+                    <span style={{ fontSize: '0.7rem', color: '#a0aec0' }}>No login yet. Changes are saved, and this email is used if you activate the account.</span>
                   )}
                 </div>
                 
@@ -2524,7 +2724,25 @@ export default function AdminDashboard({ user }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label>Login Email (Read-Only)</label>
-                  <input type="email" value={editingTutor.email} disabled style={{ background: '#f7fafc', cursor: 'not-allowed' }} />
+                  {(() => {
+                    const loginEmail = editingTutor.email || editingTutor.profiles?.email || editingTutor.profile?.email || '';
+                    return (
+                      <>
+                        <input
+                          type="email"
+                          value={loginEmail}
+                          readOnly
+                          placeholder="Not stored on the tutor record"
+                          style={{ background: '#f7fafc', cursor: 'not-allowed' }}
+                        />
+                        {!loginEmail && (
+                          <span style={{ fontSize: '0.7rem', color: '#a0aec0' }}>
+                            The login email isn't stored on the tutor record and can't be changed here.
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="form-group">
                   <label>Update Password (Optional)</label>
@@ -2671,7 +2889,7 @@ export default function AdminDashboard({ user }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label>Task Type *</label>
-                  <select value={editingTask.task_type} onChange={(e) => setEditingTask(prev => ({ ...prev, task_type: e.target.value }))} required style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}>
+                  <select value={editingTask.task_type} onChange={(e) => handleEditTaskTypeChange(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}>
                     <option value="assignment">Assignment</option>
                     <option value="quiz">Interactive Quiz</option>
                     <option value="true_false">True / False Question</option>
@@ -2680,7 +2898,7 @@ export default function AdminDashboard({ user }) {
                 </div>
                 <div className="form-group">
                   <label>Max Points *</label>
-                  <input type="number" value={editingTask.max_points} onChange={(e) => setEditingTask(prev => ({ ...prev, max_points: Number(e.target.value) }))} required />
+                  <input type="number" min={1} value={editingTask.max_points ?? 100} onChange={(e) => setEditingTask(prev => ({ ...prev, max_points: e.target.value === '' ? '' : Number(e.target.value) }))} required />
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -3027,18 +3245,7 @@ export default function AdminDashboard({ user }) {
           <div className="modal-content" style={{ maxWidth: '450px' }}>
             <button className="modal-close" onClick={() => { setShowEditCategoryModal(false); setEditingCategory(null); }}><X size={20} /></button>
             <h3 className="modal-title"><Layers size={18} /> Edit Category</h3>
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                const saved = await saveCourseCategory(editingCategory);
-                setCategories(prev => prev.map(c => c.id === saved.id ? saved : c));
-                setShowEditCategoryModal(false);
-                setEditingCategory(null);
-                alert('Category updated successfully!');
-              } catch (err) {
-                alert('Error updating category: ' + err.message);
-              }
-            }}>
+            <form onSubmit={handleSaveEditedCategory}>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Category Name *</label>
                 <input 

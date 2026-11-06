@@ -1,67 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  getTutors,
-  getCourses,
+  getPublicTutors,
   registerStudent,
   createBooking,
   createContactMessage
 } from '../services/dataService';
-import {
-  Star,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  BookOpen,
-  Calendar,
-  GraduationCap,
-  User,
-  Sparkles,
-  Mail,
-  Phone,
-  MapPin
-} from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import '../styles/LandingPage.css';
-
-const getSpecialClassImage = (title, index) => {
-  const lowercaseTitle = title.toLowerCase();
-  if (lowercaseTitle.includes('programming') || lowercaseTitle.includes('code') || lowercaseTitle.includes('python') || lowercaseTitle.includes('java')) {
-    return '/images/book4.jpg';
-  }
-  if (lowercaseTitle.includes('ai') || lowercaseTitle.includes('intelligence') || lowercaseTitle.includes('artificial')) {
-    return '/images/ai.jpg';
-  }
-  if (lowercaseTitle.includes('science') || lowercaseTitle.includes('data')) {
-    return '/images/student5.jpg';
-  }
-  if (lowercaseTitle.includes('excel') || lowercaseTitle.includes('word') || lowercaseTitle.includes('microsoft') || lowercaseTitle.includes('office')) {
-    return '/images/student6.jpg';
-  }
-  if (lowercaseTitle.includes('web') || lowercaseTitle.includes('design') || lowercaseTitle.includes('html')) {
-    return '/images/student10.jpg';
-  }
-  if (lowercaseTitle.includes('writing') || lowercaseTitle.includes('creative') || lowercaseTitle.includes('essay')) {
-    return '/images/student3.jpg';
-  }
-
-  const images = [
-    '/images/book4.jpg',
-    '/images/ai.jpg',
-    '/images/student5.jpg',
-    '/images/student6.jpg',
-    '/images/student10.jpg',
-    '/images/student3.jpg'
-  ];
-  return images[index % images.length];
-};
 
 const allTimeZones = (() => {
   try {
     if (typeof Intl !== 'undefined' && Intl.supportedValuesOf) {
       return Intl.supportedValuesOf('timeZone');
     }
-  } catch (e) {
+  } catch {
     console.warn('Intl.supportedValuesOf not supported in this environment');
   }
   return [
@@ -115,68 +68,194 @@ const tzOptions = allTimeZones.map(tz => {
       label = `${label} (${offsetVal})`;
     }
     return { value: tz, label };
-  } catch (e) {
+  } catch {
     return { value: tz, label: tz.replace(/_/g, ' ') };
   }
 });
+
+const TIME_SLOTS = [
+  '09:00 AM',
+  '10:00 AM',
+  '11:00 AM',
+  '12:00 PM',
+  '02:00 PM',
+  '03:00 PM',
+  '04:00 PM',
+  '05:00 PM'
+];
+
+// Single source of truth for the visible FAQ and the FAQPage JSON-LD.
+const FAQ_ITEMS = [
+  {
+    q: 'How does tutor matching work?',
+    a: 'We use a short assessment covering your child\'s subject needs, goals, and learning style. Our team personally reviews every response and hand-selects a qualified tutor from our vetted network — a real person makes the match, not an algorithm.'
+  },
+  {
+    q: 'Is this truly one-on-one?',
+    a: 'Yes. Every session is a private, individual session between your child and their tutor — never a group class disguised as personal support.'
+  },
+  {
+    q: 'Can we switch tutors if it\'s not the right fit?',
+    a: 'Absolutely. If the first match isn\'t right, we\'ll help you find a better fit — no extra cost, no hassle.'
+  },
+  {
+    q: 'What ages and grade levels do you support?',
+    a: 'Early learners through high school, plus homeschool curriculum support and test prep for college-bound students.'
+  },
+  {
+    q: 'How much does it cost?',
+    a: 'Pricing is flexible based on session frequency and subject. Send us a message using the contact form below (choose "Fees & Pricing") and our team will share full details for your child.'
+  },
+  {
+    q: 'How do I enroll my child?',
+    a: 'Simply fill in the Quick Register form at the top of this page. After your registration, our admin team will review your information, assign your child to a suitable tutor, and set up their learning account within 24 hours.'
+  },
+  {
+    q: 'How are classes scheduled?',
+    a: 'Once enrolled, your child\'s assigned tutor schedules live class sessions and sends a meeting link directly. All scheduled classes appear in your child\'s Student Dashboard with date, time, and the meeting link.'
+  },
+  {
+    q: 'How do I track my child\'s progress?',
+    a: 'Your child has a dedicated Student Dashboard showing all enrolled courses, scheduled classes, assignments, grades, and class materials — everything in one place so you can stay informed at all times.'
+  }
+];
+
+const SUBJECT_CATEGORIES = {
+  'Math': ['Elementary Math', 'Pre-Algebra', 'Algebra I & II', 'Geometry', 'Trigonometry', 'Calculus'],
+  'English & Reading': ['Phonics', 'Reading Comprehension', 'Creative Writing', 'Essay Writing', 'Literature'],
+  'Science': ['Life Science', 'Biology', 'Chemistry', 'Physics', 'Earth Science'],
+  'Test Prep': ['JAMB Prep', 'WAEC Prep', 'NECO Prep', 'Post-UTME Prep', 'SAT Prep', 'ACT Prep', 'State Assessments'],
+  'World Languages': ['Spanish', 'French'],
+  'Coding & Tech': ['Intro to Coding', 'Computer Science Fundamentals']
+};
+
+const EMPTY_STUDENT_FORM = {
+  studentName: '',
+  gradeLevel: '',
+  primaryPhone: '',
+  email: '',
+  program: ''
+};
+
+const EMPTY_CONTACT_FORM = {
+  contactName: '',
+  contactEmail: '',
+  contactPhone: '',
+  contactSubject: '',
+  contactMessage: ''
+};
+
+const getDefaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
+
+const makeEmptyBookingForm = () => ({
+  bookingStudentName: '',
+  bookingParentName: '',
+  bookingPhone: '',
+  bookingEmail: '',
+  meetingType: 'virtual', // Default to virtual
+  bookingDate: '',
+  bookingTime: '',
+  bookingMessage: '',
+  bookingTimezone: getDefaultTimezone()
+});
+
+// Today's date in the visitor's local timezone, formatted YYYY-MM-DD (matches <input type="date">)
+const getLocalDateString = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+const withRequestedSubject = (subject, text) => {
+  if (!subject) return text || null;
+  return text ? `[Requested Subject: ${subject}]\n${text}` : `[Requested Subject: ${subject}]`;
+};
+
+// Scroll to an element, retrying each animation frame (up to ~2s) until it exists.
+// Returns a cancel function.
+const scrollToIdWhenReady = (id, timeoutMs = 2000) => {
+  let frame = null;
+  const start = performance.now();
+  const attempt = () => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (performance.now() - start < timeoutMs) {
+      frame = requestAnimationFrame(attempt);
+    }
+  };
+  frame = requestAnimationFrame(attempt);
+  return () => { if (frame !== null) cancelAnimationFrame(frame); };
+};
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
   const [tutors, setTutors] = useState([]);
-  const [courses, setCourses] = useState([]);
   const [loadingTutors, setLoadingTutors] = useState(true);
-  const [loadingCourses, setLoadingCourses] = useState(true);
-
-  // Handle redirection and pre-selection from subjects filter page
-  useEffect(() => {
-    if (location.state && location.state.openBooking) {
-      setActiveTab('booking');
-      const el = document.getElementById('register');
-      if (el) {
-        setTimeout(() => {
-          el.scrollIntoView({ behavior: 'smooth' });
-        }, 150);
-      }
-    }
-  }, [location.state]);
 
   // Forms success states
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [contactSuccess, setContactSuccess] = useState(false);
 
-  // Tab State: 'registration' | 'booking' | 'calendar'
+  // Forms in-flight states (prevent double submit)
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
+  const [isSendingContact, setIsSendingContact] = useState(false);
+
+  // Tab State: 'registration' | 'booking'
   const [activeTab, setActiveTab] = useState('registration');
   const [faqOpenIndex, setFaqOpenIndex] = useState(null);
 
-  // Audit UI & UX state additions
   const [selectedTutorBio, setSelectedTutorBio] = useState(null);
-  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
-  const [quizStep, setQuizStep] = useState(1);
-  const [quizAnswers, setQuizAnswers] = useState({
-    grade: '',
-    struggleSubject: '',
-    goal: '',
-    parentName: '',
-    parentPhone: '',
-    parentEmail: ''
-  });
-  const [quizSuccess, setQuizSuccess] = useState(false);
-  const [faqSearchQuery, setFaqSearchQuery] = useState('');
   const [showStickyBtn, setShowStickyBtn] = useState(false);
   const [bgIndex, setBgIndex] = useState(0);
-  const [activeApproachStep, setActiveApproachStep] = useState(0);
   const [activeSubjectTab, setActiveSubjectTab] = useState('All');
 
-  const subjectCategories = {
-    'Math': ['Elementary Math', 'Pre-Algebra', 'Algebra I & II', 'Geometry', 'Trigonometry', 'Calculus'],
-    'English & Reading': ['Phonics', 'Reading Comprehension', 'Creative Writing', 'Essay Writing', 'Literature'],
-    'Science': ['Life Science', 'Biology', 'Chemistry', 'Physics', 'Earth Science'],
-    'Test Prep': ['JAMB Prep', 'WAEC Prep', 'NECO Prep', 'Post-UTME Prep', 'SAT Prep', 'ACT Prep', 'State Assessments'],
-    'World Languages': ['Spanish', 'French'],
-    'Coding & Tech': ['Intro to Coding', 'Computer Science Fundamentals']
+  // Subject requested from the /subjects page ("Request a tutor"); cleared after a successful submit
+  const [requestedSubject, setRequestedSubject] = useState(null);
+
+  // Quick Register form state (only the fields the form actually collects)
+  const [studentForm, setStudentForm] = useState(EMPTY_STUDENT_FORM);
+
+  // Booking form state
+  const [bookingForm, setBookingForm] = useState(makeEmptyBookingForm);
+
+  // Contact form state
+  const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM);
+
+  // Handle navigation state: pre-selection from the subjects page, or a section
+  // to scroll to (sent by the Header/Footer when navigating here from another page).
+  useEffect(() => {
+    const navState = location.state;
+    if (!navState) return undefined;
+
+    if (navState.selectedSubject) {
+      setRequestedSubject(navState.selectedSubject);
+    }
+    if (navState.contactSubject) {
+      setContactForm(prev => ({ ...prev, contactSubject: navState.contactSubject }));
+    }
+
+    let targetId = navState.scrollTo || null;
+    if (navState.openBooking) {
+      setActiveTab('booking');
+      targetId = 'register';
+    }
+    if (!targetId) return undefined;
+    return scrollToIdWhenReady(targetId);
+  }, [location.state]);
+
+  // Drop one-shot navigation state (e.g. selectedSubject) from the history entry
+  const clearNavigationState = () => {
+    if (location.state) {
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    }
   };
 
   // Background Image Slideshow Changer (toggles every 6s)
@@ -187,7 +266,6 @@ export default function LandingPage() {
     return () => clearInterval(interval);
   }, []);
 
-
   // Dynamic Scroll Monitor & SEO JSON-LD injection
   useEffect(() => {
     const handleScroll = () => {
@@ -195,110 +273,45 @@ export default function LandingPage() {
     };
     window.addEventListener('scroll', handleScroll);
 
-    // Schema injection
+    // FAQPage schema generated from the same data as the visible FAQ section
     const schemaData = {
       "@context": "https://schema.org",
       "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "How does 1-on-1 tutoring work at FoundaXia?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Each student is matched with a dedicated tutor based on their grade level, subject needs, and learning style. Sessions are conducted online via live video and your child gets undivided personal attention."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What age groups and grades do you cover?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "We support students from Primary 1 through Secondary 6 (SS3), covering core subjects like Mathematics, English, Sciences, and specialized programs like coding and creative writing."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How do I enroll my child?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Simply fill in the Quick Register form at the top of this page. After your registration, our admin team will review your information, assign your child to a suitable tutor, and set up their learning account within 24 hours."
-          }
+      "mainEntity": FAQ_ITEMS.map(item => ({
+        "@type": "Question",
+        "name": item.q,
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": item.a
         }
-      ]
+      }))
     };
 
     const script = document.createElement('script');
     script.type = 'application/ld+json';
-    script.innerHTML = JSON.stringify(schemaData);
+    script.textContent = JSON.stringify(schemaData);
     document.head.appendChild(script);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
-      document.head.removeChild(script);
+      script.remove();
     };
   }, []);
-
-  // Multi-step form state
-  const [regStep, setRegStep] = useState(1);
-  const [studentForm, setStudentForm] = useState({
-    studentName: '',
-    dateOfBirth: '',
-    gender: '',
-    gradeLevel: '',
-    previousSchool: '',
-    specialNeeds: '',
-    parentName: '',
-    relationship: '',
-    primaryPhone: '',
-    email: '',
-    address: '',
-    emergencyName: '',
-    emergencyPhone: '',
-    program: '',
-    schedule: '',
-    startDate: '',
-    comments: ''
-  });
-
-  // Booking form state
-  const [bookingForm, setBookingForm] = useState({
-    bookingStudentName: '',
-    bookingParentName: '',
-    bookingPhone: '',
-    bookingEmail: '',
-    meetingType: 'virtual', // Default to virtual
-    bookingDate: '',
-    bookingTime: '',
-    bookingMessage: '',
-    bookingTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos'
-  });
-
-  // Contact form state
-  const [contactForm, setContactForm] = useState({
-    contactName: '',
-    contactEmail: '',
-    contactPhone: '',
-    contactSubject: '',
-    contactMessage: ''
-  });
-
-  // Calendar State
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
-  const [selectedCalendarTime, setSelectedCalendarTime] = useState('');
-  const [bookedDates, setBookedDates] = useState({}); // Date-string -> boolean
 
   // Timezone searchable dropdown state
   const [tzSearch, setTzSearch] = useState('');
   const [tzOpen, setTzOpen] = useState(false);
   const tzDropdownRef = useRef(null);
+  const tzPanelRef = useRef(null); // The portalled panel lives outside tzDropdownRef in the DOM
   const tzTriggerRef = useRef(null); // Ref on the trigger button for portal positioning
   const [tzRect, setTzRect] = useState(null); // Bounding rect of the trigger
 
-  // Close timezone dropdown on outside click
+  // Close timezone dropdown on outside click (outside both the trigger wrapper and the portalled panel)
   useEffect(() => {
     const handler = (e) => {
-      if (tzDropdownRef.current && !tzDropdownRef.current.contains(e.target)) {
+      const inTrigger = tzDropdownRef.current && tzDropdownRef.current.contains(e.target);
+      const inPanel = tzPanelRef.current && tzPanelRef.current.contains(e.target);
+      if (!inTrigger && !inPanel) {
         setTzOpen(false);
       }
     };
@@ -312,28 +325,12 @@ export default function LandingPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [tutorData, courseData] = await Promise.all([
-          getTutors(),
-          getCourses()
-        ]);
-        setTutors(tutorData);
-        setCourses(courseData);
-
-        // Randomly pre-fill some booked days for the calendar demo
-        const tempBooked = {};
-        const today = new Date();
-        for (let i = 1; i <= 30; i++) {
-          const checkDate = new Date(today.getFullYear(), today.getMonth(), i);
-          if (Math.random() > 0.75) {
-            tempBooked[checkDate.toDateString()] = true;
-          }
-        }
-        setBookedDates(tempBooked);
+        const tutorData = await getPublicTutors();
+        setTutors(tutorData || []);
       } catch (err) {
         console.error('Failed to load public page data:', err);
       } finally {
         setLoadingTutors(false);
-        setLoadingCourses(false);
       }
     }
     loadData();
@@ -356,93 +353,36 @@ export default function LandingPage() {
     setStudentForm(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleNextStep = () => {
-    // Basic validation for step 1 & 2
-    let requiredFields = [];
-    if (regStep === 1) {
-      requiredFields = ['studentName', 'dateOfBirth', 'gender', 'gradeLevel'];
-    } else if (regStep === 2) {
-      requiredFields = ['parentName', 'relationship', 'primaryPhone', 'email', 'address', 'emergencyName', 'emergencyPhone'];
-    }
-
-    const missing = requiredFields.filter(f => !studentForm[f].trim());
-    if (missing.length > 0) {
-      alert('Please fill in all required fields before proceeding.');
-      return;
-    }
-    setRegStep(prev => Math.min(prev + 1, 3));
-  };
-
-  const handlePrevStep = () => {
-    setRegStep(prev => Math.max(prev - 1, 1));
-  };
-
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
+    if (isRegistering) return;
+    setIsRegistering(true);
     try {
+      // Fields the Quick Register form does not collect are sent as null
       const dataToSave = {
         full_name: studentForm.studentName,
-        date_of_birth: studentForm.dateOfBirth,
-        gender: studentForm.gender,
+        date_of_birth: null,
+        gender: null,
         grade_level: studentForm.gradeLevel,
-        previous_school: studentForm.previousSchool,
-        special_needs: studentForm.specialNeeds,
+        previous_school: null,
+        special_needs: null,
         program: studentForm.program,
-        schedule: studentForm.schedule,
-        start_date: studentForm.startDate,
-        additional_comments: location.state?.selectedSubject ? `[Requested Subject: ${location.state.selectedSubject}]\n${studentForm.comments}` : studentForm.comments,
-        parentName: studentForm.parentName,
-        relationship: studentForm.relationship,
+        schedule: null,
+        start_date: null,
+        additional_comments: withRequestedSubject(requestedSubject, ''),
         email: studentForm.email,
-        phone: studentForm.primaryPhone,
-        address: studentForm.address,
-        emergencyName: studentForm.emergencyName,
-        emergencyPhone: studentForm.emergencyPhone
+        phone: studentForm.primaryPhone
       };
       await registerStudent(dataToSave);
       setRegisterSuccess(true);
-      setStudentForm({
-        studentName: '', dateOfBirth: '', gender: '', gradeLevel: '', previousSchool: '', specialNeeds: '',
-        parentName: '', relationship: '', primaryPhone: '', email: '', address: '', emergencyName: '', emergencyPhone: '',
-        program: '', schedule: '', startDate: '', comments: ''
-      });
-      setRegStep(1);
+      setStudentForm(EMPTY_STUDENT_FORM);
+      setRequestedSubject(null);
+      clearNavigationState();
       setTimeout(() => setRegisterSuccess(false), 5000);
     } catch (err) {
       alert('Error during registration: ' + err.message);
-    }
-  };
-
-  // Assessment Quiz Handlers
-  const handleQuizChange = (e) => {
-    const { name, value } = e.target;
-    setQuizAnswers(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleQuizSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const dataToSave = {
-        full_name: quizAnswers.parentName + "'s Child",
-        date_of_birth: new Date().toISOString().split('T')[0],
-        gender: 'other',
-        grade_level: quizAnswers.grade,
-        previous_school: 'None',
-        special_needs: quizAnswers.struggleSubject,
-        program: quizAnswers.goal,
-        schedule: 'Flexible (Discuss with tutor)',
-        start_date: new Date().toISOString().split('T')[0],
-        additional_comments: `[Submitted via 1-Min Learning Assessment]\nPrimary Struggle: ${quizAnswers.struggleSubject}\nGoal: ${quizAnswers.goal}`,
-        parentName: quizAnswers.parentName,
-        relationship: 'guardian',
-        email: quizAnswers.parentEmail,
-        phone: quizAnswers.parentPhone
-      };
-      await registerStudent(dataToSave);
-      setQuizSuccess(true);
-    } catch (err) {
-      console.error('Quiz submission error:', err);
-      alert('Error submitting assessment. Please try again.');
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -454,6 +394,13 @@ export default function LandingPage() {
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
+    if (isBooking) return;
+    // YYYY-MM-DD strings compare correctly as plain strings
+    if (!bookingForm.bookingDate || bookingForm.bookingDate < getLocalDateString()) {
+      alert('Please choose a meeting date from today onwards.');
+      return;
+    }
+    setIsBooking(true);
     try {
       const bookingData = {
         tutor_id: null,
@@ -466,24 +413,18 @@ export default function LandingPage() {
         booking_date: bookingForm.bookingDate,
         booking_time: bookingForm.bookingTime,
         timezone: bookingForm.bookingTimezone,
-        message: location.state?.selectedSubject ? `[Requested Subject: ${location.state.selectedSubject}]\n${bookingForm.bookingMessage}` : bookingForm.bookingMessage
+        message: withRequestedSubject(requestedSubject, bookingForm.bookingMessage)
       };
       await createBooking(bookingData);
       setBookingSuccess(true);
-      setBookingForm({
-        bookingStudentName: '',
-        bookingParentName: '',
-        bookingPhone: '',
-        bookingEmail: '',
-        meetingType: 'virtual',
-        bookingDate: '',
-        bookingTime: '',
-        bookingMessage: '',
-        bookingTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos'
-      });
+      setBookingForm(makeEmptyBookingForm());
+      setRequestedSubject(null);
+      clearNavigationState();
       setTimeout(() => setBookingSuccess(false), 5000);
     } catch (err) {
       alert('Error scheduling booking: ' + err.message);
+    } finally {
+      setIsBooking(false);
     }
   };
 
@@ -495,6 +436,8 @@ export default function LandingPage() {
 
   const handleContactSubmit = async (e) => {
     e.preventDefault();
+    if (isSendingContact) return;
+    setIsSendingContact(true);
     try {
       await createContactMessage({
         name: contactForm.contactName,
@@ -504,119 +447,16 @@ export default function LandingPage() {
         message: contactForm.contactMessage
       });
       setContactSuccess(true);
-      setContactForm({
-        contactName: '', contactEmail: '', contactPhone: '', contactSubject: '', contactMessage: ''
-      });
+      setContactForm(EMPTY_CONTACT_FORM);
       setTimeout(() => setContactSuccess(false), 5000);
     } catch (err) {
       alert('Error sending message: ' + err.message);
+    } finally {
+      setIsSendingContact(false);
     }
   };
 
-  // Calendar Helper Functions
-  const changeMonth = (direction) => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev.getFullYear(), prev.getMonth() + direction, 1);
-      return newDate;
-    });
-    setSelectedCalendarDate(null);
-    setSelectedCalendarTime('');
-  };
-
-  const selectCalendarDate = (day) => {
-    const newSel = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-    setSelectedCalendarDate(newSel);
-    setSelectedCalendarTime('');
-  };
-
-  const confirmCalendarSelection = () => {
-    if (!selectedCalendarDate || !selectedCalendarTime) return;
-    // Format date as YYYY-MM-DD
-    const yyyy = selectedCalendarDate.getFullYear();
-    const mm = String(selectedCalendarDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(selectedCalendarDate.getDate()).padStart(2, '0');
-    const dateStr = `${yyyy}-${mm}-${dd}`;
-
-    // Switch to booking form and prefill
-    setBookingForm(prev => ({
-      ...prev,
-      bookingDate: dateStr,
-      bookingTime: selectedCalendarTime
-    }));
-    setActiveTab('booking');
-
-    // Scroll to the registration/booking block
-    const registerSection = document.getElementById('register');
-    if (registerSection) {
-      registerSection.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  // Generate calendar days
-  const renderCalendar = () => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDayIndex = new Date(year, month, 1).getDay();
-    const today = new Date();
-
-    const calendarCells = [];
-
-    // Day Headers
-    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    // Blank padding before the first day of the month
-    for (let i = 0; i < firstDayIndex; i++) {
-      calendarCells.push(
-        <div key={`empty-${i}`} className="calendar-day other-month"></div>
-      );
-    }
-
-    // Add month days
-    for (let d = 1; d <= daysInMonth; d++) {
-      const cellDate = new Date(year, month, d);
-      const isToday = cellDate.toDateString() === today.toDateString();
-      const isBooked = bookedDates[cellDate.toDateString()] === true;
-      const isSelected = selectedCalendarDate && cellDate.toDateString() === selectedCalendarDate.toDateString();
-
-      let dayClass = 'calendar-day';
-      if (isSelected) dayClass += ' selected';
-      else if (isToday) dayClass += ' current-day';
-      else if (isBooked) dayClass += ' booked';
-      else dayClass += ' available';
-
-      calendarCells.push(
-        <div
-          key={`day-${d}`}
-          className={dayClass}
-          onClick={() => !isBooked && selectCalendarDate(d)}
-        >
-          {d}
-        </div>
-      );
-    }
-
-    return { daysOfWeek, calendarCells };
-  };
-
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const calendarData = renderCalendar();
-
-  const mockTimeSlots = [
-    '09:00 AM',
-    '10:00 AM',
-    '11:00 AM',
-    '12:00 PM',
-    '02:00 PM',
-    '03:00 PM',
-    '04:00 PM',
-    '05:00 PM'
-  ];
+  const todayStr = getLocalDateString();
 
   return (
     <>
@@ -851,10 +691,7 @@ export default function LandingPage() {
                     }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.borderColor = 'white'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'; }}
-                    onClick={() => {
-                      const el = document.getElementById('courses');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                    }}
+                    onClick={() => navigate('/subjects')}
                   >
                     <span style={{ fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       📚 Explore Study Programs
@@ -933,8 +770,8 @@ export default function LandingPage() {
                         </select>
                       </div>
                     </div>
-                    <button type="submit" className="btn-primary" style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none' }}>
-                      Submit Registration
+                    <button type="submit" className="btn-primary" disabled={isRegistering} aria-busy={isRegistering} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isRegistering ? 0.7 : 1, cursor: isRegistering ? 'not-allowed' : 'pointer' }}>
+                      {isRegistering ? 'Submitting...' : 'Submit Registration'}
                     </button>
                   </form>
                 )}
@@ -1002,6 +839,7 @@ export default function LandingPage() {
                         <input
                           type="date"
                           name="bookingDate"
+                          min={todayStr}
                           value={bookingForm.bookingDate}
                           onChange={handleBookingChange}
                           required
@@ -1011,7 +849,7 @@ export default function LandingPage() {
                         <label>Preferred Time *</label>
                         <select name="bookingTime" value={bookingForm.bookingTime} onChange={handleBookingChange} required>
                           <option value="">Select Time</option>
-                          {mockTimeSlots.map(slot => (
+                          {TIME_SLOTS.map(slot => (
                             <option key={slot} value={slot}>{slot}</option>
                           ))}
                         </select>
@@ -1046,6 +884,7 @@ export default function LandingPage() {
                         {/* Dropdown panel — rendered via portal to escape CSS transform stacking context */}
                         {tzOpen && tzRect && createPortal(
                           <div
+                            ref={tzPanelRef}
                             style={{
                               position: 'fixed',
                               top: tzRect.bottom + 4,
@@ -1141,8 +980,8 @@ export default function LandingPage() {
                         }}
                       />
                     </div>
-                    <button type="submit" className="btn-primary" style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none' }}>
-                      Book Session
+                    <button type="submit" className="btn-primary" disabled={isBooking} aria-busy={isBooking} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isBooking ? 0.7 : 1, cursor: isBooking ? 'not-allowed' : 'pointer' }}>
+                      {isBooking ? 'Booking...' : 'Book Session'}
                     </button>
                   </form>
                 )}
@@ -1173,8 +1012,8 @@ export default function LandingPage() {
               <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Private Lessons</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
-              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>4.9/5</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Parent Rating</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>K–12</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>All Grade Levels</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>50+</div>
@@ -1445,7 +1284,7 @@ export default function LandingPage() {
                 From pre-algebra to AP Chemistry, our tutors help students catch up, keep up, or get ahead in core subjects and electives.
               </p>
               <a onClick={() => {
-                const el = document.getElementById('courses');
+                const el = document.getElementById('subjects-section');
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }} style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
                 Explore K–12 Tutoring →
@@ -1634,7 +1473,7 @@ export default function LandingPage() {
 
           {/* Tab buttons / chips */}
           <div className="landing-subject-tabs">
-            {['All', ...Object.keys(subjectCategories)].map((cat) => {
+            {['All', ...Object.keys(SUBJECT_CATEGORIES)].map((cat) => {
               const isActive = activeSubjectTab === cat;
               return (
                 <button
@@ -1674,8 +1513,8 @@ export default function LandingPage() {
           {/* Filtered Subjects chips list */}
           <div className="landing-subject-chips-grid">
             {(activeSubjectTab === 'All' 
-              ? Object.values(subjectCategories).flat() 
-              : subjectCategories[activeSubjectTab]
+              ? Object.values(SUBJECT_CATEGORIES).flat() 
+              : SUBJECT_CATEGORIES[activeSubjectTab]
             ).map((subj) => (
               <div
                 key={subj}
@@ -1774,33 +1613,6 @@ export default function LandingPage() {
               }}>
                 At FoundaXia Academy, we don't believe in generic templates or standard, crowded lessons. We align expert tutoring with structured, individualized attention to ensure every child learns to study correctly, build confidence, and achieve their goals.
               </p>
-
-              {/* Glassmorphism Metric Card */}
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1.5px solid rgba(255, 255, 255, 0.08)',
-                borderLeft: '4px solid var(--accent-color)',
-                borderRadius: '16px',
-                padding: '1.5rem',
-                marginBottom: '2rem',
-                boxShadow: '0 12px 35px rgba(0,0,0,0.18)',
-                textAlign: 'left'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
-                  <span style={{ fontSize: '1.1rem' }}>⭐⭐⭐⭐⭐</span>
-                  <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--accent-color)', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-                    Top-Rated Educational Care
-                  </span>
-                </div>
-                <h4 style={{ margin: '0 0 0.4rem 0', fontSize: '1.2rem', fontWeight: '700', color: 'white' }}>
-                  98% Academic Progress Rate
-                </h4>
-                <p style={{ margin: 0, fontSize: '0.88rem', color: 'rgba(255, 255, 255, 0.72)', lineHeight: '1.55' }}>
-                  98% of parents report measurable grade improvements, higher test scores, and significantly elevated study confidence in their children within 90 days of starting.
-                </p>
-              </div>
 
               {/* Primary Action Button — Desktop only (hidden on mobile) */}
               <button
@@ -2109,113 +1921,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials Section */}
-      <section style={{
-        background: 'rgba(11, 22, 44, 0.72)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        padding: '5.5rem 0',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '3.5rem' }}>
-            <h2 className="landing-section-heading" style={{ margin: '0 0 0.8rem 0' }}>Loved by Parents and Students</h2>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginTop: '0.8rem' }}>
-              <span style={{ color: '#ffb400', fontSize: '1.25rem' }}>⭐⭐⭐⭐⭐</span>
-              <span style={{ color: 'white', fontWeight: 'bold', fontSize: '0.95rem' }}>4.9/5 Average Family Rating</span>
-              <span style={{ color: 'rgba(255, 255, 255, 0.5)' }}>•</span>
-              <span style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '0.9rem' }}>Google &amp; Trustpilot Reviews</span>
-            </div>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: '2.5rem',
-            maxWidth: '900px',
-            margin: '0 auto'
-          }}>
-            {/* Card 1 */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.1)',
-              textAlign: 'left'
-            }}>
-              <p style={{ color: 'rgba(255, 255, 255, 0.88)', fontSize: '1.05rem', lineHeight: '1.7', fontStyle: 'italic', margin: '0 0 1.5rem 0' }}>
-                "My daughter went from dreading math homework to asking for extra practice. Her tutor actually gets how she thinks."
-              </p>
-              <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.9rem' }}>PP</div>
-                <div>
-                  <h4 style={{ color: 'white', margin: 0, fontSize: '0.95rem', fontWeight: '700' }}>Placeholder Parent</h4>
-                  <span style={{ color: 'var(--accent-color)', fontSize: '0.78rem', fontWeight: '600' }}>Verified Family</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Card 2 */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.1)',
-              textAlign: 'left'
-            }}>
-              <p style={{ color: 'rgba(255, 255, 255, 0.88)', fontSize: '1.05rem', lineHeight: '1.7', fontStyle: 'italic', margin: '0 0 1.5rem 0' }}>
-                "It's not just tutoring — it's someone in my corner who remembers what I struggled with last week and picks up right where we left off."
-              </p>
-              <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.9rem' }}>PS</div>
-                <div>
-                  <h4 style={{ color: 'white', margin: 0, fontSize: '0.95rem', fontWeight: '700' }}>Placeholder Student</h4>
-                  <span style={{ color: 'var(--accent-color)', fontSize: '0.78rem', fontWeight: '600' }}>Verified Student</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', marginTop: '3.5rem' }}>
-            <button
-              className="btn-next"
-              style={{
-                background: 'transparent',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                padding: '0.8rem 2.5rem',
-                borderRadius: '12px',
-                color: 'white',
-                fontWeight: '700',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                transition: 'all 0.25s ease'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                e.currentTarget.style.background = 'transparent';
-              }}
-              onClick={() => {
-                const el = document.getElementById('courses');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              See Pricing →
-            </button>
-          </div>
-        </div>
-      </section>
-
-
       {/* ─────────────── FAQ SECTION ─────────────── */}
       <section
         style={{
@@ -2234,40 +1939,7 @@ export default function LandingPage() {
           </div>
 
           <div style={{ maxWidth: '780px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {[
-              {
-                q: 'How does tutor matching work?',
-                a: 'We use a short assessment covering your child\'s subject needs, goals, and learning style. Our team personally reviews every response and hand-selects a qualified tutor from our vetted network — a real person makes the match, not an algorithm.'
-              },
-              {
-                q: 'Is this truly one-on-one?',
-                a: 'Yes. Every session is a private, individual session between your child and their tutor — never a group class disguised as personal support.'
-              },
-              {
-                q: 'Can we switch tutors if it\'s not the right fit?',
-                a: 'Absolutely. If the first match isn\'t right, we\'ll help you find a better fit — no extra cost, no hassle.'
-              },
-              {
-                q: 'What ages and grade levels do you support?',
-                a: 'Early learners through high school, plus homeschool curriculum support and test prep for college-bound students.'
-              },
-              {
-                q: 'How much does it cost?',
-                a: 'Pricing is flexible based on session frequency and subject. Visit our Pricing page for full details.'
-              },
-              {
-                q: 'How do I enroll my child?',
-                a: 'Simply fill in the Quick Register form at the top of this page. After your registration, our admin team will review your information, assign your child to a suitable tutor, and set up their learning account within 24 hours.'
-              },
-              {
-                q: 'How are classes scheduled?',
-                a: 'Once enrolled, your child\'s assigned tutor schedules live class sessions and sends a meeting link directly. All scheduled classes appear in your child\'s Student Dashboard with date, time, and the meeting link.'
-              },
-              {
-                q: 'How do I track my child\'s progress?',
-                a: 'Your child has a dedicated Student Dashboard showing all enrolled courses, scheduled classes, assignments, grades, and class materials — everything in one place so you can stay informed at all times.'
-              }
-            ].map((item, i) => (
+            {FAQ_ITEMS.map((item, i) => (
               <div
                 key={i}
                 style={{
@@ -2407,7 +2079,9 @@ export default function LandingPage() {
                 </div>
                 <div className="step-buttons">
                   <div></div>
-                  <button type="submit" className="btn-submit">Send Message</button>
+                  <button type="submit" className="btn-submit" disabled={isSendingContact} aria-busy={isSendingContact} style={{ opacity: isSendingContact ? 0.7 : 1, cursor: isSendingContact ? 'not-allowed' : 'pointer' }}>
+                    {isSendingContact ? 'Sending...' : 'Send Message'}
+                  </button>
                 </div>
               </form>
             </div>

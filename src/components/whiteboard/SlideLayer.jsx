@@ -1,5 +1,6 @@
 import React from 'react';
 import SandboxedFrame from '../SandboxedFrame';
+import { hasSupabaseConfig } from '../../supabaseClient';
 
 // Live HTML teaching slide, rendered behind the drawing canvas so the tutor can
 // annotate directly on top of it with the existing pen/highlighter/shape tools.
@@ -16,6 +17,10 @@ export default function SlideLayer({ slideUrl, interactive, onNavigate, gotoInde
         allowInteraction={interactive}
         onNavigate={onNavigate}
         gotoIndex={gotoIndex}
+        // Mock mode stores uploaded slides as inline data: URLs and has no collaboration,
+        // so nothing remote can reach this prop there. With Supabase, slide URLs from other
+        // participants are filtered to Storage/same-origin before they get here.
+        allowDataUrl={!hasSupabaseConfig}
       />
     </div>
   );

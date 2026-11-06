@@ -1,20 +1,18 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function Footer() {
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleNavClick = (sectionId) => {
-    const el = document.getElementById(sectionId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    } else {
-      navigate('/');
-      setTimeout(() => {
-        const target = document.getElementById(sectionId);
-        if (target) target.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
+  // Navigate to a landing-page section; LandingPage scrolls to state.scrollTo once mounted
+  // (it may still be lazy-loading when coming from another route).
+  const handleNavClick = (sectionId, extraState = {}) => {
+    const onLanding = location.pathname === '/';
+    navigate(
+      { pathname: '/', search: onLanding ? location.search : '' },
+      { replace: onLanding, state: { scrollTo: sectionId, ...extraState } }
+    );
   };
 
   return (
@@ -53,7 +51,7 @@ export default function Footer() {
           <h3>For Families</h3>
           <ul>
             <li><a onClick={() => handleNavClick('how-it-works')}>How It Works</a></li>
-            <li><a onClick={() => handleNavClick('courses')}>Pricing</a></li>
+            <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
             <li><a onClick={() => handleNavClick('faq')}>FAQs</a></li>
             <li><a onClick={() => alert('Parent Guides coming soon!')}>Parent Guides</a></li>
           </ul>

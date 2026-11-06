@@ -1,219 +1,127 @@
-import { createClient } from '@supabase/supabase-js';
+import { authenticate, setCors, sendError, HttpError } from './_lib.js';
 
-export default async function handler(req, res) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
+// Admin-only account management. Every action requires the caller's profile role to be
+// 'admin'; the work itself uses the service-role client.
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+const escapeLike = (s) => s.replace(/[\\%_]/g, (c) => '\\' + c);
+
+// Find an existing auth user id for an email: profiles first (case-insensitive), then
+// every page of auth users (listUsers is paginated - the first page alone misses users).
+async function findAuthUserIdByEmail(adminClient, email) {
+  const { data: profileRow } = await adminClient
+    .from('profiles')
+    .select('id')
+    .ilike('email', escapeLike(email))
+    .maybeSingle();
+  if (profileRow) return profileRow.id;
+
+  const perPage = 1000;
+  for (let page = 1; page < 100; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+    const users = data?.users || [];
+    const match = users.find(u => (u.email || '').toLowerCase() === email.toLowerCase());
+    if (match) return match.id;
+    if (users.length < perPage) break;
   }
+  return null;
+}
 
-  // 1. Get access token from Authorization header
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid authorization header' });
-  }
-  const token = authHeader.split(' ')[1];
-
-  // 2. Resolve database credentials
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceKey) {
-    return res.status(500).json({ error: 'Supabase environment variables are missing on the server' });
-  }
-
-  // 3. Initialize user-context Supabase client to authenticate the caller
-  const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    },
-    global: {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
+// Create a login for `email`, or reuse the existing one - but only if that existing
+// account already has `targetRole` (or no role yet). Never repurpose an admin/tutor
+// account: that would reset their password and demote them.
+async function findOrCreateAuthUser(adminClient, email, password, targetRole) {
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true
   });
+  if (!authError && authData?.user) return { authUserId: authData.user.id, isNewUser: true };
 
-  // Fetch the caller's identity
-  const { data: { user }, error: userError } = await userClient.auth.getUser();
-  if (userError || !user) {
-    return res.status(401).json({ error: 'Invalid user token: ' + (userError?.message || 'User not found') });
+  if (!authError || !(authError.message || '').toLowerCase().includes('already')) {
+    throw authError || new Error('Could not create login');
   }
 
-  // Verify caller's role is 'admin' inside profiles table
-  const { data: profile, error: profileError } = await userClient
+  const authUserId = await findAuthUserIdByEmail(adminClient, email);
+  if (!authUserId) throw authError;
+
+  const { data: existingProfile } = await adminClient
     .from('profiles')
     .select('role')
-    .eq('id', user.id)
-    .single();
-
-  if (profileError || !profile || profile.role !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Admin role required' });
+    .eq('id', authUserId)
+    .maybeSingle();
+  if (existingProfile?.role && existingProfile.role !== targetRole) {
+    throw new HttpError(409, `An account with this email already exists as a ${existingProfile.role}. Use a different email.`);
   }
 
-  // 4. Initialize administrative client with Service Role Key
-  const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
+  const { error: pwError } = await adminClient.auth.admin.updateUserById(authUserId, { password });
+  if (pwError) throw pwError;
+  return { authUserId, isNewUser: false };
+}
 
-  const { action, ...payload } = req.body;
-  const targetRole = action === 'createTutorAccount' ? 'tutor' : 'student';
+// students/tutors rows created through this API have id = auth uid; legacy/activated
+// rows link to their login via profile_id instead.
+async function resolveAuthUserId(adminClient, id) {
+  for (const table of ['students', 'tutors']) {
+    const { data } = await adminClient.from(table).select('id, profile_id').eq('id', id).maybeSingle();
+    if (data) return data.profile_id || data.id;
+  }
+  return id;
+}
+
+export default async function handler(req, res) {
+  setCors(res, 'POST,OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
+    const { user, adminClient } = await authenticate(req);
+
+    const { data: callerProfile, error: callerErr } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+    if (callerErr || callerProfile?.role !== 'admin') {
+      throw new HttpError(403, 'Forbidden: Admin role required');
+    }
+
+    const { action, ...payload } = req.body || {};
+
     if (action === 'createStudentAccount') {
       const { email, password, studentData } = payload;
+      const { authUserId } = await findOrCreateAuthUser(adminClient, email, password, 'student');
 
-      let authUserId = null;
-      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true
-      });
-
-      if (authError) {
-        if (authError.message && authError.message.toLowerCase().includes('already')) {
-          const { data: profileRow } = await adminClient
-            .from('profiles')
-            .select('id')
-            .eq('email', email.toLowerCase())
-            .maybeSingle();
-
-          if (profileRow) {
-            authUserId = profileRow.id;
-          } else {
-            const { data: userList, error: listError } = await adminClient.auth.admin.listUsers();
-            if (!listError && userList && userList.users) {
-              const existingUser = userList.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-              if (existingUser) {
-                authUserId = existingUser.id;
-              }
-            }
-          }
-
-          if (authUserId) {
-            // Never repurpose an existing admin/tutor account (that would reset their
-            // password and demote them) just because the same email was typed here.
-            const { data: existingProfile } = await adminClient
-              .from('profiles')
-              .select('role')
-              .eq('id', authUserId)
-              .maybeSingle();
-            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
-              return res.status(409).json({
-                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
-              });
-            }
-            await adminClient.auth.admin.updateUserById(authUserId, { password });
-          }
-        }
-        if (!authUserId) throw authError;
-      } else if (authData?.user) {
-        authUserId = authData.user.id;
-      }
-
-      // Only clear out pending lead rows for this email once the auth account exists,
-      // so a failed createUser (weak password, rate limit) doesn't destroy the lead.
+      // Clear pending lead rows for this email only now that the login exists, so a
+      // failed createUser (weak password, rate limit) doesn't destroy the lead.
       const { error: tempDelError } = await adminClient
         .from('students')
         .delete()
         .eq('email', email)
+        .eq('status', 'pending')
         .neq('id', authUserId);
       if (tempDelError) throw tempDelError;
 
       const { error: profError } = await adminClient.from('profiles').upsert([
-        {
-          id: authUserId,
-          email,
-          role: 'student',
-          full_name: studentData.full_name
-        }
+        { id: authUserId, email, role: 'student', full_name: studentData.full_name }
       ]);
       if (profError) throw profError;
 
+      // eslint-disable-next-line no-unused-vars
       const { profile_id, ...cleanStudentData } = studentData;
-      if (cleanStudentData.date_of_birth === '' || cleanStudentData.date_of_birth === null) {
-        cleanStudentData.date_of_birth = new Date().toISOString().split('T')[0];
-      }
-      if (cleanStudentData.start_date === '' || cleanStudentData.start_date === null) {
-        cleanStudentData.start_date = new Date().toISOString().split('T')[0];
-      }
+      // Missing dates stay NULL rather than pretending to be today's date.
+      if (!cleanStudentData.date_of_birth) cleanStudentData.date_of_birth = null;
+      if (!cleanStudentData.start_date) cleanStudentData.start_date = null;
 
-      const { data: student, error: studentError } = await adminClient.from('students').insert([
-        {
-          id: authUserId,
-          email,
-          status: 'approved',
-          ...cleanStudentData
-        }
+      const { data: student, error: studentError } = await adminClient.from('students').upsert([
+        { ...cleanStudentData, id: authUserId, email, status: 'approved' }
       ]).select();
       if (studentError) throw studentError;
-
       return res.status(200).json(student[0]);
+    }
 
-    } else if (action === 'activateStudentAccount') {
+    if (action === 'activateStudentAccount') {
       const { studentId, email, password } = payload;
-      let authUserId = null;
-
-      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true
-      });
-
-      let authUser = authData?.user;
-      if (authError) {
-        if (authError.message && authError.message.toLowerCase().includes('already')) {
-          const { data: profileRow } = await adminClient
-            .from('profiles')
-            .select('id')
-            .eq('email', email.toLowerCase())
-            .maybeSingle();
-
-          if (profileRow) {
-            authUserId = profileRow.id;
-          } else {
-            const { data: userList, error: listError } = await adminClient.auth.admin.listUsers();
-            if (!listError && userList && userList.users) {
-              const existingUser = userList.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-              if (existingUser) {
-                authUserId = existingUser.id;
-              }
-            }
-          }
-
-          if (authUserId) {
-            // Never repurpose an existing admin/tutor account (that would reset their
-            // password and demote them) just because the same email was typed here.
-            const { data: existingProfile } = await adminClient
-              .from('profiles')
-              .select('role')
-              .eq('id', authUserId)
-              .maybeSingle();
-            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
-              return res.status(409).json({
-                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
-              });
-            }
-            await adminClient.auth.admin.updateUserById(authUserId, { password });
-          }
-        }
-        if (!authUserId) throw authError;
-      } else if (authUser) {
-        authUserId = authUser.id;
-      }
 
       const { data: studentRow, error: getError } = await adminClient
         .from('students')
@@ -222,128 +130,91 @@ export default async function handler(req, res) {
         .single();
       if (getError) throw getError;
 
+      const { authUserId } = await findOrCreateAuthUser(adminClient, email, password, 'student');
+
       const { error: profError } = await adminClient.from('profiles').upsert([
-        {
-          id: authUserId,
-          email,
-          role: 'student',
-          full_name: studentRow.full_name
-        }
+        { id: authUserId, email, role: 'student', full_name: studentRow.full_name }
       ]);
       if (profError) throw profError;
 
-      const { error: deleteError } = await adminClient
+      // Link the existing row to the login via profile_id instead of deleting it and
+      // re-inserting it under a new id - that orphaned (or cascade-deleted) the student's
+      // enrollments, schedules, submissions, attendance and chat history.
+      const { data: student, error: updError } = await adminClient
         .from('students')
-        .delete()
-        .eq('id', studentId);
-      if (deleteError) throw deleteError;
-
-      const { profiles, ...studentWithoutRelations } = studentRow;
-      const { data: student, error: studentInsertError } = await adminClient.from('students').upsert([
-        {
-          ...studentWithoutRelations,
-          id: authUserId,
-          email,
-          status: 'approved'
-        }
-      ]).select();
-      if (studentInsertError) throw studentInsertError;
-
+        .update({ profile_id: String(authUserId), email, status: 'approved' })
+        .eq('id', studentId)
+        .select();
+      if (updError) throw updError;
       return res.status(200).json(student[0]);
+    }
 
-    } else if (action === 'resetUserPassword') {
+    if (action === 'resetUserPassword') {
       const { userId, newPassword } = payload;
-      const { data, error } = await adminClient.auth.admin.updateUserById(userId, { password: newPassword });
+      const authUserId = await resolveAuthUserId(adminClient, userId);
+      const { data, error } = await adminClient.auth.admin.updateUserById(authUserId, { password: newPassword });
       if (error) throw error;
       return res.status(200).json(data);
+    }
 
-    } else if (action === 'createTutorAccount') {
+    if (action === 'createTutorAccount') {
       const { email, password, tutorData } = payload;
-      let authUserId = null;
-      let isNewUser = false;
-
-      const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true
-      });
-
-      let authUser = authData?.user;
-      if (authError) {
-        if (authError.message && authError.message.toLowerCase().includes('already')) {
-          const { data: profileRow } = await adminClient
-            .from('profiles')
-            .select('id')
-            .eq('email', email.toLowerCase())
-            .maybeSingle();
-
-          if (profileRow) {
-            authUserId = profileRow.id;
-          } else {
-            const { data: userList, error: listError } = await adminClient.auth.admin.listUsers();
-            if (!listError && userList && userList.users) {
-              const existingUser = userList.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-              if (existingUser) {
-                authUserId = existingUser.id;
-              }
-            }
-          }
-
-          if (authUserId) {
-            // Never repurpose an existing admin/tutor account (that would reset their
-            // password and demote them) just because the same email was typed here.
-            const { data: existingProfile } = await adminClient
-              .from('profiles')
-              .select('role')
-              .eq('id', authUserId)
-              .maybeSingle();
-            if (existingProfile && existingProfile.role && existingProfile.role !== targetRole) {
-              return res.status(409).json({
-                error: `An account with this email already exists as a ${existingProfile.role}. Use a different email.`
-              });
-            }
-            await adminClient.auth.admin.updateUserById(authUserId, { password });
-          }
-        }
-        if (!authUserId) throw authError;
-      } else if (authUser) {
-        authUserId = authUser.id;
-        isNewUser = true;
-      }
+      const { authUserId, isNewUser } = await findOrCreateAuthUser(adminClient, email, password, 'tutor');
 
       try {
         const { error: profError } = await adminClient.from('profiles').upsert([
-          {
-            id: authUserId,
-            email,
-            role: 'tutor',
-            full_name: tutorData.full_name
-          }
+          { id: authUserId, email, role: 'tutor', full_name: tutorData.full_name }
         ]);
         if (profError) throw profError;
 
+        // eslint-disable-next-line no-unused-vars
         const { profile_id, ...cleanTutorData } = tutorData;
         const { data: tutor, error: tutorError } = await adminClient.from('tutors').upsert([
-          {
-            id: authUserId,
-            rating: 5.0,
-            ...cleanTutorData
-          }
+          { id: authUserId, rating: 5.0, ...cleanTutorData }
         ]).select();
         if (tutorError) throw tutorError;
-
         return res.status(200).json(tutor[0]);
       } catch (err) {
-        if (authUserId && isNewUser) {
-          await adminClient.auth.admin.deleteUser(authUserId).catch(() => {});
-        }
+        if (isNewUser) await adminClient.auth.admin.deleteUser(authUserId).catch(() => {});
         throw err;
       }
-
-    } else {
-      return res.status(400).json({ error: 'Unknown action: ' + action });
     }
+
+    if (action === 'deleteUserAccount') {
+      const { kind, id } = payload;
+      const table = kind === 'student' ? 'students' : kind === 'tutor' ? 'tutors' : null;
+      if (!table || !id) throw new HttpError(400, 'kind (student|tutor) and id are required');
+
+      const { data: row, error: rowErr } = await adminClient.from(table).select('id, profile_id').eq('id', id).maybeSingle();
+      if (rowErr) throw rowErr;
+      if (!row) throw new HttpError(404, `${kind} not found`);
+
+      const authUserId = row.profile_id || row.id;
+      const { data: profile } = await adminClient.from('profiles').select('id, role').eq('id', authUserId).maybeSingle();
+      if (profile?.role === 'admin') throw new HttpError(409, 'Refusing to delete an admin account');
+      if (String(authUserId) === String(user.id)) throw new HttpError(409, 'You cannot delete your own account');
+
+      // Enrollment / course-assignment rows are meaningless without the person.
+      if (kind === 'student') {
+        await adminClient.from('student_courses').delete().eq('student_id', id);
+      } else {
+        await adminClient.from('course_tutors').delete().eq('tutor_id', id);
+      }
+
+      const { error: delErr } = await adminClient.from(table).delete().eq('id', id);
+      if (delErr) throw delErr;
+
+      if (profile) {
+        const { error: profDelErr } = await adminClient.from('profiles').delete().eq('id', authUserId);
+        if (profDelErr) throw profDelErr;
+        const { error: authDelErr } = await adminClient.auth.admin.deleteUser(String(authUserId));
+        if (authDelErr && !/not.?found/i.test(authDelErr.message || '')) throw authDelErr;
+      }
+      return res.status(200).json({ deleted: true, loginRemoved: !!profile });
+    }
+
+    throw new HttpError(400, 'Unknown action: ' + action);
   } catch (err) {
-    return res.status(500).json({ error: err.message || JSON.stringify(err) });
+    return sendError(res, err);
   }
 }

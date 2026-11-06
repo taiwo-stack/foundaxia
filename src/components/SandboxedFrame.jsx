@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { isTrustedRemoteUrl } from '../services/whiteboardAuth';
 
 // Many of this app's uploaded slide decks share one generator template, which drives
 // internal navigation through a top-level `function go(n){...}` (or a couple of common
@@ -74,7 +75,19 @@ const injectNavBridge = (htmlText) => {
 // `onNavigate(index)` fires when THIS iframe's own Next/Prev navigation runs locally.
 // `gotoIndex` is an externally-driven `{ index, nonce }` - set a new nonce each time (even for
 // the same index) to force re-delivery, since this frame should jump whenever told to.
-export default function SandboxedFrame({ src, title = 'Slide content', allowInteraction = true, style, onNavigate, gotoIndex }) {
+//
+// Only URLs under this project's Supabase Storage public prefix or this site's own origin
+// are fetched - `src` can arrive from a whiteboard broadcast, and fetching an arbitrary URL
+// would let a participant make everyone's browser request (and render) third-party content.
+// `allowDataUrl` additionally permits inline `data:text/html` documents; it's only set by
+// callers whose URL comes straight from our own database (legacy base64 materials).
+const isAllowedSlideSrc = (src, allowDataUrl) => {
+  if (typeof src !== 'string' || src.length === 0) return false;
+  if (/^data:/i.test(src)) return !!allowDataUrl && /^data:text\/html[;,]/i.test(src);
+  return isTrustedRemoteUrl(src);
+};
+
+export default function SandboxedFrame({ src, title = 'Slide content', allowInteraction = true, style, onNavigate, gotoIndex, allowDataUrl = false }) {
   const [html, setHtml] = useState(null);
   const [failed, setFailed] = useState(false);
   const iframeRef = useRef(null);
@@ -83,7 +96,12 @@ export default function SandboxedFrame({ src, title = 'Slide content', allowInte
     let cancelled = false;
     setHtml(null);
     setFailed(false);
-    fetch(src)
+    if (!isAllowedSlideSrc(src, allowDataUrl)) {
+      console.warn('SandboxedFrame: refusing to load slide from an untrusted URL.');
+      setFailed(true);
+      return () => { cancelled = true; };
+    }
+    fetch(src, { credentials: 'omit', referrerPolicy: 'no-referrer' })
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch slide (' + res.status + ')');
         return res.text();
@@ -91,7 +109,7 @@ export default function SandboxedFrame({ src, title = 'Slide content', allowInte
       .then((text) => { if (!cancelled) setHtml(injectNavBridge(text)); })
       .catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; };
-  }, [src]);
+  }, [src, allowDataUrl]);
 
   useEffect(() => {
     if (!onNavigate) return;

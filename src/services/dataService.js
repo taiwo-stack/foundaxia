@@ -208,11 +208,31 @@ export const getTutors = async () => {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('tutors').select('*');
     if (error) throw error;
-    return data;
+    // Tutor rows don't store the login email; fill it from profiles where the caller
+    // may read them (admins see all; others just get no email - best effort).
+    const { data: profiles } = await supabase.from('profiles').select('id, email');
+    const emailById = new Map((profiles || []).map(p => [String(p.id), p.email]));
+    return data.map(t => ({
+      ...t,
+      email: t.email || emailById.get(String(t.profile_id || t.id)) || t.email
+    }));
   } else {
     initLocalStorage();
     return JSON.parse(localStorage.getItem('lc_tutors'));
   }
+};
+
+// Public tutor directory for the landing page. Logged-out visitors can't read the
+// tutors table (RLS); the public_tutors view exposes only profile fields. Falls back to
+// the table if the view hasn't been created yet.
+export const getPublicTutors = async () => {
+  if (hasSupabaseConfig) {
+    const { data, error } = await supabase.from('public_tutors').select('*');
+    if (!error) return data;
+    console.warn('public_tutors view unavailable, falling back to tutors table:', error.message);
+    return getTutors();
+  }
+  return getTutors();
 };
 
 export const saveTutor = async (tutor) => {
@@ -269,10 +289,12 @@ export const getStudents = async () => {
 
       // 2. Fetch all profile IDs to accurately identify active login accounts
       const { data: profiles, error: profileError } = await supabase.from('profiles').select('id');
-      const activeUserIds = new Set((profiles || []).map(p => p.id));
+      if (profileError) throw profileError;
+      const activeUserIds = new Set((profiles || []).map(p => String(p.id)));
 
       return students.map(s => {
-        const isActive = activeUserIds.has(s.id);
+        // A student has a login if their row id OR linked profile_id is a profile.
+        const isActive = activeUserIds.has(String(s.id)) || (s.profile_id != null && activeUserIds.has(String(s.profile_id)));
         return {
           ...s,
           is_active: isActive,
@@ -331,13 +353,11 @@ export const registerStudent = async (student) => {
       address: student.address || null
     };
 
-    // Convert empty strings to default values to satisfy Postgres NOT NULL constraints
-    if (dbPayload.date_of_birth === '' || dbPayload.date_of_birth === null) {
-      dbPayload.date_of_birth = new Date().toISOString().split('T')[0];
-    }
-    if (dbPayload.start_date === '' || dbPayload.start_date === null) {
-      dbPayload.start_date = new Date().toISOString().split('T')[0];
-    }
+    // Missing dates are stored as NULL (not today's date, which looked like real data).
+    // Requires the NOT NULL constraint to be dropped - see rls_followup.sql.
+    if (!dbPayload.date_of_birth) dbPayload.date_of_birth = null;
+    if (!dbPayload.start_date) dbPayload.start_date = null;
+    if (dbPayload.gender === '') dbPayload.gender = null;
 
     const studentId = self.crypto.randomUUID();
     // No .select(): anonymous visitors may INSERT a pending registration but are not
@@ -388,6 +408,19 @@ export const deleteStudent = async (id) => {
   }
 };
 
+// Admin: delete a student/tutor record AND their login (auth user + profile), so a
+// removed user can't keep signing in. Server side, via /api/admin-action.
+export const deleteUserAccount = async (kind, id) => {
+  if (kind !== 'student' && kind !== 'tutor') throw new Error('Unknown account type: ' + kind);
+  if (hasSupabaseConfig) {
+    return await callAdminApi('deleteUserAccount', { kind, id });
+  }
+  if (kind === 'student') await deleteStudent(id); else await deleteTutor(id);
+  initLocalStorage();
+  const users = JSON.parse(localStorage.getItem('lc_users'));
+  localStorage.setItem('lc_users', JSON.stringify(users.filter(u => u.id !== id || u.role === 'admin')));
+};
+
 export const getBookings = async () => {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('bookings').select('*');
@@ -419,11 +452,10 @@ export const createBooking = async (booking) => {
     if (error) {
       // If the error is about missing columns (timezone/message not yet migrated),
       // retry without those fields so the booking still saves.
-      const isMissingColumn = error.message && (
-        error.message.includes('column') ||
-        error.message.includes('does not exist') ||
-        error.code === '42703'
-      );
+      // Only for an undefined-column error that names one of the optional columns -
+      // anything else (e.g. a NOT NULL violation) must surface, not silently drop data.
+      const isMissingColumn = (error.code === '42703' || error.code === 'PGRST204') &&
+        /timezone|message/.test(error.message || '');
       if (isMissingColumn) {
         console.warn(
           '[LearnCil] bookings table is missing timezone/message columns. ' +
@@ -450,7 +482,7 @@ export const createBooking = async (booking) => {
       id: 'b_' + crypto.randomUUID(), 
       status: 'pending', 
       created_at: new Date().toISOString(),
-      ...booking 
+      ...cleanBooking
     };
     bookings.push(savedBooking);
     localStorage.setItem('lc_bookings', JSON.stringify(bookings));
@@ -603,31 +635,52 @@ export const signIn = async (email, password) => {
       u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     );
     if (!matched) throw new Error('Invalid email or password.');
-    return matched;
+    // Same shape as Supabase mode, and never leak the stored password into sessionStorage.
+    return {
+      id: matched.id,
+      profile_id: matched.id,
+      email: matched.email,
+      role: matched.role,
+      full_name: matched.full_name
+    };
   }
 };
 
 export const signOut = async () => {
   if (hasSupabaseConfig) {
+    // Detach this device's push subscription first (needs the still-valid session),
+    // so the next person to use this browser doesn't get this user's chat alerts.
+    try {
+      const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) {
+        await removePushSubscription(sub.endpoint);
+        await sub.unsubscribe();
+      }
+    } catch (err) {
+      console.warn('Could not remove push subscription on sign-out:', err);
+    }
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   }
 };
 
-const callAdminApi = async (action, payload) => {
+const callAdminApi = (action, payload) => callAuthedApi('/api/admin-action', { action, ...payload });
+
+const callAuthedApi = async (path, body) => {
   const sessionResponse = await supabase.auth.getSession();
   const token = sessionResponse?.data?.session?.access_token;
   if (!token) {
     throw new Error('Not authenticated.');
   }
 
-  const response = await fetch('/api/admin-action', {
+  const response = await fetch(path, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ action, ...payload })
+    body: JSON.stringify(body)
   });
 
   const rawText = await response.text();
@@ -635,10 +688,10 @@ const callAdminApi = async (action, payload) => {
   try {
     result = rawText ? JSON.parse(rawText) : {};
   } catch {
-    throw new Error(`Admin API returned an invalid response (status ${response.status}).`);
+    throw new Error(`Server returned an invalid response (status ${response.status}).`);
   }
   if (!response.ok) {
-    throw new Error(result.error || 'Failed to perform administrative action');
+    throw new Error(result.error || 'Request failed');
   }
   return result;
 };
@@ -775,13 +828,9 @@ export const uploadAvatar = async (userId, file) => {
       const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
       return data.publicUrl;
     } catch (err) {
-      console.warn('Supabase storage upload failed, falling back to Base64 encoding:', err.message);
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve('');
-      });
+      // Don't silently store a multi-MB base64 data URL in the row (or '' wiping the
+      // existing avatar) - let the caller show the real error.
+      throw new Error('Avatar upload failed: ' + (err.message || err));
     }
   } else {
     return new Promise((resolve, reject) => {
@@ -983,13 +1032,7 @@ export const uploadMaterialFile = async (fileName, file) => {
       const { data } = supabase.storage.from('materials').getPublicUrl(uniquePath);
       return data.publicUrl;
     } catch (err) {
-      console.warn('Supabase materials storage upload failed, falling back to Base64 encoding:', err.message);
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve('');
-      });
+      throw new Error('File upload failed: ' + (err.message || err));
     }
   } else {
     return new Promise((resolve, reject) => {
@@ -1054,6 +1097,10 @@ export const getCourseTutors = async () => {
 
 export const assignTutorToCourse = async (courseId, tutorId) => {
   if (hasSupabaseConfig) {
+    const { data: existing, error: exErr } = await supabase.from('course_tutors')
+      .select('*').eq('course_id', courseId).eq('tutor_id', tutorId).limit(1);
+    if (exErr) throw exErr;
+    if (existing && existing.length > 0) return existing[0];
     const { data, error } = await supabase.from('course_tutors').insert([{ course_id: courseId, tutor_id: tutorId }]).select();
     if (error) throw error;
     return data[0];
@@ -1094,6 +1141,16 @@ export const getStudentCourses = async () => {
 
 export const enrollStudentInCourse = async (studentId, courseId, tutorId) => {
   if (hasSupabaseConfig) {
+    const { data: existing, error: exErr } = await supabase.from('student_courses')
+      .select('*').eq('student_id', studentId).eq('course_id', courseId).limit(1);
+    if (exErr) throw exErr;
+    if (existing && existing.length > 0) {
+      // Already enrolled: just update the assigned tutor instead of adding a duplicate.
+      const { data, error } = await supabase.from('student_courses').update({ tutor_id: tutorId })
+        .eq('student_id', studentId).eq('course_id', courseId).select();
+      if (error) throw error;
+      return data[0];
+    }
     const { data, error } = await supabase.from('student_courses').insert([{ student_id: studentId, course_id: courseId, tutor_id: tutorId }]).select();
     if (error) throw error;
     return data[0];
@@ -1240,6 +1297,48 @@ export const getStudentTasks = async () => {
     initLocalStorage();
     return JSON.parse(localStorage.getItem('lc_student_tasks'));
   }
+};
+
+// Student-facing task list. In Supabase mode students can't read the tasks table
+// directly (it contains the quiz answer key); /api/quiz returns their tasks with the
+// correct answers removed.
+export const getTasksForStudent = async () => {
+  if (hasSupabaseConfig) {
+    const result = await callAuthedApi('/api/quiz', { action: 'list' });
+    return result.tasks || [];
+  }
+  return getTasks();
+};
+
+const parseQuestions = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  try { return JSON.parse(raw || '[]'); } catch { return []; }
+};
+
+// Submit quiz answers (array of selected option indexes). Graded on the server; the
+// submission row gets grade = points out of the task's max_points.
+// Returns { submission, correctCount, total, percent, correctAnswers }.
+export const submitQuiz = async (taskId, answers) => {
+  if (hasSupabaseConfig) {
+    return await callAuthedApi('/api/quiz', { action: 'submit', taskId, answers });
+  }
+  // Mock mode: grade locally.
+  const task = (await getTasks()).find(t => t.id === taskId);
+  if (!task) throw new Error('Quiz not found.');
+  const questions = parseQuestions(task.quiz_questions);
+  const correctAnswers = questions.map(q => q.correct);
+  const correctCount = questions.filter((q, i) => answers[i] === q.correct).length;
+  const percent = questions.length ? Math.round((correctCount / questions.length) * 100) : 0;
+  const maxPoints = Number(task.max_points) || 100;
+  const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
+  const submission = await submitStudentTask({
+    task_id: taskId,
+    student_id: user.id,
+    submission_text: `Interactive Quiz completed. Score: ${percent}% (${correctCount}/${questions.length} correct).`,
+    grade: Math.round((percent / 100) * maxPoints),
+    graded_at: new Date().toISOString()
+  });
+  return { submission, correctCount, total: questions.length, percent, correctAnswers };
 };
 
 export const submitStudentTask = async (submission) => {
@@ -1474,13 +1573,13 @@ export const getChatMessages = async () => {
 };
 
 export const sendChatMessage = async (msg) => {
-  const { sender_name, ...dbMsg } = msg;
+  const { sender_name: _senderName, ...dbMsg } = msg; // display-only field, not a DB column
   const chatMessageId = 'ch_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('chat_messages').insert([{ id: chatMessageId, ...dbMsg }]).select();
     if (error) throw error;
     const saved = data[0];
-    notifyNewMessage(saved, sender_name);
+    notifyNewMessage(saved);
     return saved;
   } else {
     initLocalStorage();
@@ -1507,18 +1606,16 @@ export const markMessagesRead = async (ids) => {
 
 // Best-effort push notification for a newly-sent message. Never allowed to make
 // sendChatMessage itself fail - a lost notification is fine, a lost message isn't.
-const notifyNewMessage = async (message, senderName) => {
+const notifyNewMessage = async (message) => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return;
     await fetch('/api/send-push', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({
-        receiverId: message.receiver_id,
-        senderName: senderName || 'FoundaXia',
-        messageText: message.message_text
-      })
+      // Only the message id: the server loads the message itself and checks the caller
+      // actually sent it, so nobody can push arbitrary text to arbitrary users.
+      body: JSON.stringify({ messageId: message.id })
     });
   } catch (_) {}
 };

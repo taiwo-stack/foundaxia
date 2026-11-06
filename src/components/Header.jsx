@@ -24,19 +24,16 @@ export default function Header({ currentUser, onLogout }) {
 
   const isDashboard = ['/student', '/tutor', '/admin'].some(path => location.pathname.startsWith(path));
 
-  const handleNavClick = (sectionId) => {
+  // Navigate to a landing-page section. The target is passed via navigation state and
+  // LandingPage scrolls to it once mounted (it may still be lazy-loading). extraState can
+  // carry pre-fill hints (e.g. contactSubject).
+  const handleNavClick = (sectionId, extraState = {}) => {
     setMobileOpen(false);
-    if (location.pathname !== '/') {
-      navigate('/');
-      // Wait for navigation before scrolling
-      setTimeout(() => {
-        const el = document.getElementById(sectionId);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    } else {
-      const el = document.getElementById(sectionId);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
+    const onLanding = location.pathname === '/';
+    navigate(
+      { pathname: '/', search: onLanding ? location.search : '' },
+      { replace: onLanding, state: { scrollTo: sectionId, ...extraState } }
+    );
   };
 
   const handleSubjectFilterNav = (categoryName) => {
@@ -124,9 +121,10 @@ export default function Header({ currentUser, onLogout }) {
               </li>
 
               <li><a onClick={() => handleNavClick('how-it-works')}>How It Works</a></li>
-              <li><a onClick={() => handleNavClick('why-us')}>Why FoundaXia</a></li>
+              <li><a onClick={() => handleNavClick('about')}>Why FoundaXia</a></li>
 
-              <li><a onClick={() => handleNavClick('courses')}>Pricing</a></li>
+              {/* No public pricing table yet: pricing enquiries go through the contact form */}
+              <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
               <li><a onClick={() => { setMobileOpen(false); alert('FoundaXia Blog and parent resources coming soon!'); }}>Resources / Blog</a></li>
               
               {/* Add direct Dashboard link if already logged in */}
