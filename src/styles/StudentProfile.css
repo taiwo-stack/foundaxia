@@ -117,10 +117,10 @@
 }
 .sp-hero-content {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 1.25rem;
   padding: 0 1.5rem 1.25rem;
-  margin-top: -48px;
+  margin-top: -48px; /* only the photo overlaps the banner */
 }
 .sp-avatar-wrap { position: relative; flex-shrink: 0; }
 .sp-avatar {
@@ -163,7 +163,8 @@
 .sp-avatar-btn.is-busy { opacity: 0.6; cursor: progress; }
 .sp-avatar-btn input { display: none; }
 
-.sp-hero-text { min-width: 0; padding-bottom: 0.2rem; }
+/* the name + badges start below the banner, never on top of it */
+.sp-hero-text { min-width: 0; padding-top: 58px; padding-bottom: 0.2rem; }
 .sp-hero-text h2 {
   margin: 0 0 0.45rem;
   font-family: var(--font-heading);
@@ -307,6 +308,7 @@
 
 @media (max-width: 600px) {
   .sp-hero-cover { height: 84px; }
+  .sp-hero-text { padding-top: 0; }
   .sp-hero-content {
     flex-direction: column;
     align-items: center;
