@@ -138,11 +138,17 @@ export default function StudentDashboard({ user, onLogout }) {
     setUploading(true);
     try {
       const publicUrl = await uploadAvatar(studentInfo?.id || user?.id, file);
+      // Save the photo straight away - it used to wait for "Save Changes", so leaving the
+      // page after uploading silently lost it.
+      await updateStudent(studentInfo.id, { avatar_url: publicUrl });
       setStudentInfo(prev => ({ ...prev, avatar_url: publicUrl }));
+      setSavedStudentInfo(prev => (prev ? { ...prev, avatar_url: publicUrl } : prev));
+      alert('Profile picture updated!');
     } catch (err) {
-      alert('Failed to upload picture: ' + err.message);
+      alert('Failed to update picture: ' + err.message);
     } finally {
       setUploading(false);
+      e.target.value = ''; // allow choosing the same file again
     }
   };
 
