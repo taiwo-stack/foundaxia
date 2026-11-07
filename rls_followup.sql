@@ -47,4 +47,10 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS created_by TEXT;
 ALTER TABLE public.students ALTER COLUMN date_of_birth DROP NOT NULL;
 ALTER TABLE public.students ALTER COLUMN start_date DROP NOT NULL;
 
+-- 5. Optional gender and schedule. The homepage Quick Register form doesn't ask for
+--    them (registration failed with "null value in column gender ... violates not-null
+--    constraint"), and "Prefer not to say" on the student profile saves gender as null.
+ALTER TABLE public.students ALTER COLUMN gender   DROP NOT NULL;
+ALTER TABLE public.students ALTER COLUMN schedule DROP NOT NULL;
+
 COMMIT;
