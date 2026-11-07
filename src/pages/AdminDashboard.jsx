@@ -22,6 +22,7 @@ import {
   Lock, User as UserIcon, Award, Star, UserPlus
 } from 'lucide-react';
 import ParentFeesModal from '../components/ParentFeesModal';
+import CourseImageField from '../components/CourseImageField';
 import MobileMenuSheet from '../components/MobileMenuSheet';
 import DrawerAccount from '../components/DrawerAccount';
 import useResponsiveTables from '../hooks/useResponsiveTables';
@@ -153,6 +154,7 @@ export default function AdminDashboard({ user, onLogout }) {
 
   // LMS State Inputs
   const [newCourse, setNewCourse] = useState({ title: '', description: '', course_type: 'regular', category: '', image_url: '' });
+  const [courseImgUploading, setCourseImgUploading] = useState(false); // blocks saving until the cover image has uploaded
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [newTopic, setNewTopic] = useState({ title: '', description: '', sort_order: 1 });
   const [activeTopicMaterialId, setActiveTopicMaterialId] = useState('');
@@ -2977,12 +2979,11 @@ export default function AdminDashboard({ user, onLogout }) {
                 <textarea value={editingCourse.description || ''} onChange={(e) => setEditingCourse(prev => ({ ...prev, description: e.target.value }))} rows={3}></textarea>
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Course Image URL</label>
-                <input 
-                  type="text" 
-                  value={editingCourse.image_url || ''} 
-                  onChange={(e) => setEditingCourse(prev => ({ ...prev, image_url: e.target.value }))} 
-                  placeholder="e.g. /images/book1.jpg or external url" 
+                <label>Course Image</label>
+                <CourseImageField
+                  value={editingCourse.image_url || ''}
+                  onChange={(url) => setEditingCourse(prev => ({ ...prev, image_url: url }))}
+                  onBusyChange={setCourseImgUploading}
                 />
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -3001,7 +3002,7 @@ export default function AdminDashboard({ user, onLogout }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-prev" onClick={() => { setShowEditCourseModal(false); setEditingCourse(null); }}>Cancel</button>
-                <button type="submit" className="btn-submit">Save Changes</button>
+                <button type="submit" className="btn-submit" disabled={courseImgUploading}>{courseImgUploading ? 'Uploading image…' : 'Save Changes'}</button>
               </div>
             </form>
           </div>
@@ -3200,11 +3201,12 @@ export default function AdminDashboard({ user, onLogout }) {
       {/* Create Course Modal Overlay */}
       {showCreateCourseModal && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '450px' }}>
+          <div className="modal-content" style={{ maxWidth: '520px' }}>
             <button className="modal-close" onClick={() => setShowCreateCourseModal(false)}><X size={20} /></button>
             <h3 className="modal-title"><BookOpen size={18} /> Create New Course</h3>
             <form onSubmit={async (e) => {
               e.preventDefault();
+              if (courseImgUploading) return alert('Please wait for the image to finish uploading.');
               try {
                 const saved = await saveCourse(newCourse);
                 setCourses(prev => [...prev, saved]);
@@ -3222,7 +3224,7 @@ export default function AdminDashboard({ user, onLogout }) {
                   type="text" 
                   value={newCourse.title} 
                   onChange={(e) => setNewCourse(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="e.g. Frontend Development"
+                  placeholder="e.g. Physics (Year 10)"
                   required 
                 />
               </div>
@@ -3236,12 +3238,11 @@ export default function AdminDashboard({ user, onLogout }) {
                 ></textarea>
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Course Image URL</label>
-                <input 
-                  type="text" 
-                  value={newCourse.image_url || ''} 
-                  onChange={(e) => setNewCourse(prev => ({ ...prev, image_url: e.target.value }))}
-                  placeholder="e.g. /images/book1.jpg or external url" 
+                <label>Course Image</label>
+                <CourseImageField
+                  value={newCourse.image_url || ''}
+                  onChange={(url) => setNewCourse(prev => ({ ...prev, image_url: url }))}
+                  onBusyChange={setCourseImgUploading}
                 />
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -3270,7 +3271,7 @@ export default function AdminDashboard({ user, onLogout }) {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                 <button type="button" className="btn-prev" onClick={() => setShowCreateCourseModal(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Create Course</button>
+                <button type="submit" className="btn-submit" disabled={courseImgUploading}>{courseImgUploading ? 'Uploading image…' : 'Create Course'}</button>
               </div>
             </form>
           </div>
