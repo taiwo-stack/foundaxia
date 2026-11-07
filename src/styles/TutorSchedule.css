@@ -1,0 +1,165 @@
+/* Tutor: Schedule a Class form + timetable layout */
+.tsch-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 2fr);
+  gap: 1.5rem;
+  align-items: start;
+  margin-bottom: 2rem;
+}
+@media (max-width: 1100px) {
+  .tsch-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.tsch-form { display: flex; flex-direction: column; gap: 1rem; }
+
+.tsch-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+.tsch-step-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+.tsch-step-label span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: white;
+  font-size: 0.75rem;
+}
+
+.tsch-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; margin: 0; }
+.tsch-field > span { font-size: 0.82rem; font-weight: 600; color: #4a5568; }
+.tsch-field input,
+.tsch-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.8rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: var(--text-dark);
+  font-size: 0.92rem;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.tsch-field input:focus,
+.tsch-field select:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(242, 122, 36, 0.15); }
+.tsch-field select:disabled { background: #f1f5f9; color: #a0aec0; cursor: not-allowed; }
+
+.tsch-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+
+.tsch-hint { font-size: 0.78rem; color: #718096; line-height: 1.4; }
+.tsch-hint-error { color: #c53030; font-weight: 600; }
+
+/* One class / Repeating */
+.tsch-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 0.25rem;
+  border-radius: 12px;
+  background: #edf2f7;
+}
+.tsch-toggle button {
+  padding: 0.55rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: #4a5568;
+  font-weight: 700;
+  font-size: 0.86rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.tsch-toggle button.is-active { background: white; color: var(--primary-color); box-shadow: 0 2px 6px rgba(15, 44, 89, 0.1); }
+
+/* Day pills */
+.tsch-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.35rem; }
+.tsch-days button {
+  padding: 0.55rem 0;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  color: #4a5568;
+  font-weight: 700;
+  font-size: 0.8rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.tsch-days button.is-active { background: var(--primary-color); border-color: var(--primary-color); color: white; }
+
+/* Quick length chips */
+.tsch-durations { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.tsch-durations > span { font-size: 0.8rem; font-weight: 600; color: #718096; margin-right: 0.15rem; }
+.tsch-durations button {
+  padding: 0.35rem 0.7rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 999px;
+  background: white;
+  color: #4a5568;
+  font-weight: 700;
+  font-size: 0.78rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.tsch-durations button.is-active { border-color: var(--accent-color); color: var(--accent-dark); background: #fff7ed; }
+
+.tsch-link-btn {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0.2rem 0;
+  color: var(--accent-dark);
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.tsch-summary {
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  background: #f0f7ff;
+  border: 1px solid #dbeafe;
+  color: var(--primary-color);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.tsch-submit {
+  width: 100%;
+  padding: 0.85rem !important;
+  border: none;
+  background: var(--accent-color) !important;
+  color: white !important;
+  font-family: var(--font-body);
+  transition: background 0.2s ease;
+  border-radius: 12px !important;
+  font-size: 0.95rem !important;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tsch-submit:hover { background: var(--accent-dark) !important; }
+.tsch-durations { gap: 0.3rem; }
+
+@media (max-width: 480px) {
+  .tsch-row { grid-template-columns: minmax(0, 1fr); }
+  .tsch-step { padding: 0.85rem; }
+}
