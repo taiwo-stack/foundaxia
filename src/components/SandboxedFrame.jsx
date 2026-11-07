@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTrustedRemoteUrl } from '../services/whiteboardAuth';
+import { isPowerPointUrl, officeViewerUrl } from '../utils/slideMaterials';
 
 // Many of this app's uploaded slide decks share one generator template, which drives
 // internal navigation through a top-level `function go(n){...}` (or a couple of common
@@ -87,7 +88,7 @@ const isAllowedSlideSrc = (src, allowDataUrl) => {
   return isTrustedRemoteUrl(src);
 };
 
-export default function SandboxedFrame({ src, title = 'Slide content', allowInteraction = true, style, onNavigate, gotoIndex, allowDataUrl = false }) {
+function HtmlSlideFrame({ src, title = 'Slide content', allowInteraction = true, style, onNavigate, gotoIndex, allowDataUrl = false }) {
   const [html, setHtml] = useState(null);
   const [failed, setFailed] = useState(false);
   const iframeRef = useRef(null);
@@ -166,4 +167,55 @@ export default function SandboxedFrame({ src, title = 'Slide content', allowInte
       }}
     />
   );
+}
+
+// PowerPoint decks: shown through Microsoft's Office Online viewer, untouched, so they look
+// and play exactly like PowerPoint. Microsoft fetches the file itself, so it must be a public
+// URL - only our own Storage/site URLs are accepted, never one from an arbitrary broadcast.
+// The viewer is cross-origin, so there is no slide-number bridge: each viewer clicks
+// through the deck on their own. Draw/Interact still works (pointer-events on the frame).
+function PowerPointFrame({ src, title = 'PowerPoint slides', allowInteraction = true, style }) {
+  const [loaded, setLoaded] = useState(false);
+  const ok = typeof src === 'string' && !/^data:/i.test(src) && isTrustedRemoteUrl(src);
+
+  if (!ok) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: '#94a3b8', background: 'white', padding: '1rem', textAlign: 'center', ...style }}>
+        This PowerPoint can only be shown on the live site.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#1f1f1f', ...style }}>
+      {!loaded && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', color: '#cbd5e0', pointerEvents: 'none' }}>
+          <div className="loading-spinner" style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: 'white', width: '20px', height: '20px' }} />
+          Loading PowerPoint…
+        </div>
+      )}
+      <iframe
+        key={src}
+        src={officeViewerUrl(src)}
+        title={title}
+        onLoad={() => setLoaded(true)}
+        allow="fullscreen"
+        allowFullScreen
+        referrerPolicy="no-referrer"
+        // Microsoft's own origin, so allow-same-origin cannot reach our cookies or storage.
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation"
+        style={{
+          border: 'none',
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          pointerEvents: allowInteraction ? 'auto' : 'none'
+        }}
+      />
+    </div>
+  );
+}
+
+export default function SandboxedFrame(props) {
+  return isPowerPointUrl(props.src) ? <PowerPointFrame {...props} /> : <HtmlSlideFrame {...props} />;
 }

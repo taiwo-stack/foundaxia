@@ -36,12 +36,12 @@ const generatePassword = (length = 12) => {
   return Array.from(bytes, b => chars[b % chars.length]).join('');
 };
 import HtmlSlideModal from '../components/HtmlSlideModal';
-import { convertPptxToSlideHtml } from '../utils/pptxConverter';
+import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../utils/slideMaterials';
 import '../styles/Dashboard.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 // Material file_type convention shared with the tutor and student dashboards:
-// 'html_slide' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
+// 'html_slide' | 'powerpoint' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
 const getMaterialFileType = (file) => {
   const mime = (file?.type || '').toLowerCase();
   const name = (file?.name || '').toLowerCase();
@@ -712,20 +712,18 @@ export default function AdminDashboard({ user, onLogout }) {
     if (!selectedCourseId || !selectedTopicId || !materialFile) {
       return alert('Please select a topic and file first.');
     }
-    const isPptx = /\.pptx$/i.test(materialFile.name);
-    const isHtmlSlide = isPptx || materialFile.type === 'text/html' || /\.html?$/i.test(materialFile.name);
-    if (!isPptx && isHtmlSlide && materialFile.size > 15 * 1024 * 1024) {
+    const isPptx = isPowerPointName(materialFile.name);
+    const isHtmlSlide = materialFile.type === 'text/html' || /\.html?$/i.test(materialFile.name);
+    if (isHtmlSlide && materialFile.size > 15 * 1024 * 1024) {
       return alert('HTML slide files must be under 15MB.');
+    }
+    if (isPptx && materialFile.size > POWERPOINT_MAX_BYTES) {
+      return alert('PowerPoint files must be under 10MB to be shown online. In PowerPoint, use File > Compress Pictures, then upload again.');
     }
     setUploading(true);
     try {
-      let fileToUpload = materialFile;
-      if (isPptx) {
-        const html = await convertPptxToSlideHtml(materialFile, materialTitle || materialFile.name);
-        fileToUpload = new File([html], materialFile.name.replace(/\.pptx$/i, '.html'), { type: 'text/html' });
-      }
-      const fileUrl = await uploadMaterialFile(fileToUpload.name, fileToUpload);
-      const fileType = isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile);
+      const fileUrl = await uploadMaterialFile(materialFile.name, materialFile);
+      const fileType = isPptx ? 'powerpoint' : isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile);
       const saved = await saveMaterial({
         course_id: selectedCourseId,
         topic_id: selectedTopicId,
@@ -736,7 +734,7 @@ export default function AdminDashboard({ user, onLogout }) {
       setMaterials(prev => [...prev, saved]);
       setMaterialTitle('');
       setMaterialFile(null);
-      alert(isPptx ? 'PowerPoint converted to a slide deck and uploaded!' : 'Course material uploaded successfully!');
+      alert(isPptx ? 'PowerPoint uploaded! It opens just like in PowerPoint.' : 'Course material uploaded successfully!');
     } catch (err) {
       alert('Failed to upload material: ' + err.message);
     } finally {
@@ -1789,7 +1787,7 @@ export default function AdminDashboard({ user, onLogout }) {
                                   {/* Upload Material Inline Form */}
                                   {showMaterialForm && (
                                     <form onSubmit={handleUploadMaterial} style={{ background: '#f7fafc', padding: '0.8rem', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '0.8rem' }}>
-                                      <div style={{ fontSize: '0.7rem', color: '#a0aec0' }}>PowerPoint (.pptx) files are automatically converted into an interactive slide deck.</div>
+                                      <div style={{ fontSize: '0.7rem', color: '#a0aec0' }}>PowerPoint files (.pptx, under 10MB) open exactly like PowerPoint and can be attached to the whiteboard.</div>
                                       <div className="form-group" style={{ margin: 0 }}>
                                         <input type="text" value={materialTitle} onChange={(e) => setMaterialTitle(e.target.value)} placeholder="File Title (e.g. PDF Guide)" required style={{ padding: '0.4rem', fontSize: '0.8rem' }} />
                                       </div>
@@ -1822,7 +1820,7 @@ export default function AdminDashboard({ user, onLogout }) {
                                         <li key={m.id} style={{ display: 'flex', justify: 'space-between', items: 'center', background: '#f7fafc', padding: '0.4rem 0.6rem', borderRadius: '8px', fontSize: '0.8rem' }}>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                             <Paperclip size={12} color="#4a5568" />
-                                            {m.file_type === 'html_slide' ? (
+                                            {isSlideMaterial(m) ? (
                                               <button onClick={() => setViewingSlide(m)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent-color)', fontWeight: '500', textDecoration: 'underline', cursor: 'pointer', fontSize: 'inherit' }}>{m.title}</button>
                                             ) : (
                                               <a href={m.file_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', fontWeight: '500', textDecoration: 'underline' }}>{m.title}</a>
