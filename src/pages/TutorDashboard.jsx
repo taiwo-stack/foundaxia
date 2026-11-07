@@ -22,6 +22,7 @@ import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
 import { convertPptxToSlideHtml } from '../utils/pptxConverter';
 import '../styles/Dashboard.css';
+import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 
 const formatMessageTime = (dateStr) => {
@@ -173,6 +174,12 @@ export default function TutorDashboard({ user }) {
   const [schLink, setSchLink] = useState('');
   const [schLink2, setSchLink2] = useState('');
   const [schType, setSchType] = useState('single'); // 'single' or 'recurring'
+  // Single class is entered as one date + start/end times; schStart/schEnd (used by the
+  // submit handler) are composed from them.
+  const [schDate, setSchDate] = useState('');
+  const [schStartTime, setSchStartTime] = useState('');
+  const [schEndTime, setSchEndTime] = useState('');
+  const [schShowLink2, setSchShowLink2] = useState(false);
   const [schRecurStartDate, setSchRecurStartDate] = useState('');
   const [schRecurEndDate, setSchRecurEndDate] = useState('');
   const [schRecurStartTime, setSchRecurStartTime] = useState('');
@@ -533,8 +540,12 @@ export default function TutorDashboard({ user }) {
         setSchTitle('');
         setSchStart('');
         setSchEnd('');
+        setSchDate('');
+        setSchStartTime('');
+        setSchEndTime('');
         setSchLink('');
         setSchLink2('');
+        setSchShowLink2(false);
         alert('Virtual class scheduled successfully!');
       } catch (err) {
         alert('Error scheduling class: ' + err.message);
@@ -819,155 +830,218 @@ export default function TutorDashboard({ user }) {
 
 
             {/* Scheduled Lectures Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem', alignItems: 'start', marginBottom: '2rem' }}>
+            <div className="tsch-layout">
               
               {/* Left Column: Create Schedule */}
-              <div className="dashboard-card" style={{ marginBottom: 0 }}>
-                <h3><Calendar size={18} color="var(--primary-color)" /> Schedule Virtual Class</h3>
-                <form onSubmit={handleCreateSchedule} className="login-form" style={{ gap: '0.8rem' }}>
-                  <div className="form-group">
-                    <label>Select Assigned Student *</label>
-                    <select value={schStudentId} onChange={(e) => {
-                      setSchStudentId(e.target.value);
-                      setSchCourseId(''); // Reset selected course
-                    }} required style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}>
-                      <option value="">-- Choose Student --</option>
-                      {(() => {
-                        const actualTutorId = tutorInfo?.id || tutorId;
-                        const myEnrollments = enrollments.filter(sc => sc.tutor_id === actualTutorId);
-                        const myStudentIds = [...new Set(myEnrollments.map(sc => sc.student_id))];
-                        return students.filter(s => myStudentIds.includes(s.id)).map(s => (
-                          <option key={s.id} value={s.id}>{s.full_name}</option>
-                        ));
-                      })()}
-                    </select>
-                  </div>
-                  
-                   <div className="form-group">
-                    <label>Select Assigned Course *</label>
-                    <select value={schCourseId} onChange={(e) => setSchCourseId(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}>
-                      <option value="">-- Choose Course --</option>
-                      {(() => {
-                        const actualTutorId = tutorInfo?.id || tutorId;
-                        return enrollments
-                          .filter(sc => sc.student_id === schStudentId && sc.tutor_id === actualTutorId)
-                          .map(sc => courses.find(c => c.id === sc.course_id))
-                          .filter(Boolean)
-                          .map(c => (
-                            <option key={c.id} value={c.id}>{c.title}</option>
-                          ));
-                      })()}
-                    </select>
+              {(() => {
+                const actualTutorId = tutorInfo?.id || tutorId;
+                const myEnrollments = enrollments.filter(sc => sc.tutor_id === actualTutorId);
+                const myStudentIds = [...new Set(myEnrollments.map(sc => sc.student_id))];
+                const myStudents = students.filter(s => myStudentIds.includes(s.id));
+                const studentCourses = myEnrollments
+                  .filter(sc => sc.student_id === schStudentId)
+                  .map(sc => courses.find(c => c.id === sc.course_id))
+                  .filter(Boolean);
+
+                const pad = (n) => String(n).padStart(2, '0');
+                const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; })();
+                const setSingle = (date, st, et) => {
+                  setSchDate(date); setSchStartTime(st); setSchEndTime(et);
+                  setSchStart(date && st ? `${date}T${st}` : '');
+                  setSchEnd(date && et ? `${date}T${et}` : '');
+                };
+                const addMinutes = (time, mins) => {
+                  if (!time) return '';
+                  const [h, m] = time.split(':').map(Number);
+                  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+                  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+                };
+                const minutesBetween = (st, et) => {
+                  if (!st || !et) return 0;
+                  const [h1, m1] = st.split(':').map(Number); const [h2, m2] = et.split(':').map(Number);
+                  return (h2 * 60 + m2) - (h1 * 60 + m1);
+                };
+                const fmt12 = (t) => {
+                  if (!t) return '';
+                  const [h, m] = t.split(':').map(Number);
+                  return `${((h + 11) % 12) + 1}:${pad(m)} ${h < 12 ? 'AM' : 'PM'}`;
+                };
+                const DURATIONS = [[30, '30m'], [45, '45m'], [60, '1h'], [90, '1½h'], [120, '2h']];
+                const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+                const curStart = schType === 'single' ? schStartTime : schRecurStartTime;
+                const curEnd = schType === 'single' ? schEndTime : schRecurEndTime;
+                const setEndFromDuration = (mins) => {
+                  if (schType === 'single') setSingle(schDate, schStartTime, addMinutes(schStartTime, mins));
+                  else setSchRecurEndTime(addMinutes(schRecurStartTime, mins));
+                };
+                const duration = minutesBetween(curStart, curEnd);
+
+                const studentName = myStudents.find(s => s.id === schStudentId)?.full_name;
+                const when = schType === 'single'
+                  ? (schDate && schStartTime && schEndTime
+                      ? `${new Date(`${schDate}T00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}, ${fmt12(schStartTime)}–${fmt12(schEndTime)}`
+                      : '')
+                  : (schRecurDays.length && schRecurStartTime && schRecurEndTime
+                      ? `Every ${DAYS.filter(d => schRecurDays.includes(d)).map(d => d.slice(0, 3)).join(', ')}, ${fmt12(schRecurStartTime)}–${fmt12(schRecurEndTime)}`
+                      : '');
+                const summary = [schTitle, studentName, when].filter(Boolean).join(' · ');
+
+                return (
+              <div className="dashboard-card tsch-card" style={{ marginBottom: 0 }}>
+                <h3><Calendar size={18} color="var(--primary-color)" /> Schedule a Class</h3>
+                <form onSubmit={handleCreateSchedule} className="tsch-form">
+
+                  {/* Step 1: who & what */}
+                  <div className="tsch-step">
+                    <div className="tsch-step-label"><span>1</span> Who &amp; what</div>
+                    <label className="tsch-field">
+                      <span>Student *</span>
+                      <select value={schStudentId} onChange={(e) => { setSchStudentId(e.target.value); setSchCourseId(''); }} required>
+                        <option value="">Choose a student</option>
+                        {myStudents.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+                      </select>
+                      {myStudents.length === 0 && <small className="tsch-hint">No students are assigned to you yet. Ask an admin to enrol students in your course.</small>}
+                    </label>
+                    <label className="tsch-field">
+                      <span>Course *</span>
+                      <select value={schCourseId} onChange={(e) => setSchCourseId(e.target.value)} required disabled={!schStudentId}>
+                        <option value="">{schStudentId ? 'Choose a course' : 'Choose a student first'}</option>
+                        {studentCourses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                      </select>
+                    </label>
+                    {schCourseId && (
+                      <label className="tsch-field">
+                        <span>Topic *</span>
+                        <input
+                          type="text"
+                          list="sch-topics-datalist"
+                          value={schTitle}
+                          onChange={(e) => setSchTitle(e.target.value)}
+                          placeholder="Pick a lesson topic or type your own"
+                          required
+                        />
+                        <datalist id="sch-topics-datalist">
+                          {topics.filter(t => t.course_id === schCourseId).map(t => <option key={t.id} value={t.title} />)}
+                        </datalist>
+                      </label>
+                    )}
                   </div>
 
-                   {schCourseId && (
-                    <div className="form-group">
-                      <label>Lecture Title / Topic *</label>
-                      <input 
-                        type="text" 
-                        list="sch-topics-datalist" 
-                        value={schTitle} 
-                        onChange={(e) => setSchTitle(e.target.value)} 
-                        placeholder="Select from lesson topics or type custom..." 
-                        required 
-                        style={{ width: '100%' }} 
-                      />
-                      <datalist id="sch-topics-datalist">
-                        {topics.filter(t => t.course_id === schCourseId).map(t => (
-                          <option key={t.id} value={t.title} />
+                  {/* Step 2: when */}
+                  <div className="tsch-step">
+                    <div className="tsch-step-label"><span>2</span> When</div>
+                    <div className="tsch-toggle" role="radiogroup" aria-label="Schedule type">
+                      {[['single', 'One class'], ['recurring', 'Repeating']].map(([key, label]) => (
+                        <button key={key} type="button" role="radio" aria-checked={schType === key}
+                          className={schType === key ? 'is-active' : ''} onClick={() => setSchType(key)}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {schType === 'single' ? (
+                      <>
+                        <label className="tsch-field">
+                          <span>Date *</span>
+                          <input type="date" min={todayStr} value={schDate} onChange={(e) => setSingle(e.target.value, schStartTime, schEndTime)} required />
+                        </label>
+                        <div className="tsch-row">
+                          <label className="tsch-field">
+                            <span>Starts *</span>
+                            <input type="time" value={schStartTime} onChange={(e) => {
+                              const st = e.target.value;
+                              // keep the same length when moving the start time
+                              const keep = duration > 0 ? duration : 60;
+                              setSingle(schDate, st, schEndTime && duration > 0 ? addMinutes(st, keep) : (schEndTime || addMinutes(st, 60)));
+                            }} required />
+                          </label>
+                          <label className="tsch-field">
+                            <span>Ends *</span>
+                            <input type="time" value={schEndTime} onChange={(e) => setSingle(schDate, schStartTime, e.target.value)} required />
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="tsch-field">
+                          <span>Repeat on *</span>
+                          <div className="tsch-days">
+                            {DAYS.map(day => {
+                              const on = schRecurDays.includes(day);
+                              return (
+                                <button key={day} type="button" aria-pressed={on} className={on ? 'is-active' : ''}
+                                  onClick={() => setSchRecurDays(prev => on ? prev.filter(d => d !== day) : [...prev, day])}>
+                                  {day.slice(0, 3)}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="tsch-row">
+                          <label className="tsch-field">
+                            <span>From *</span>
+                            <input type="date" min={todayStr} value={schRecurStartDate} onChange={(e) => setSchRecurStartDate(e.target.value)} required />
+                          </label>
+                          <label className="tsch-field">
+                            <span>Until *</span>
+                            <input type="date" min={schRecurStartDate || todayStr} value={schRecurEndDate} onChange={(e) => setSchRecurEndDate(e.target.value)} required />
+                          </label>
+                        </div>
+                        <div className="tsch-row">
+                          <label className="tsch-field">
+                            <span>Starts *</span>
+                            <input type="time" value={schRecurStartTime} onChange={(e) => {
+                              const st = e.target.value;
+                              setSchRecurStartTime(st);
+                              if (!schRecurEndTime) setSchRecurEndTime(addMinutes(st, 60));
+                            }} required />
+                          </label>
+                          <label className="tsch-field">
+                            <span>Ends *</span>
+                            <input type="time" value={schRecurEndTime} onChange={(e) => setSchRecurEndTime(e.target.value)} required />
+                          </label>
+                        </div>
+                      </>
+                    )}
+
+                    {curStart && (
+                      <div className="tsch-durations" aria-label="Class length">
+                        <span>Length:</span>
+                        {DURATIONS.map(([mins, label]) => (
+                          <button key={mins} type="button" className={duration === mins ? 'is-active' : ''} onClick={() => setEndFromDuration(mins)}>{label}</button>
                         ))}
-                      </datalist>
-                    </div>
-                  )}
-                  <div className="form-group">
-                    <label>Schedule Mode *</label>
-                    <select value={schType} onChange={(e) => setSchType(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '10px', border: '2px solid #e2e8f0', width: '100%', fontFamily: 'inherit' }}>
-                      <option value="single">Single Class Session</option>
-                      <option value="recurring">Recurring Class Series</option>
-                    </select>
+                      </div>
+                    )}
+                    {curStart && curEnd && duration <= 0 && <small className="tsch-hint tsch-hint-error">The end time must be after the start time.</small>}
                   </div>
 
-                  {schType === 'single' ? (
-                    <>
-                      <div className="form-group">
-                        <label>Start Time *</label>
-                        <input type="datetime-local" value={schStart} onChange={(e) => setSchStart(e.target.value)} required style={{ width: '100%' }} />
-                      </div>
-                      <div className="form-group">
-                        <label>End Time *</label>
-                        <input type="datetime-local" value={schEnd} onChange={(e) => setSchEnd(e.target.value)} required style={{ width: '100%' }} />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
-                        <div className="form-group">
-                          <label>Start Date *</label>
-                          <input type="date" value={schRecurStartDate} onChange={(e) => setSchRecurStartDate(e.target.value)} required style={{ width: '100%' }} />
-                        </div>
-                        <div className="form-group">
-                          <label>End Date *</label>
-                          <input type="date" value={schRecurEndDate} onChange={(e) => setSchRecurEndDate(e.target.value)} required style={{ width: '100%' }} />
-                        </div>
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
-                        <div className="form-group">
-                          <label>Start Time (Daily) *</label>
-                          <input type="time" value={schRecurStartTime} onChange={(e) => setSchRecurStartTime(e.target.value)} required style={{ width: '100%' }} />
-                        </div>
-                        <div className="form-group">
-                          <label>End Time (Daily) *</label>
-                          <input type="time" value={schRecurEndTime} onChange={(e) => setSchRecurEndTime(e.target.value)} required style={{ width: '100%' }} />
-                        </div>
-                      </div>
-
-                      <div className="form-group">
-                        <label style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 'bold' }}>Repeat Days *</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                          {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => {
-                            const isChecked = schRecurDays.includes(day);
-                            return (
-                              <label key={day} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem', background: isChecked ? 'rgba(15, 44, 89, 0.1)' : '#f7fafc', color: isChecked ? 'var(--primary-color)' : '#4a5568', padding: '0.35rem 0.6rem', borderRadius: '6px', border: isChecked ? '1px solid var(--primary-color)' : '1px solid #edf2f7', cursor: 'pointer', fontWeight: isChecked ? 'bold' : 'normal', transition: 'all 0.15s ease' }}>
-                                <input 
-                                  type="checkbox" 
-                                  checked={isChecked} 
-                                  onChange={() => {
-                                    if (isChecked) {
-                                      setSchRecurDays(prev => prev.filter(d => d !== day));
-                                    } else {
-                                      setSchRecurDays(prev => [...prev, day]);
-                                    }
-                                  }}
-                                  style={{ margin: 0 }}
-                                />
-                                {day.substring(0, 3)}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  <div className="form-group">
-                    <label>Meeting Join Link (e.g. Zoom/Meet)</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      <div>
-                        <small style={{ color: '#718096', display: 'block', marginBottom: '0.2rem' }}>First Half</small>
-                        <input type="url" value={schLink} onChange={(e) => setSchLink(e.target.value)} placeholder="https://zoom.us/j/..." style={{ width: '100%' }} />
-                      </div>
-                      <div>
-                        <small style={{ color: '#718096', display: 'block', marginBottom: '0.2rem' }}>Second Half (optional)</small>
-                        <input type="url" value={schLink2} onChange={(e) => setSchLink2(e.target.value)} placeholder="https://zoom.us/j/..." style={{ width: '100%' }} />
-                      </div>
-                    </div>
-                    <small style={{ color: '#a0aec0', display: 'block', marginTop: '0.4rem' }}>
-                      Splitting one paid Zoom link across two meetings? Add both here.
-                    </small>
+                  {/* Step 3: meeting link */}
+                  <div className="tsch-step">
+                    <div className="tsch-step-label"><span>3</span> Meeting link</div>
+                    <label className="tsch-field">
+                      <span>{schShowLink2 ? 'First half link' : 'Zoom / Google Meet link'}</span>
+                      <input type="url" value={schLink} onChange={(e) => setSchLink(e.target.value)} placeholder="https://zoom.us/j/..." />
+                    </label>
+                    {schShowLink2 ? (
+                      <label className="tsch-field">
+                        <span>Second half link</span>
+                        <input type="url" value={schLink2} onChange={(e) => setSchLink2(e.target.value)} placeholder="https://zoom.us/j/..." />
+                        <small className="tsch-hint">For splitting one class across two meetings (e.g. a 40-minute Zoom limit).</small>
+                      </label>
+                    ) : (
+                      <button type="button" className="tsch-link-btn" onClick={() => setSchShowLink2(true)}>+ Add a second link</button>
+                    )}
                   </div>
-                  <button type="submit" className="btn-primary" style={{ padding: '0.75rem' }}>Schedule Lecture</button>
+
+                  {summary && <div className="tsch-summary">{summary}</div>}
+                  <button type="submit" className="btn-primary tsch-submit">
+                    {schType === 'single' ? 'Schedule Class' : 'Schedule Classes'}
+                  </button>
                 </form>
               </div>
+                );
+              })()}
 
               {/* Right Column: Scheduled Lectures Grid */}
               <div className="dashboard-card" style={{ marginBottom: 0 }}>
@@ -996,8 +1070,9 @@ export default function TutorDashboard({ user }) {
                             <tr key={sch.id}>
                               <td style={{ fontWeight: 'bold' }}>{sch.title}</td>
                               <td>{sName}</td>
-                              <td>{new Date(sch.start_time).toLocaleString()}</td>
-                              <td>{new Date(sch.end_time).toLocaleTimeString()}</td>
+                              <td>{new Date(sch.start_time).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                              {/* Classes saved without an end time are assumed to last an hour */}
+                              <td>{new Date(sch.end_time || new Date(new Date(sch.start_time).getTime() + 3600000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
