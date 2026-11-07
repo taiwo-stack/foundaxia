@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import FormattedText, { stripFormatting } from '../components/FormattedText';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getCourses } from '../services/dataService';
 
@@ -116,7 +117,7 @@ export default function SubjectsPage() {
   const filteredSubjects = allCourses.filter(subject => {
     const matchesSearch =
       subject.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      subject.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      stripFormatting(subject.description).toLowerCase().includes(searchQuery.toLowerCase()) ||
       subject.skills.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesCategory =
@@ -475,9 +476,7 @@ export default function SubjectsPage() {
                       </h3>
 
                       {/* Description */}
-                      <p className="subject-card-desc">
-                        {subj.description}
-                      </p>
+                      <FormattedText className="subject-card-desc" text={subj.description} />
 
                       {/* Skills/Topics tags list */}
                       <div style={{ marginBottom: '2rem' }}>

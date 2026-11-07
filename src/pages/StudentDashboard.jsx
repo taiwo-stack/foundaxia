@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import FormattedText, { stripFormatting } from '../components/FormattedText';
 import { isPowerPointMaterial } from '../utils/slideMaterials';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
@@ -1102,7 +1103,7 @@ export default function StudentDashboard({ user, onLogout }) {
                         </div>
                         <div className="course-card-content-body">
                           <h3 className="course-card-title-heading">{c.title}</h3>
-                          <p className="course-card-description-text">{c.description || 'No description available.'}</p>
+                          <p className="course-card-description-text">{stripFormatting(c.description) || 'No description available.'}</p>
                           {courseTopicsCount > 0 && (
                             <span style={{ fontSize: '0.75rem', color: '#a0aec0', fontWeight: 600 }}>{courseTopicsCount} lesson{courseTopicsCount !== 1 ? 's' : ''}</span>
                           )}
@@ -1138,7 +1139,7 @@ export default function StudentDashboard({ user, onLogout }) {
                 {/* Course Header Details */}
                 <div className="dashboard-card">
                   <h2 style={{ fontSize: '1.5rem', color: 'var(--primary-color)', margin: '0 0 0.5rem 0' }}>{courses.find(c => c.id === selectedCourseId)?.title}</h2>
-                  <p style={{ color: '#4a5568', fontSize: '0.9rem', margin: 0 }}>{courses.find(c => c.id === selectedCourseId)?.description}</p>
+                  <FormattedText style={{ color: '#4a5568', fontSize: '0.9rem' }} text={courses.find(c => c.id === selectedCourseId)?.description} />
                 </div>
 
                 {/* Announcements Board */}

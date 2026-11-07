@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import RichTextArea from '../components/RichTextArea';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getStudents, getTutors, getContactMessages,
@@ -2998,7 +2999,7 @@ export default function AdminDashboard({ user, onLogout }) {
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Course Description</label>
-                <textarea value={editingCourse.description || ''} onChange={(e) => setEditingCourse(prev => ({ ...prev, description: e.target.value }))} rows={3}></textarea>
+                <RichTextArea value={editingCourse.description || ''} onChange={(v) => setEditingCourse(prev => ({ ...prev, description: v }))} rows={6} />
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Course Image</label>
@@ -3252,12 +3253,12 @@ export default function AdminDashboard({ user, onLogout }) {
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Course Description</label>
-                <textarea 
-                  value={newCourse.description} 
-                  onChange={(e) => setNewCourse(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Short overview of the syllabus..."
-                  rows={3}
-                ></textarea>
+                <RichTextArea
+                  value={newCourse.description}
+                  onChange={(v) => setNewCourse(prev => ({ ...prev, description: v }))}
+                  placeholder="Short overview of the syllabus... Use the toolbar for bold text and bullet points."
+                  rows={6}
+                />
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Course Image</label>
