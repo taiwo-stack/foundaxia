@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { stripFormatting } from '../components/FormattedText';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getTutors, updateTutor, updateBookingStatus, uploadAvatar,
@@ -1206,7 +1207,7 @@ export default function TutorDashboard({ user }) {
                           </div>
                           <div className="course-card-content-body">
                             <h3 className="course-card-title-heading" style={{ color: 'var(--primary-color)', margin: '0 0 0.5rem 0' }}>{c.title}</h3>
-                            <p className="course-card-description-text">{c.description || 'No description available.'}</p>
+                            <p className="course-card-description-text">{stripFormatting(c.description) || 'No description available.'}</p>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', borderTop: '1px solid #edf2f7', paddingTop: '0.75rem', fontSize: '0.75rem', color: '#718096', fontWeight: 600 }}>
                               <span>📚 {courseTopicsCount} Topic{courseTopicsCount !== 1 ? 's' : ''}</span>
                               <span>👥 {courseStudentsCount} Student{courseStudentsCount !== 1 ? 's' : ''}</span>
