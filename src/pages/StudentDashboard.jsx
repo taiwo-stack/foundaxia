@@ -296,8 +296,15 @@ export default function StudentDashboard({ user, onLogout }) {
     e.preventDefault();
     setSaving(true);
     try {
-      // Never allow email, password, or start_date to be updated from the student side
-      const { email, password, start_date, ...safeUpdates } = studentInfo;
+      // Send only the fields a student may edit. studentInfo also carries values the app
+      // computes (e.g. is_active) that aren't database columns - sending those made the
+      // whole save fail ("Could not find the 'is_active' column") - plus fields students
+      // must not change (email, start date, program...).
+      const STUDENT_EDITABLE = ['full_name', 'phone', 'date_of_birth', 'gender', 'special_needs', 'avatar_url'];
+      const safeUpdates = Object.fromEntries(
+        STUDENT_EDITABLE.filter(k => k in studentInfo).map(k => [k, studentInfo[k] === '' ? null : studentInfo[k]])
+      );
+      if (!safeUpdates.full_name) throw new Error('Please enter your full name.');
       await updateStudent(studentInfo.id, safeUpdates);
       setSavedStudentInfo(studentInfo);
       alert('Profile updated successfully!');
