@@ -1,4 +1,5 @@
 import { supabase, hasSupabaseConfig } from '../supabaseClient';
+import { compressImage } from '../utils/imageCompress';
 
 const initialMockUsers = [
   { id: 'admin_mock_id', email: 'admin@foundaxia.com', password: 'admin123', role: 'admin', full_name: 'Administrator' },
@@ -1018,6 +1019,28 @@ export const updateTopic = async (id, updates) => {
     }
     throw new Error('Topic not found');
   }
+};
+
+// Course cover image: compressed in the browser, stored in the public 'materials' bucket.
+export const uploadCourseImage = async (file) => {
+  if (!file?.type?.startsWith('image/')) throw new Error('Please choose an image file (JPG, PNG or WebP).');
+  if (file.size > 15 * 1024 * 1024) throw new Error('That image is too large (max 15MB).');
+  const small = await compressImage(file);
+  if (hasSupabaseConfig) {
+    const ext = (small.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `course_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase.storage
+      .from('materials')
+      .upload(path, small, { cacheControl: '31536000', upsert: false, contentType: small.type });
+    if (error) throw new Error('Image upload failed: ' + (error.message || error));
+    return supabase.storage.from('materials').getPublicUrl(path).data.publicUrl;
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read that image'));
+    reader.readAsDataURL(small);
+  });
 };
 
 // 3. Materials Upload & CRUD

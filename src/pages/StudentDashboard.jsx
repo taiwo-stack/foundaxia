@@ -1057,7 +1057,8 @@ export default function StudentDashboard({ user, onLogout }) {
                     const c = courses.find(co => co.id === en.course_id);
                     if (!c) return null;
                     const assignedTutor = tutors.find(t => t.id === en.tutor_id);
-                    const coverImg = getSpecialClassImage(c.title, courses.indexOf(c));
+                    // The admin's uploaded cover if there is one, otherwise a stock picture
+                    const coverImg = c.image_url || getSpecialClassImage(c.title, courses.indexOf(c));
                     const courseTopicsCount = topics.filter(t => t.course_id === c.id).length;
                     return (
                       <div
