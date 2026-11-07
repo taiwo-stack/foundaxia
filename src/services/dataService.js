@@ -383,6 +383,9 @@ export const updateStudent = async (id, updates) => {
   if (hasSupabaseConfig) {
     const { data, error } = await supabase.from('students').update(updates).eq('id', id).select();
     if (error) throw error;
+    // No row back means nothing was saved (e.g. not allowed to edit that record) -
+    // say so instead of reporting a success that didn't happen.
+    if (!data || data.length === 0) throw new Error("Your changes couldn't be saved. Please refresh and try again, or contact FoundaXia.");
     return data[0];
   } else {
     initLocalStorage();
@@ -817,7 +820,10 @@ export const createTutorAccount = async (email, password, tutorData) => {
   }
 };
 
-export const uploadAvatar = async (userId, file) => {
+export const uploadAvatar = async (userId, rawFile) => {
+  if (!rawFile?.type?.startsWith('image/')) throw new Error('Please choose an image file (JPG, PNG or WebP).');
+  // Phone photos are often 3-8MB; shrink before uploading (profile pictures show small).
+  const file = await compressImage(rawFile, { maxSize: 800, quality: 0.85 });
   if (hasSupabaseConfig) {
     try {
       const fileExt = file.name.split('.').pop();
