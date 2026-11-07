@@ -27,7 +27,7 @@
 -- Safe to run more than once. Runs in ONE transaction: if anything doesn't
 -- match, NOTHING is applied.
 --
--- Run in Supabase -> SQL Editor:
+-- Run in Supabase -> SQL Editor (select ALL of this file with Ctrl+A, copy, paste, Run):
 -- https://supabase.com/dashboard/project/wexqhlrhfostrpehknka/sql/new
 -- =============================================================
 
@@ -295,24 +295,4 @@ CREATE POLICY "Admins manage materials/avatars" ON storage.objects
 
 COMMIT;
 
--- =============================================================
--- EMERGENCY UNDO (only if the app breaks after running the above).
--- Re-opens the tables the way they were; the rules stay defined but inactive,
--- so re-securing later is just the ENABLE lines again. Copy, uncomment, run.
--- =============================================================
--- ALTER TABLE public.profiles DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.students DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.tutors DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.bookings DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.contact_messages DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.course_materials DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.student_courses DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.tasks DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.student_tasks DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.schedules DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.attendance DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.course_announcements DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.chat_messages DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.live_sessions DISABLE ROW LEVEL SECURITY;
--- ALTER TABLE public.push_subscriptions DISABLE ROW LEVEL SECURITY;
--- (catalogue tables and Parent Area tables can stay secured either way)
+-- Emergency undo (only if the app breaks): see secure_database_undo.sql
