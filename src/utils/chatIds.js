@@ -9,6 +9,9 @@ export const personIds = (...people) => {
     else {
       if (p.id) ids.add(String(p.id));
       if (p.profile_id) ids.add(String(p.profile_id));
+      // A contact that stands for several accounts (e.g. every admin, shown to students
+      // as one "FoundaXia Admin" contact) lists the others in extra_ids.
+      if (Array.isArray(p.extra_ids)) p.extra_ids.forEach(x => x != null && ids.add(String(x)));
     }
   }
   return ids;

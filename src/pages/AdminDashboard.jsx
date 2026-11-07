@@ -12,15 +12,16 @@ import {
   getStudentCourses, enrollStudentInCourse, unenrollStudentFromCourse, updateStudentEnrollment,
   getTasks, saveTask, deleteTask,
   getSchedules, saveSchedule, deleteSchedule,
-  getChatMessages, createLiveSession
+  getChatMessages, createLiveSession, getAdminContacts
 } from '../services/dataService';
 import { 
   Users, Calendar, UserCheck, Mail, Plus, Trash2, AlertCircle, Layers, X,
   BookOpen, BookOpenCheck, Paperclip, Clock,
   ArrowUp, ArrowDown, Edit, MessageSquare, MonitorPlay,
   Eye, EyeOff, RefreshCw, Upload, Image as ImageIcon,
-  Lock, User as UserIcon, Award, Star, UserPlus
+  Lock, User as UserIcon, Award, Star, UserPlus, Inbox
 } from 'lucide-react';
+import AdminInbox from '../components/AdminInbox';
 import ParentFeesModal from '../components/ParentFeesModal';
 import CourseImageField from '../components/CourseImageField';
 import MobileMenuSheet from '../components/MobileMenuSheet';
@@ -88,6 +89,7 @@ export default function AdminDashboard({ user, onLogout }) {
 
   // Chat Monitor State
   const [allChatMessages, setAllChatMessages] = useState([]);
+  const [adminIds, setAdminIds] = useState([]); // all admin accounts share the student inbox
   const [chatMonitorTutor, setChatMonitorTutor] = useState('');
   const [chatMonitorStudent, setChatMonitorStudent] = useState('');
 
@@ -240,6 +242,7 @@ export default function AdminDashboard({ user, onLogout }) {
       setTasks(tkData);
       setSchedules(schData);
       setAllChatMessages(chatData);
+      getAdminContacts().then(list => setAdminIds(list.map(a => String(a.id)))).catch(err => console.error('Failed to load admin accounts:', err));
       setCategories(catData);
 
       if (cData.length > 0) setSelectedCourseId(cData[0].id);
@@ -254,9 +257,9 @@ export default function AdminDashboard({ user, onLogout }) {
     loadAllData();
   }, []);
 
-  // While the Chat Monitor tab is open, poll for new messages every 10s and merge them in
+  // While Chat Monitor or Student Messages is open, poll for new messages every 10s and merge them in
   useEffect(() => {
-    if (activeTab !== 'chatmonitor') return undefined;
+    if (activeTab !== 'chatmonitor' && activeTab !== 'messages') return undefined;
     let cancelled = false;
     const poll = async () => {
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -1070,6 +1073,10 @@ export default function AdminDashboard({ user, onLogout }) {
   const totalStudents = students.length;
   const totalTutors = tutors.length;
 
+  // Unread messages students sent to any admin account (Student Messages badge)
+  const adminIdSet = new Set([String(user?.id || ''), ...adminIds]);
+  const adminUnread = allChatMessages.filter(m => adminIdSet.has(String(m.receiver_id)) && !adminIdSet.has(String(m.sender_id)) && !m.read).length;
+
   if (loading) {
     return (
       <div className="dashboard-container">
@@ -1117,6 +1124,12 @@ export default function AdminDashboard({ user, onLogout }) {
           <li className={`sidebar-item ${activeTab === 'inquiries' ? 'active' : ''}`}>
             <button onClick={() => setActiveTab('inquiries')}><Mail size={18} /> Inquiries</button>
           </li>
+          <li className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`}>
+            <button onClick={() => setActiveTab('messages')} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+              <Inbox size={18} /> Student Messages
+              {adminUnread > 0 && <span className="st-unread-dot" style={{ marginLeft: 'auto' }}>{adminUnread}</span>}
+            </button>
+          </li>
           <li className={`sidebar-item ${activeTab === 'chatmonitor' ? 'active' : ''}`}>
             <button onClick={() => setActiveTab('chatmonitor')}><MessageSquare size={18} /> Chat Monitor</button>
           </li>
@@ -1140,6 +1153,7 @@ export default function AdminDashboard({ user, onLogout }) {
           { key: 'enrollments', label: 'Enrollments', Icon: BookOpenCheck },
           { key: 'schedules', label: 'Schedules', Icon: Clock },
           { key: 'inquiries', label: 'Inquiries', Icon: Mail },
+          { key: 'messages', label: 'Messages', Icon: Inbox, badge: adminUnread },
           { key: 'chatmonitor', label: 'Chat Monitor', Icon: MessageSquare },
           { key: 'whiteboard', label: 'Live Whiteboard', Icon: MonitorPlay, accent: true, onClick: () => setShowStartSessionModal(true) }
         ]}
@@ -2273,6 +2287,16 @@ export default function AdminDashboard({ user, onLogout }) {
         )}
 
         {/* Chat Monitor Tab */}
+        {activeTab === 'messages' && (
+          <AdminInbox
+            user={user}
+            adminIds={adminIds}
+            students={students}
+            messages={allChatMessages}
+            setMessages={setAllChatMessages}
+          />
+        )}
+
         {activeTab === 'chatmonitor' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1.5rem', height: '720px' }}>

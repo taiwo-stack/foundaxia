@@ -102,6 +102,21 @@
   background: white;
 }
 
+/* Unread count bubble (student + admin chat lists, admin menu) */
+.st-unread-dot {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #25d366;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 /* Row action buttons wrap instead of being cut off at the table edge */
 .dashboard-table .btn-action-group { flex-wrap: wrap; }
 

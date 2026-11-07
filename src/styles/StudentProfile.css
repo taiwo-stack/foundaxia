@@ -416,3 +416,7 @@
   .st-page-head h1 { font-size: 1.3rem; }
   .st-page-head p { font-size: 0.85rem; }
 }
+
+/* Chat: pinned FoundaXia Admin contact */
+.st-admin-contact { border-bottom: 1px solid #e9edef; }
+.st-admin-avatar { background: var(--accent-color) !important; color: white !important; font-size: 0.8rem !important; font-weight: 800; }

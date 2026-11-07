@@ -6,7 +6,7 @@ import {
   getTasksForStudent, submitQuiz, getStudentTasks, submitStudentTask,
   getSchedules, getAttendance,
   getAnnouncements,
-  getChatMessages, sendChatMessage, markMessagesRead,
+  getChatMessages, sendChatMessage, markMessagesRead, getAdminContacts,
   getLiveSessionsForStudent
 } from '../services/dataService';
 import {
@@ -125,6 +125,7 @@ export default function StudentDashboard({ user, onLogout }) {
   const [chatMessages, setChatMessages] = useState([]);
   const chatScrollRef = useRef(null);
   const [activeTutorChat, setActiveTutorChat] = useState(null);
+  const [adminContacts, setAdminContacts] = useState([]); // every student can message the admins
   const [chatInput, setChatInput] = useState('');
 
   // Load dynamically based on logged-in student details
@@ -209,6 +210,7 @@ export default function StudentDashboard({ user, onLogout }) {
       setAttendanceLogs(attList.filter(isMine));
       setAnnouncements(annList);
       setChatMessages(msgList);
+      safe(getAdminContacts(), 'admin contacts').then(setAdminContacts);
 
       // Do NOT auto-select a course on load — let student pick from card grid
       // if (studEnroll.length > 0) setSelectedCourseId(studEnroll[0].course_id);
@@ -457,6 +459,16 @@ export default function StudentDashboard({ user, onLogout }) {
     });
     return contacts;
   })();
+  // "FoundaXia Admin": one contact for all admin accounts. Messages go to the first
+  // admin; replies from any admin show up in the same conversation.
+  const adminContact = adminContacts.length > 0 ? {
+    id: String(adminContacts[0].id),
+    profile_id: String(adminContacts[0].id),
+    full_name: 'FoundaXia Admin',
+    is_admin: true,
+    extra_ids: adminContacts.map(a => String(a.id))
+  } : null;
+
   const todayStr = now.toDateString();
 
   // Today's classes (all scheduled classes for today)
@@ -589,7 +601,7 @@ export default function StudentDashboard({ user, onLogout }) {
             <button title={sidebarCollapsed ? 'Timetable' : undefined} onClick={() => { setActiveTab('timetable'); setSidebarOpen(false); }}><Clock size={18} /> <span className="sidebar-label">Timetable</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'chat' ? 'active' : ''}`}>
-            <button title={sidebarCollapsed ? 'Tutor Chat' : undefined} onClick={() => { setActiveTab('chat'); setSidebarOpen(false); }}><MessageSquare size={18} /> <span className="sidebar-label">Tutor Chat</span></button>
+            <button title={sidebarCollapsed ? 'Messages' : undefined} onClick={() => { setActiveTab('chat'); setSidebarOpen(false); }}><MessageSquare size={18} /> <span className="sidebar-label">Messages</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'homework' ? 'active' : ''}`}>
             <button title={sidebarCollapsed ? 'Tasks & Grades' : undefined} onClick={() => { setActiveTab('homework'); setSidebarOpen(false); }}><CheckSquare size={18} /> <span className="sidebar-label">Tasks & Grades</span></button>
@@ -615,7 +627,7 @@ export default function StudentDashboard({ user, onLogout }) {
           { key: 'courses', label: 'My Courses', Icon: BookOpen },
           { key: 'timetable', label: 'Timetable', Icon: Clock },
           {
-            key: 'chat', label: 'Tutor Chat', Icon: MessageSquare,
+            key: 'chat', label: 'Messages', Icon: MessageSquare,
             badge: chatMessages.filter(m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read).length
           },
           { key: 'homework', label: 'Tasks & Grades', Icon: CheckSquare },
@@ -635,7 +647,7 @@ export default function StudentDashboard({ user, onLogout }) {
           const PAGE_INFO = {
             courses: ['My Courses', 'Open a course to see its lessons, materials and quizzes.'],
             timetable: ['Timetable', 'Your upcoming classes, join links and attendance.'],
-            chat: ['Tutor Chat', 'Message your tutors directly.'],
+            chat: ['Messages', 'Chat with FoundaXia Admin and your tutors.'],
             homework: ['Tasks & Grades', 'Homework and quizzes from your tutors, and your results.'],
             bookings: ['Consultations', 'Book a consultation and keep track of your appointments.']
           };
@@ -1451,10 +1463,33 @@ export default function StudentDashboard({ user, onLogout }) {
             {/* Contacts Sidebar Pane */}
             <div className={`whatsapp-contacts-sidebar ${activeTutorChat && mobileChatView === 'chat' ? 'mobile-hidden' : ''}`}>
               <div className="whatsapp-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <h3>Your Tutors</h3>
+                <h3>Messages</h3>
                 <NotificationToggle userId={studentInfo?.profile_id || studentInfo?.id || studentId} />
               </div>
               <ul className="whatsapp-contacts-list">
+                {adminContact && (() => {
+                  const threadMessages = chatMessages.filter(m => inThread(m, personIds(studentInfo, studentId), personIds(adminContact)));
+                  const lastMsg = threadMessages[threadMessages.length - 1];
+                  const unread = threadMessages.filter(m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read).length;
+                  return (
+                    <li
+                      key="admin"
+                      className={`whatsapp-contact-item st-admin-contact ${activeTutorChat?.is_admin ? 'active' : ''}`}
+                      onClick={() => { setActiveTutorChat(adminContact); setMobileChatView('chat'); }}
+                    >
+                      <div className="whatsapp-avatar st-admin-avatar">FX</div>
+                      <div className="whatsapp-contact-info">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                          <div className="whatsapp-contact-name">FoundaXia Admin</div>
+                          {unread > 0
+                            ? <span className="st-unread-dot">{unread}</span>
+                            : lastMsg && <span style={{ fontSize: '0.7rem', color: '#8696a0' }}>{formatMessageTime(lastMsg.created_at)}</span>}
+                        </div>
+                        <div className="whatsapp-contact-status">{lastMsg ? lastMsg.message_text : 'Questions about classes, fees or your account'}</div>
+                      </div>
+                    </li>
+                  );
+                })()}
                 {chatEnrollments.map(en => {
                   const t = en.tutor;
                   const c = courses.find(co => co.id === en.course_id);
@@ -1488,8 +1523,7 @@ export default function StudentDashboard({ user, onLogout }) {
                   );
                 })}
                 {chatEnrollments.length === 0 && (
-                  <div style={{ padding: '2rem 1.25rem', textAlign: 'center', color: '#8696a0', fontSize: '0.9rem', lineHeight: 1.5 }}>
-                    <strong style={{ display: 'block', color: '#4a5568', marginBottom: '0.3rem' }}>No tutors to chat with yet</strong>
+                  <div style={{ padding: '1.25rem', textAlign: 'center', color: '#8696a0', fontSize: '0.85rem', lineHeight: 1.5 }}>
                     Your tutors will appear here once you're assigned to a class.
                   </div>
                 )}
@@ -1510,12 +1544,12 @@ export default function StudentDashboard({ user, onLogout }) {
                         <ChevronLeft size={20} />
                       </button>
                       <div className="whatsapp-avatar" style={{ width: '40px', height: '40px', fontSize: '0.95rem' }}>
-                        {activeTutorChat.full_name ? activeTutorChat.full_name[0] : 'T'}
+                        {activeTutorChat.is_admin ? 'FX' : (activeTutorChat.full_name ? activeTutorChat.full_name[0] : 'T')}
                       </div>
                       <div className="whatsapp-header-details">
                         <div className="whatsapp-header-name">{activeTutorChat.full_name}</div>
                         <div className="whatsapp-header-status">
-                          <span className="whatsapp-header-status-dot"></span> Active Specialist
+                          <span className="whatsapp-header-status-dot"></span> {activeTutorChat.is_admin ? 'School office' : 'Tutor'}
                         </div>
                       </div>
                     </div>
@@ -1561,7 +1595,7 @@ export default function StudentDashboard({ user, onLogout }) {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#8696a0', padding: '2rem', textAlign: 'center' }}>
                   <div style={{ fontSize: '4.5rem', marginBottom: '1rem' }}>💬</div>
                   <h3 style={{ color: '#54656f', fontSize: '1.25rem', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)' }}>Academic Messaging</h3>
-                  <p style={{ fontSize: '0.88rem', maxWidth: '320px', margin: '0 auto', lineHeight: '1.5' }}>Choose a tutor from the contacts list to review message logs or send text notes directly.</p>
+                  <p style={{ fontSize: '0.88rem', maxWidth: '320px', margin: '0 auto', lineHeight: '1.5' }}>Choose FoundaXia Admin or one of your tutors to start a conversation.</p>
                 </div>
               )}
             </div>
