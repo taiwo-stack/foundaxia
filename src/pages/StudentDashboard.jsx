@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { isPowerPointMaterial } from '../utils/slideMaterials';
 import {
   getBookings, getStudents, updateStudent, updateBookingStatus, uploadAvatar,
   getStudentCourses, getCourses, getTutors, getCourseTutors,
@@ -1193,10 +1194,11 @@ export default function StudentDashboard({ user, onLogout }) {
                                   const isPdf = type === 'pdf' || /\.pdf$/i.test(m.file_url || '');
                                   const isVideo = type === 'video' || /\.(mp4|webm|mov|avi)$/i.test(m.file_url || '');
                                   const isDoc = type === 'doc' || type === 'docx' || /\.(doc|docx)$/i.test(m.file_url || '');
-                                  const isHtmlSlide = type === 'html_slide';
+                                  const isPowerPoint = isPowerPointMaterial(m);
+                                  const isHtmlSlide = type === 'html_slide' || isPowerPoint;
 
-                                  const fileIcon = isHtmlSlide ? '🖥️' : isImage ? '🖼️' : isPdf ? '📄' : isVideo ? '🎬' : isDoc ? '📝' : '📎';
-                                  const typeLabel = isHtmlSlide ? 'Slide' : isImage ? 'Image' : isPdf ? 'PDF' : isVideo ? 'Video' : isDoc ? 'Document' : 'File';
+                                  const fileIcon = isPowerPoint ? '📊' : isHtmlSlide ? '🖥️' : isImage ? '🖼️' : isPdf ? '📄' : isVideo ? '🎬' : isDoc ? '📝' : '📎';
+                                  const typeLabel = isPowerPoint ? 'PowerPoint' : isHtmlSlide ? 'Slide' : isImage ? 'Image' : isPdf ? 'PDF' : isVideo ? 'Video' : isDoc ? 'Document' : 'File';
 
                                   return (
                                     <div key={m.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>

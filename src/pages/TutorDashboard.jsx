@@ -20,7 +20,7 @@ import {
 import ParentNoteModal from '../components/ParentNoteModal';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import NotificationToggle from '../components/NotificationToggle';
-import { convertPptxToSlideHtml } from '../utils/pptxConverter';
+import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../utils/slideMaterials';
 import '../styles/Dashboard.css';
 import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
@@ -1240,31 +1240,29 @@ export default function TutorDashboard({ user }) {
                   e.preventDefault();
                   if (!newMaterialTitle.trim() || !materialFile || !activeTopicIdToUse) return;
 
-                  const isPptx = /\.pptx$/i.test(materialFile.name);
-                  const isHtmlSlide = isPptx || materialFile.type === 'text/html' || /\.html?$/i.test(materialFile.name);
-                  if (!isPptx && isHtmlSlide && materialFile.size > 15 * 1024 * 1024) {
+                  const isPptx = isPowerPointName(materialFile.name);
+                  const isHtmlSlide = materialFile.type === 'text/html' || /\.html?$/i.test(materialFile.name);
+                  if (isHtmlSlide && materialFile.size > 15 * 1024 * 1024) {
                     return alert('HTML slide files must be under 15MB.');
+                  }
+                  if (isPptx && materialFile.size > POWERPOINT_MAX_BYTES) {
+                    return alert('PowerPoint files must be under 10MB to be shown online. In PowerPoint, use File > Compress Pictures, then upload again.');
                   }
 
                   setUploadingMaterial(true);
                   try {
-                    let fileToUpload = materialFile;
-                    if (isPptx) {
-                      const html = await convertPptxToSlideHtml(materialFile, newMaterialTitle.trim());
-                      fileToUpload = new File([html], materialFile.name.replace(/\.pptx$/i, '.html'), { type: 'text/html' });
-                    }
-                    const fileUrl = await uploadMaterialFile(fileToUpload.name, fileToUpload);
+                    const fileUrl = await uploadMaterialFile(materialFile.name, materialFile);
                     const saved = await saveMaterial({
                       course_id: selectedCourseId,
                       topic_id: activeTopicIdToUse,
                       title: newMaterialTitle.trim(),
                       file_url: fileUrl,
-                      file_type: isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile)
+                      file_type: isPptx ? 'powerpoint' : isHtmlSlide ? 'html_slide' : getMaterialFileType(materialFile)
                     });
                     setMaterials(prev => [...prev, saved]);
                     setNewMaterialTitle('');
                     setMaterialFile(null);
-                    alert(isPptx ? 'PowerPoint converted to a slide deck and uploaded!' : 'Material file uploaded successfully!');
+                    alert(isPptx ? 'PowerPoint uploaded! It opens just like in PowerPoint.' : 'Material file uploaded successfully!');
                   } catch (err) {
                     alert('Failed to upload material: ' + err.message);
                   } finally {
@@ -1356,7 +1354,7 @@ export default function TutorDashboard({ user }) {
                                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 1.5rem 0', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                                   {materials.filter(m => m.topic_id === activeTopicIdToUse).map(m => (
                                     <li key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '0.5rem 0.85rem', borderRadius: '8px', border: '1px solid #edf2f7' }}>
-                                      {m.file_type === 'html_slide' ? (
+                                      {isSlideMaterial(m) ? (
                                         <button onClick={() => setViewingSlide(m)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--primary-color)', fontWeight: '600', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
                                           🖥️ {m.title}
                                         </button>
@@ -1375,7 +1373,7 @@ export default function TutorDashboard({ user }) {
                               <form onSubmit={handleMaterialUpload} style={{ borderTop: '1px dashed #e2e8f0', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                                 <div>
                                   <div style={{ fontWeight: '600', fontSize: '0.82rem', color: '#4a5568' }}>Upload Lesson File</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#a0aec0' }}>PowerPoint (.pptx) files are automatically converted into an interactive slide deck.</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#a0aec0' }}>PowerPoint files (.pptx, under 10MB) open exactly like PowerPoint and can be attached to the whiteboard.</div>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                                   <div className="form-group" style={{ marginBottom: 0 }}>

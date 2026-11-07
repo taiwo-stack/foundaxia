@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { isSlideMaterial } from '../utils/slideMaterials';
 import { useNavigate } from 'react-router-dom';
 import { ZoomIn, ZoomOut, Maximize, Trash2, ChevronLeft, ChevronRight, ChevronDown, Image as ImageIcon, MonitorPlay } from 'lucide-react';
 import { supabase, hasSupabaseConfig } from '../supabaseClient';
@@ -382,7 +383,7 @@ function WhiteboardBoard({ user }) {
     (async () => {
       try {
         const [allMaterials, courseTutors] = await Promise.all([getMaterials(), getCourseTutors()]);
-        const htmlSlides = allMaterials.filter(m => m.file_type === 'html_slide');
+        const htmlSlides = allMaterials.filter(isSlideMaterial);
         if (user?.role === 'admin') {
           setSlideMaterials(htmlSlides);
         } else {

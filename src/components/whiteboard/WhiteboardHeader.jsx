@@ -1,4 +1,5 @@
 import React from 'react';
+import { isPowerPointMaterial } from '../../utils/slideMaterials';
 import {
   ChevronLeft,
   Undo2,
@@ -137,7 +138,7 @@ export default function WhiteboardHeader({
                 borderColor: 'rgba(129, 140, 248, 0.3)'
               }}
               onClick={() => setShowSlidePicker(prev => !prev)}
-              data-tooltip="Attach an HTML teaching slide to this page"
+              data-tooltip="Attach an HTML slide or PowerPoint to this page"
             >
               <Presentation size={16} />
               <span>{currentSlideUrl ? 'Change Slide' : 'Attach Slide'}</span>
@@ -152,7 +153,7 @@ export default function WhiteboardHeader({
               }}>
                 {slideMaterials.length === 0 ? (
                   <div style={{ color: '#94a3b8', fontSize: '0.78rem', padding: '0.5rem' }}>
-                    No HTML slides uploaded yet. Upload one from your Course Materials first.
+                    No slides uploaded yet. Upload an HTML slide or a PowerPoint from your Course Materials first.
                   </div>
                 ) : (
                   slideMaterials.map(m => (
@@ -166,7 +167,7 @@ export default function WhiteboardHeader({
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'none'}
                     >
-                      🖥️ {m.title}
+                      {isPowerPointMaterial(m) ? '📊' : '🖥️'} {m.title}
                     </button>
                   ))
                 )}
