@@ -1601,6 +1601,19 @@ export const getChatMessages = async () => {
   }
 };
 
+// Admin accounts, oldest first. Every student can message the school office (admins),
+// not just their assigned tutors; chat_messages.receiver_id must be a real profile id.
+export const getAdminContacts = async () => {
+  if (hasSupabaseConfig) {
+    const { data, error } = await supabase
+      .from('profiles').select('id, full_name, created_at').eq('role', 'admin').order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  initLocalStorage();
+  return JSON.parse(localStorage.getItem('lc_users')).filter(u => u.role === 'admin').map(u => ({ id: u.id, full_name: u.full_name }));
+};
+
 export const sendChatMessage = async (msg) => {
   const { sender_name: _senderName, ...dbMsg } = msg; // display-only field, not a DB column
   const chatMessageId = 'ch_' + crypto.randomUUID();
