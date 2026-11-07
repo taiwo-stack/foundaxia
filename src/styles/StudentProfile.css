@@ -320,3 +320,97 @@
   .sp-savebar { flex-direction: column; align-items: stretch; text-align: center; padding: 0.75rem; }
   .sp-savebar-actions > * { flex: 1; justify-content: center; }
 }
+
+/* ============================================================
+   Student pages: shared UI pieces (page titles, empty states,
+   attendance ring, task filters)
+   ============================================================ */
+.st-page-head { margin: 0 0 1.25rem; }
+.st-page-head h1 {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-heading);
+  font-size: 1.55rem;
+  color: white;
+}
+.st-page-head p { margin: 0; font-size: 0.9rem; color: rgba(255, 255, 255, 0.7); }
+
+.st-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  background: white;
+  border-radius: 20px;
+  color: #a0aec0;
+  margin-bottom: 1.25rem;
+}
+.st-empty strong { color: var(--text-dark); font-size: 1rem; margin-top: 0.35rem; }
+.st-empty span { font-size: 0.88rem; max-width: 420px; line-height: 1.5; }
+.st-empty-flat { background: transparent; padding: 1.75rem 1rem; margin: 0; }
+
+.st-attendance-ring {
+  --pct: 0;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent-color) calc(var(--pct) * 1%), #edf2f7 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.st-attendance-ring span {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--primary-color);
+}
+
+.st-filter-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.st-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 999px;
+  background: white;
+  color: #4a5568;
+  font-weight: 700;
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.st-chip b { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: #edf2f7; color: #4a5568; }
+.st-chip.has-todo b { background: #fef3c7; color: #92400e; }
+.st-chip.is-active { background: var(--primary-color); border-color: var(--primary-color); color: white; }
+.st-chip.is-active b { background: rgba(255, 255, 255, 0.2); color: white; }
+
+.st-task-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+.st-task {
+  padding: 1rem;
+  border: 1px solid #edf2f7;
+  border-left: 4px solid #f59f00;
+  border-radius: 12px;
+  background: #fcfdfe;
+}
+.st-task.is-submitted { border-left-color: #0ea5e9; }
+.st-task.is-graded { border-left-color: #10b981; }
+.st-task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.35rem; }
+.st-task-title { min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.st-task-title strong { font-size: 0.95rem; color: var(--text-dark); overflow-wrap: anywhere; }
+.st-task-title span { font-size: 0.78rem; color: #718096; }
+.st-task-badge { flex-shrink: 0; white-space: nowrap; }
+.st-task-desc { font-size: 0.86rem; color: #4a5568; margin: 0.35rem 0 0; line-height: 1.5; }
+
+@media (max-width: 800px) {
+  .st-page-head h1 { font-size: 1.3rem; }
+  .st-page-head p { font-size: 0.85rem; }
+}

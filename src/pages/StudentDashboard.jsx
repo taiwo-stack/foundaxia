@@ -103,6 +103,7 @@ export default function StudentDashboard({ user, onLogout }) {
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [historyFilter, setHistoryFilter] = useState('all');
   const [historyLimit, setHistoryLimit] = useState(10);
+  const [taskFilter, setTaskFilter] = useState('all'); // Tasks & Grades: all | todo | submitted | graded
   const [announcements, setAnnouncements] = useState([]);
 
   // Active LMS states
@@ -396,7 +397,7 @@ export default function StudentDashboard({ user, onLogout }) {
   const attendedCount = attendanceLogs.filter(a => a.status === 'attended').length;
   const missedCount = attendanceLogs.filter(a => a.status === 'missed').length;
   const totalClasses = attendedCount + missedCount;
-  const attendanceRate = totalClasses > 0 ? Math.round((attendedCount / totalClasses) * 100) : 100;
+  const attendanceRate = totalClasses > 0 ? Math.round((attendedCount / totalClasses) * 100) : null; // null = nothing marked yet
 
   // Next Incoming & Today's classes
   const now = new Date();
@@ -406,8 +407,11 @@ export default function StudentDashboard({ user, onLogout }) {
     ? new Date(sch.end_time)
     : new Date(new Date(sch.start_time).getTime() + 60 * 60 * 1000);
   const enrolledCourseIds = new Set(enrollments.map(en => en.course_id));
-  const courseTitleOf = (id) => courses.find(c => c.id === id)?.title || 'Course';
-  const tutorNameOf = (id) => tutors.find(t => t.id === id || t.profile_id === id)?.full_name || 'Tutor';
+  // Empty string when unknown, so the UI can leave the name out instead of showing a
+  // placeholder like "Course · Tutor" that looks like broken data.
+  const courseTitleOf = (id) => courses.find(c => c.id === id)?.title || '';
+  const tutorNameOf = (id) => tutors.find(t => t.id === id || t.profile_id === id)?.full_name || '';
+  const joinMeta = (...parts) => parts.filter(Boolean).join(' · ');
   const fmtDay = (d) => d.toLocaleDateString([], {
     weekday: 'short', day: 'numeric', month: 'short',
     ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {})
@@ -619,6 +623,24 @@ export default function StudentDashboard({ user, onLogout }) {
       />
 
       <main className="dashboard-main" ref={mainRef}>
+        {/* Page title for each section, so it's always clear where you are */}
+        {(() => {
+          const PAGE_INFO = {
+            courses: ['My Courses', 'Open a course to see its lessons, materials and quizzes.'],
+            timetable: ['Timetable', 'Your upcoming classes, join links and attendance.'],
+            chat: ['Tutor Chat', 'Message your tutors directly.'],
+            homework: ['Tasks & Grades', 'Homework and quizzes from your tutors, and your results.'],
+            bookings: ['Consultations', 'Book a consultation and keep track of your appointments.']
+          };
+          const info = PAGE_INFO[activeTab];
+          if (!info || (activeTab === 'courses' && selectedCourseId)) return null;
+          return (
+            <div className="st-page-head">
+              <h1>{info[0]}</h1>
+              <p>{info[1]}</p>
+            </div>
+          );
+        })()}
 
         {/* Live Whiteboard Session Invite Banner - shown on every tab while active */}
         {liveSessions.length > 0 && liveSessions.map(session => (
@@ -688,12 +710,16 @@ export default function StudentDashboard({ user, onLogout }) {
               {[
                 { label: 'Courses Enrolled', value: enrollments.length, icon: '📚', color: '#4c6ef5', tab: 'courses' },
                 { label: 'Upcoming Classes', value: schedules.filter(s => classEnd(s) >= now).length, icon: '📅', color: '#12b886', tab: 'timetable' },
-                { label: 'Attendance Rate', value: `${attendanceRate}%`, icon: '📊', color: '#3b82f6', tab: 'timetable' },
+                { label: 'Attendance Rate', value: attendanceRate === null ? '—' : `${attendanceRate}%`, icon: '📊', color: '#3b82f6', tab: 'timetable' },
                 { label: 'Pending Tasks', value: activeStudentTasks.filter(t => !submissions.find(s => s.task_id === t.id)).length, icon: '✏️', color: '#f59f00', tab: 'homework' },
               ].map(stat => (
                 <div
-                  key={stat.tab}
+                  key={stat.label}
+                  role="button"
+                  tabIndex={0}
+                  title={`Open ${stat.label}`}
                   onClick={() => setActiveTab(stat.tab)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveTab(stat.tab); } }}
                   className="dashboard-stat-card"
                   style={{ borderLeft: `4px solid ${stat.color}` }}
                 >
@@ -718,7 +744,7 @@ export default function StudentDashboard({ user, onLogout }) {
                     <Clock size={19} /> Next Incoming Class
                   </h3>
                   {nextClass ? (() => {
-                    const cTitle = courses.find(c => c.id === nextClass.course_id)?.title || 'Course';
+                    const cTitle = courseTitleOf(nextClass.course_id);
                     const tName = tutorNameOf(nextClass.tutor_id);
                     const classTime = new Date(nextClass.start_time);
 
@@ -727,9 +753,13 @@ export default function StudentDashboard({ user, onLogout }) {
                         <div style={{ fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-dark)', marginBottom: '0.25rem' }}>
                           {nextClass.title}
                         </div>
-                        <div style={{ fontSize: '0.88rem', color: '#4a5568', marginBottom: '0.75rem' }}>
-                          Subject: <strong style={{ color: 'var(--primary-color)' }}>{cTitle}</strong> &bull; Tutor: <strong>{tName}</strong>
-                        </div>
+                        {(cTitle || tName) && (
+                          <div style={{ fontSize: '0.88rem', color: '#4a5568', marginBottom: '0.75rem' }}>
+                            {cTitle && <>Subject: <strong style={{ color: 'var(--primary-color)' }}>{cTitle}</strong></>}
+                            {cTitle && tName && <> &bull; </>}
+                            {tName && <>Tutor: <strong>{tName}</strong></>}
+                          </div>
+                        )}
 
                         <div style={{
                           background: '#f0fdf4',
@@ -823,7 +853,7 @@ export default function StudentDashboard({ user, onLogout }) {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                       {todayClasses.map(sch => {
-                        const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
+                        const cTitle = courseTitleOf(sch.course_id);
                         const tName = tutorNameOf(sch.tutor_id);
                         const classTime = new Date(sch.start_time);
                         const isPast = classEnd(sch) < now;
@@ -843,9 +873,11 @@ export default function StudentDashboard({ user, onLogout }) {
                               <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-dark)' }}>
                                 {sch.title} {isPast && <span style={{ fontSize: '0.75rem', color: '#718096', fontWeight: 'normal' }}>(Ended)</span>}
                               </div>
-                              <div style={{ fontSize: '0.8rem', color: '#4a5568', marginTop: '0.15rem' }}>
-                                {cTitle} &bull; {tName}
-                              </div>
+                              {joinMeta(cTitle, tName) && (
+                                <div style={{ fontSize: '0.8rem', color: '#4a5568', marginTop: '0.15rem' }}>
+                                  {joinMeta(cTitle, tName)}
+                                </div>
+                              )}
                               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary-color)', marginTop: '0.25rem' }}>
                                 ⏰ {classTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </div>
@@ -1005,12 +1037,21 @@ export default function StudentDashboard({ user, onLogout }) {
         {activeTab === 'courses' && (
           <div>
             {enrollments.length === 0 ? (
-              <div style={{ padding: '2rem', background: 'white', borderRadius: '15px', color: '#a0aec0', textAlign: 'center' }}>You are not currently enrolled in any classes. Contact the administrator to assign you.</div>
+              <div className="st-empty">
+                <BookOpen size={30} />
+                <strong>No courses yet</strong>
+                <span>You're not enrolled in any classes yet. FoundaXia will add your courses here once they're assigned.</span>
+              </div>
             ) : selectedCourseId === null ? (
               /* ── STATE 1: Course Grid List ── */
               <div>
-                <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary-color)', marginBottom: '0.4rem' }}>My Courses</h2>
-                <p style={{ color: '#718096', fontSize: '0.88rem', marginBottom: '1.5rem', marginTop: 0 }}>Select a course below to view its full content and materials.</p>
+                {!enrollments.some(en => courses.some(co => co.id === en.course_id)) && (
+                  <div className="st-empty">
+                    <BookOpen size={30} />
+                    <strong>Your courses are being set up</strong>
+                    <span>You're enrolled, but the course details aren't available yet. Please check back soon or message your tutor.</span>
+                  </div>
+                )}
                 <div className="courses-dashboard-grid">
                   {enrollments.map(en => {
                     const c = courses.find(co => co.id === en.course_id);
@@ -1267,10 +1308,14 @@ export default function StudentDashboard({ user, onLogout }) {
               <div className="dashboard-card" style={{ textAlign: 'center', padding: '2rem' }}>
                 <h3 style={{ marginBottom: '1rem' }}><Award size={20} color="var(--primary-color)" /> My Class Attendance</h3>
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '1.5rem 0' }}>
-                  <div style={{ width: '120px', height: '120px', borderRadius: '50%', border: '8px solid #edf2f7', borderTopColor: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>
-                    {attendanceRate}%
+                  {/* Ring fills to the real attendance rate */}
+                  <div className="st-attendance-ring" style={{ '--pct': attendanceRate ?? 0 }}>
+                    <span>{attendanceRate === null ? '—' : `${attendanceRate}%`}</span>
                   </div>
                 </div>
+                {attendanceRate === null && (
+                  <p style={{ margin: '-0.5rem 0 1rem', fontSize: '0.85rem', color: '#a0aec0' }}>Your attendance will show here once your tutor marks your classes.</p>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-around', fontSize: '0.9rem', color: '#718096' }}>
                   <div>🟢 Attended: <strong>{attendedCount}</strong></div>
                   <div>🔴 Missed: <strong>{missedCount}</strong></div>
@@ -1295,8 +1340,8 @@ export default function StudentDashboard({ user, onLogout }) {
                       </thead>
                       <tbody>
                         {upcomingSchedules.map(sch => {
-                          const cTitle = courses.find(c => c.id === sch.course_id)?.title || 'Course';
-                          const tName = tutorNameOf(sch.tutor_id);
+                          const cTitle = courseTitleOf(sch.course_id);
+                          const tName = tutorNameOf(sch.tutor_id) || 'To be confirmed';
                           return (
                             <tr key={sch.id}>
                               <td style={{ fontWeight: 'bold' }}>{sch.title} <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#718096' }}>{cTitle}</div></td>
@@ -1364,7 +1409,9 @@ export default function StudentDashboard({ user, onLogout }) {
                           </div>
                           <div className="ch-info">
                             <div className="ch-title">{sch.title || 'Class'}</div>
-                            <div className="ch-meta">{courseTitleOf(sch.course_id)} · {tutorNameOf(sch.tutor_id)}</div>
+                            {joinMeta(courseTitleOf(sch.course_id), tutorNameOf(sch.tutor_id)) && (
+                              <div className="ch-meta">{joinMeta(courseTitleOf(sch.course_id), tutorNameOf(sch.tutor_id))}</div>
+                            )}
                             <div className="ch-meta">
                               {start.toLocaleDateString([], { weekday: 'long' })}, {fmtTime(start)} – {fmtTime(end)}
                               {mins > 0 && <> · {mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${mins}m`}</>}
@@ -1396,7 +1443,7 @@ export default function StudentDashboard({ user, onLogout }) {
             {/* Contacts Sidebar Pane */}
             <div className={`whatsapp-contacts-sidebar ${activeTutorChat && mobileChatView === 'chat' ? 'mobile-hidden' : ''}`}>
               <div className="whatsapp-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <h3>Tutor Chat</h3>
+                <h3>Your Tutors</h3>
                 <NotificationToggle userId={studentInfo?.profile_id || studentInfo?.id || studentId} />
               </div>
               <ul className="whatsapp-contacts-list">
@@ -1433,8 +1480,9 @@ export default function StudentDashboard({ user, onLogout }) {
                   );
                 })}
                 {chatEnrollments.length === 0 && (
-                  <div style={{ padding: '2rem', textAlign: 'center', color: '#8696a0', fontSize: '0.9rem' }}>
-                    No assigned tutors found.
+                  <div style={{ padding: '2rem 1.25rem', textAlign: 'center', color: '#8696a0', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                    <strong style={{ display: 'block', color: '#4a5568', marginBottom: '0.3rem' }}>No tutors to chat with yet</strong>
+                    Your tutors will appear here once you're assigned to a class.
                   </div>
                 )}
               </ul>
@@ -1517,28 +1565,65 @@ export default function StudentDashboard({ user, onLogout }) {
           <div>
 
             <div className="dashboard-card">
-              <h3><CheckSquare size={20} color="var(--primary-color)" /> Homework Submission Panel</h3>
+              <h3><CheckSquare size={20} color="var(--primary-color)" /> Your Tasks</h3>
               {activeStudentTasks.length === 0 ? (
-                <div style={{ color: '#a0aec0', padding: '1rem' }}>No assignments or tasks assigned.</div>
-              ) : (
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {activeStudentTasks.map(tk => {
+                <div className="st-empty st-empty-flat">
+                  <CheckSquare size={28} />
+                  <strong>No tasks yet</strong>
+                  <span>Homework and quizzes from your tutors will appear here.</span>
+                </div>
+              ) : (() => {
+                const statusOf = (tk) => {
+                  const sub = submissions.find(s => s.task_id === tk.id);
+                  if (!sub) return 'todo';
+                  return sub.grade != null ? 'graded' : 'submitted';
+                };
+                const counts = { todo: 0, submitted: 0, graded: 0 };
+                activeStudentTasks.forEach(tk => { counts[statusOf(tk)] += 1; });
+                const ORDER = { todo: 0, submitted: 1, graded: 2 };
+                const shown = activeStudentTasks
+                  .filter(tk => taskFilter === 'all' || statusOf(tk) === taskFilter)
+                  .sort((a, b) => ORDER[statusOf(a)] - ORDER[statusOf(b)]);
+                return (
+                <>
+                <div className="st-filter-chips" role="tablist" aria-label="Filter tasks">
+                  {[['all', 'All', activeStudentTasks.length], ['todo', 'To do', counts.todo], ['submitted', 'Submitted', counts.submitted], ['graded', 'Graded', counts.graded]].map(([key, label, n]) => (
+                    <button key={key} type="button" role="tab" aria-selected={taskFilter === key}
+                      className={`st-chip ${taskFilter === key ? 'is-active' : ''} ${key === 'todo' && n > 0 ? 'has-todo' : ''}`}
+                      onClick={() => setTaskFilter(key)}>
+                      {label} <b>{n}</b>
+                    </button>
+                  ))}
+                </div>
+                {shown.length === 0 ? (
+                  <div className="st-empty st-empty-flat">
+                    <CheckCircle2 size={26} />
+                    <strong>{taskFilter === 'todo' ? "You're all caught up!" : 'Nothing here'}</strong>
+                    <span>{taskFilter === 'todo' ? 'Every task has been submitted.' : 'No tasks match this filter.'}</span>
+                  </div>
+                ) : (
+                <ul className="st-task-list">
+                  {shown.map(tk => {
                     const sub = submissions.find(s => s.task_id === tk.id);
-                    const cTitle = courses.find(c => c.id === tk.course_id)?.title || 'Course';
+                    const cTitle = courseTitleOf(tk.course_id);
+                    const isQuiz = tk.task_type === 'quiz' || tk.task_type === 'Quiz' || (tk.quiz_questions && tk.quiz_questions !== '[]' && tk.quiz_questions !== 'null');
 
                     return (
-                      <li key={tk.id} style={{ padding: '1rem', border: '1px solid #edf2f7', borderRadius: '12px', background: '#fcfdfe' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
-                          <span style={{ fontWeight: 'bold', fontSize: '0.92rem' }}>{tk.title} ({cTitle})</span>
+                      <li key={tk.id} className={`st-task is-${statusOf(tk)}`}>
+                        <div className="st-task-head">
+                          <div className="st-task-title">
+                            <strong>{tk.title}</strong>
+                            <span>{joinMeta(isQuiz ? 'Quiz' : 'Assignment', cTitle)}</span>
+                          </div>
                           {sub ? (
-                            <span className={`badge ${sub.grade != null ? 'badge-approved' : 'badge-pending'}`}>
-                              {sub.grade != null ? `Graded: ${sub.grade}/${tk.max_points || 100}` : 'Submitted'}
+                            <span className={`badge ${sub.grade != null ? 'badge-approved' : 'badge-completed'} st-task-badge`}>
+                              {sub.grade != null ? `${sub.grade}/${tk.max_points || 100}` : 'Submitted'}
                             </span>
                           ) : (
-                            <span className="badge badge-pending">Not Submitted</span>
+                            <span className="badge badge-pending st-task-badge">To do</span>
                           )}
                         </div>
-                        <p style={{ fontSize: '0.85rem', color: '#718096', margin: '0.2rem 0' }}>Instructions: {tk.description}</p>
+                        {tk.description && <p className="st-task-desc">{tk.description}</p>}
 
                         {sub ? (
                           <div style={{ marginTop: '0.5rem', background: '#edf2f7', padding: '0.6rem', borderRadius: '8px', fontSize: '0.8rem' }}>
@@ -1547,7 +1632,7 @@ export default function StudentDashboard({ user, onLogout }) {
                           </div>
                         ) : (
                           <div style={{ marginTop: '0.8rem' }}>
-                            {tk.task_type === 'quiz' || tk.task_type === 'Quiz' || (tk.quiz_questions && tk.quiz_questions !== '[]' && tk.quiz_questions !== 'null') ? (
+                            {isQuiz ? (
                               <button
                                 className="btn-action edit"
                                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, borderRadius: '8px' }}
@@ -1572,7 +1657,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                   </div>
                                 </form>
                               ) : (
-                                <button className="btn-action edit" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => { setActiveSubTaskId(tk.id); setSubText(''); setSubFile(null); }}>Submit Homework</button>
+                                <button className="btn-action edit" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.45rem 0.9rem', fontSize: '0.82rem', fontWeight: 700, borderRadius: '8px' }} onClick={() => { setActiveSubTaskId(tk.id); setSubText(''); setSubFile(null); }}><Send size={13} /> Submit Homework</button>
                               )
                             )}
                           </div>
@@ -1581,7 +1666,10 @@ export default function StudentDashboard({ user, onLogout }) {
                     );
                   })}
                 </ul>
-              )}
+                )}
+                </>
+                );
+              })()}
             </div>
           </div>
         )}
