@@ -969,6 +969,64 @@ export default function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  const tutorNameOf = (id) => tutors.find(t => t.id === id)?.full_name || 'Tutor';
+  const courseTitleOf = (id) => courses.find(c => c.id === id)?.title || 'Course';
+
+  // Switch ONE student's tutor for ONE course (the rest of the class is untouched).
+  const handleSwitchEnrollmentTutor = async (sc, newTutorId) => {
+    if (!newTutorId || newTutorId === sc.tutor_id) return;
+    const sName = students.find(s => s.id === sc.student_id)?.full_name || 'this student';
+    if (!window.confirm(`Switch ${sName}'s tutor for ${courseTitleOf(sc.course_id)} from ${tutorNameOf(sc.tutor_id)} to ${tutorNameOf(newTutorId)}?`)) return;
+    try {
+      // The new tutor must also be on the course's teaching staff to see it in their dashboard.
+      if (!courseTutors.some(ct => ct.course_id === sc.course_id && ct.tutor_id === newTutorId)) {
+        await assignTutorToCourse(sc.course_id, newTutorId);
+        setCourseTutors(prev => [...prev, { course_id: sc.course_id, tutor_id: newTutorId }]);
+      }
+      const updated = await updateStudentEnrollment(sc.student_id, sc.course_id, sc.course_id, newTutorId);
+      setStudentCourses(prev => prev.map(x => (x.student_id === sc.student_id && x.course_id === sc.course_id) ? { ...x, ...(updated || {}), tutor_id: newTutorId } : x));
+    } catch (err) {
+      alert('Could not switch tutor: ' + err.message);
+    }
+  };
+
+  // Replace the tutor on ONE course. Students can move with them, or stay put so they
+  // can be switched one at a time from the Student Registry.
+  const handleSwitchCourseTutor = async (ct, newTutorId) => {
+    if (!newTutorId || newTutorId === ct.tutor_id) return;
+    const cTitle = courseTitleOf(ct.course_id);
+    const oldName = tutorNameOf(ct.tutor_id);
+    const newName = tutorNameOf(newTutorId);
+    if (!window.confirm(`Make ${newName} the tutor for ${cTitle} instead of ${oldName}?`)) return;
+    const affected = studentCourses.filter(sc => sc.course_id === ct.course_id && sc.tutor_id === ct.tutor_id);
+    const moveAll = affected.length === 0 || window.confirm(
+      `${affected.length} student(s) in ${cTitle} are taught by ${oldName}.\n\n` +
+      `OK = move all of them to ${newName} now.\n` +
+      `Cancel = keep them with ${oldName} for now; switch them one at a time in Student Registry (${oldName} stays on the course until then).`
+    );
+    try {
+      if (!courseTutors.some(x => x.course_id === ct.course_id && x.tutor_id === newTutorId)) {
+        await assignTutorToCourse(ct.course_id, newTutorId);
+        setCourseTutors(prev => [...prev, { course_id: ct.course_id, tutor_id: newTutorId }]);
+      }
+      if (moveAll) {
+        for (const sc of affected) {
+          await updateStudentEnrollment(sc.student_id, sc.course_id, sc.course_id, newTutorId);
+        }
+        if (affected.length) {
+          setStudentCourses(prev => prev.map(x => (x.course_id === ct.course_id && x.tutor_id === ct.tutor_id) ? { ...x, tutor_id: newTutorId } : x));
+        }
+        await removeTutorFromCourse(ct.course_id, ct.tutor_id);
+        setCourseTutors(prev => prev.filter(x => !(x.course_id === ct.course_id && x.tutor_id === ct.tutor_id)));
+      }
+    } catch (err) {
+      alert('Could not switch tutor: ' + err.message);
+    }
+  };
+
+  // Tutor picker used in the Enrollments tables (sorted by name).
+  const tutorOptions = [...tutors].sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+
   const handleEnrollStudent = async (e) => {
     e.preventDefault();
     if (!enrollStudentId || !enrollCourseId || !enrollTutorId) return alert('Select Student, Course and Tutor.');
@@ -2058,7 +2116,12 @@ export default function AdminDashboard({ user, onLogout }) {
                           return (
                             <tr key={i}>
                               <td style={{ fontWeight: 'bold' }}>{cTitle}</td>
-                              <td>{tName}</td>
+                              <td>
+                                <select className="switch-tutor-select" value={ct.tutor_id} onChange={(e) => handleSwitchCourseTutor(ct, e.target.value)} title={`Switch tutor (now: ${tName})`} aria-label={`Tutor for ${cTitle}`}>
+                                  {!tutors.some(t => t.id === ct.tutor_id) && <option value={ct.tutor_id}>{tName}</option>}
+                                  {tutorOptions.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                                </select>
+                              </td>
                               <td><button className="btn-action delete" style={{ padding: '0.2rem 0.4rem' }} onClick={() => handleUnmapTutor(ct.course_id, ct.tutor_id)} title="Remove Tutor"><Trash2 size={12} /></button></td>
                             </tr>
                           );
@@ -2104,7 +2167,12 @@ export default function AdminDashboard({ user, onLogout }) {
                             <tr key={i}>
                               <td style={{ fontWeight: 'bold' }}>{sName}</td>
                               <td>{cTitle}</td>
-                              <td>{tName}</td>
+                              <td>
+                                <select className="switch-tutor-select" value={sc.tutor_id || ''} onChange={(e) => handleSwitchEnrollmentTutor(sc, e.target.value)} title={`Switch tutor (now: ${tName})`} aria-label={`Tutor for ${sName} in ${cTitle}`}>
+                                  {!tutors.some(t => t.id === sc.tutor_id) && <option value={sc.tutor_id || ''}>{tName}</option>}
+                                  {tutorOptions.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                                </select>
+                              </td>
                               <td><button className="btn-action delete" style={{ padding: '0.2rem 0.4rem' }} onClick={() => handleUnenrollStudent(sc.student_id, sc.course_id)} title="Unenroll Student"><Trash2 size={12} /></button></td>
                             </tr>
                           );
