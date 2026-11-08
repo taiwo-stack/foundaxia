@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CalendarDays, Monitor, Users, Gift, CheckCircle2, ArrowDown } from 'lucide-react';
 import { registerStudent } from '../services/dataService';
-import { FREE_CLASS, FREE_CLASS_WEEKS, SCHOOL_CLASSES, TEEN_AGES } from '../data/freeTeenClass';
+import { FREE_CLASS, FREE_CLASS_WEEKS, SCHOOL_CLASSES } from '../data/freeTeenClass';
 import '../styles/FreeClass.css';
 
 // Landing + sign-up page for the free 6-week teen tech class.
@@ -55,7 +55,7 @@ export default function FreeClassPage() {
         <div className="fc-wrap">
           <span className="fc-badge"><Gift size={15} /> 100% FREE · 6 WEEKS</span>
           <h1>{FREE_CLASS.name}</h1>
-          <p className="fc-sub">{FREE_CLASS.tagline} for teenagers aged {FREE_CLASS.ages}</p>
+          <p className="fc-sub">{FREE_CLASS.tagline} for teenagers</p>
           <ul className="fc-facts">
             <li><CalendarDays size={17} /> {FREE_CLASS.when} · {FREE_CLASS.start}</li>
             <li><Monitor size={17} /> {FREE_CLASS.where}</li>
@@ -100,10 +100,7 @@ export default function FreeClassPage() {
               <div className="fc-row">
                 <label className="fc-field">
                   <span>Age *</span>
-                  <select name="age" value={form.age} onChange={change} required>
-                    <option value="">Select</option>
-                    {TEEN_AGES.map(a => <option key={a} value={a}>{a}</option>)}
-                  </select>
+                  <input name="age" type="number" inputMode="numeric" min="1" max="99" value={form.age} onChange={change} required placeholder="e.g. 15" />
                 </label>
                 <label className="fc-field">
                   <span>Class in school *</span>

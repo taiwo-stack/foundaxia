@@ -4,7 +4,6 @@
 export const FREE_CLASS = {
   name: 'Future-Ready Teens',
   tagline: 'Tech & Digital Skills',
-  ages: '12–19',
   when: 'Every Saturday',
   where: 'Online (Zoom / Google Meet)',
   start: 'Starting soon',
@@ -22,4 +21,3 @@ export const FREE_CLASS_WEEKS = [
 ];
 
 export const SCHOOL_CLASSES = ['JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3', 'Finished secondary school', 'Other'];
-export const TEEN_AGES = ['12', '13', '14', '15', '16', '17', '18', '19'];
