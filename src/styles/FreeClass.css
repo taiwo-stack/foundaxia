@@ -1,0 +1,86 @@
+/* /free-class: free 6-week teen tech class */
+.fc-page { background: #f6f8fc; color: #1f2a44; font-family: var(--font-body); padding-bottom: 4rem; }
+.fc-wrap { max-width: 980px; margin: 0 auto; padding: 0 1.25rem; }
+
+.fc-hero {
+  background:
+    radial-gradient(circle at 85% 15%, rgba(242, 122, 36, 0.35), transparent 45%),
+    linear-gradient(135deg, #0f2c59 0%, #1e3a8a 100%);
+  color: #fff;
+  padding: 7.5rem 0 4rem;
+  text-align: center;
+}
+.fc-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: var(--accent-color, #f27a24); color: #fff;
+  padding: 0.4rem 0.9rem; border-radius: 999px;
+  font-weight: 800; font-size: 0.8rem; letter-spacing: 0.06em;
+}
+.fc-hero h1 {
+  font-family: var(--font-heading); font-size: clamp(2.2rem, 7vw, 3.6rem);
+  line-height: 1.1; margin: 1rem 0 0.5rem; color: #fff;
+}
+.fc-sub { font-size: clamp(1.05rem, 3.2vw, 1.3rem); color: rgba(255, 255, 255, 0.88); margin: 0 0 1.5rem; }
+.fc-facts {
+  list-style: none; padding: 0; margin: 0 auto 2rem;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem;
+}
+.fc-facts li {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0.5rem 0.9rem; border-radius: 10px; font-size: 0.92rem; font-weight: 600;
+}
+.fc-page .fc-cta {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: var(--accent-color, #f27a24); color: #fff; border: none;
+  padding: 0.95rem 1.8rem; border-radius: 12px; font-size: 1.05rem; font-weight: 800;
+  cursor: pointer; box-shadow: 0 10px 25px rgba(242, 122, 36, 0.35);
+}
+.fc-page .fc-cta:hover { filter: brightness(1.05); }
+
+.fc-weeks-section { padding-top: 3rem; }
+.fc-page h2 { font-family: var(--font-heading); color: var(--primary-color, #0f2c59); font-size: clamp(1.5rem, 4.5vw, 2rem); margin: 0 0 0.4rem; }
+.fc-lead { color: #5a6782; margin: 0 0 1.5rem; }
+.fc-weeks {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;
+}
+.fc-week {
+  background: #fff; border-radius: 14px; padding: 1.1rem 1.2rem;
+  border: 1px solid #e6ebf5; border-top: 4px solid var(--accent-color, #f27a24);
+  box-shadow: 0 6px 18px rgba(15, 44, 89, 0.05);
+}
+.fc-week-num { display: block; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-color, #f27a24); }
+.fc-week strong { display: block; font-family: var(--font-heading); font-size: 1.08rem; color: var(--primary-color, #0f2c59); margin: 0.25rem 0 0.35rem; }
+.fc-week p { margin: 0; color: #5a6782; font-size: 0.92rem; line-height: 1.5; }
+
+.fc-form-section { padding-top: 3rem; scroll-margin-top: 90px; }
+.fc-form-card {
+  max-width: 620px; margin: 0 auto; background: #fff; border-radius: 18px;
+  padding: 1.75rem 1.5rem; box-shadow: 0 18px 45px rgba(15, 44, 89, 0.12); border: 1px solid #e6ebf5;
+}
+.fc-field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.9rem; flex: 1; min-width: 0; }
+.fc-field span { font-size: 0.85rem; font-weight: 700; color: #34405c; }
+.fc-page .fc-field input, .fc-page .fc-field select {
+  width: 100%; padding: 0.75rem 0.85rem; border-radius: 10px;
+  border: 1.5px solid #dbe2ef; background: #fbfcfe; font-size: 1rem; font-family: inherit; color: #1f2a44;
+}
+.fc-page .fc-field input:focus, .fc-page .fc-field select:focus { outline: none; border-color: var(--primary-color, #0f2c59); background: #fff; }
+.fc-row { display: flex; gap: 0.9rem; }
+.fc-consent { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.88rem; color: #4a5672; margin: 0.3rem 0 1.2rem; line-height: 1.45; }
+.fc-consent input { margin-top: 0.2rem; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent-color, #f27a24); }
+.fc-page .fc-submit {
+  width: 100%; padding: 0.95rem; border: none; border-radius: 12px;
+  background: var(--primary-color, #0f2c59); color: #fff; font-size: 1.05rem; font-weight: 800; cursor: pointer;
+}
+.fc-page .fc-submit:disabled { opacity: 0.7; cursor: wait; }
+.fc-done { text-align: center; color: #1f8f4e; padding: 1rem 0; }
+.fc-done h2 { margin-top: 0.6rem; }
+.fc-done p { color: #4a5672; line-height: 1.55; }
+.fc-page .fc-link { background: none; border: none; color: var(--primary-color, #0f2c59); font-weight: 700; text-decoration: underline; cursor: pointer; margin-top: 0.5rem; }
+
+@media (max-width: 560px) {
+  .fc-hero { padding: 6.5rem 0 3rem; }
+  .fc-row { flex-direction: column; gap: 0; }
+  .fc-form-card { padding: 1.4rem 1.1rem; }
+}
