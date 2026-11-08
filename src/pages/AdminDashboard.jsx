@@ -2260,11 +2260,11 @@ export default function AdminDashboard({ user, onLogout }) {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
                   <div className="form-group">
-                    <label>Meeting Link (First Half)</label>
+                    <label>Meeting Link (First Session)</label>
                     <input type="url" value={schLink} onChange={(e) => setSchLink(e.target.value)} placeholder="https://zoom.us/j/..." />
                   </div>
                   <div className="form-group">
-                    <label>Meeting Link (Second Half, optional)</label>
+                    <label>Meeting Link (Second Session, optional)</label>
                     <input type="url" value={schLink2} onChange={(e) => setSchLink2(e.target.value)} placeholder="https://zoom.us/j/..." />
                   </div>
                 </div>
@@ -2305,8 +2305,8 @@ export default function AdminDashboard({ user, onLogout }) {
                             <td>
                               {s.meeting_link || s.meeting_link_2 ? (
                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                  {s.meeting_link && <a href={s.meeting_link} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline', fontSize: '0.8rem' }}>{s.meeting_link_2 ? '1st Half' : 'Join Class'}</a>}
-                                  {s.meeting_link_2 && <a href={s.meeting_link_2} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline', fontSize: '0.8rem' }}>2nd Half</a>}
+                                  {s.meeting_link && <a href={s.meeting_link} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline', fontSize: '0.8rem' }}>{s.meeting_link_2 ? '1st Session' : 'Join Class'}</a>}
+                                  {s.meeting_link_2 && <a href={s.meeting_link_2} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline', fontSize: '0.8rem' }}>2nd Session</a>}
                                 </div>
                               ) : <span style={{ color: '#cbd5e0' }}>None</span>}
                             </td>

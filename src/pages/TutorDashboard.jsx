@@ -1026,12 +1026,12 @@ export default function TutorDashboard({ user }) {
                   <div className="tsch-step">
                     <div className="tsch-step-label"><span>3</span> Meeting link</div>
                     <label className="tsch-field">
-                      <span>{schShowLink2 ? 'First half link' : 'Zoom / Google Meet link'}</span>
+                      <span>{schShowLink2 ? 'First session link' : 'Zoom / Google Meet link'}</span>
                       <input type="url" value={schLink} onChange={(e) => setSchLink(e.target.value)} placeholder="https://zoom.us/j/..." />
                     </label>
                     {schShowLink2 ? (
                       <label className="tsch-field">
-                        <span>Second half link</span>
+                        <span>Second session link</span>
                         <input type="url" value={schLink2} onChange={(e) => setSchLink2(e.target.value)} placeholder="https://zoom.us/j/..." />
                         <small className="tsch-hint">For splitting one class across two meetings (e.g. a 40-minute Zoom limit).</small>
                       </label>
@@ -1082,8 +1082,8 @@ export default function TutorDashboard({ user }) {
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                                    {sch.meeting_link && <a href={sch.meeting_link} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem' }}>{sch.meeting_link_2 ? '1st Half' : 'Launch Link'}</a>}
-                                    {sch.meeting_link_2 && <a href={sch.meeting_link_2} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem' }}>2nd Half</a>}
+                                    {sch.meeting_link && <a href={sch.meeting_link} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem' }}>{sch.meeting_link_2 ? '1st Session' : 'Launch Link'}</a>}
+                                    {sch.meeting_link_2 && <a href={sch.meeting_link_2} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem' }}>2nd Session</a>}
                                   </div>
                                 ) : <span style={{ color: '#cbd5e0' }}>No Link</span>}
                               </td>
@@ -2637,11 +2637,11 @@ export default function TutorDashboard({ user }) {
                 </div>
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Meeting Join Link - First Half</label>
+                <label>Meeting Join Link - First Session</label>
                 <input type="url" value={editingSchedule.meeting_link || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, meeting_link: e.target.value }))} placeholder="https://zoom.us/j/..." />
               </div>
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label>Meeting Join Link - Second Half (optional)</label>
+                <label>Meeting Join Link - Second Session (optional)</label>
                 <input type="url" value={editingSchedule.meeting_link_2 || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, meeting_link_2: e.target.value }))} placeholder="https://zoom.us/j/..." />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>

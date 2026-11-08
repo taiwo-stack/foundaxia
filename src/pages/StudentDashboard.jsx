@@ -823,7 +823,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                     boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)'
                                   }}
                                 >
-                                  {nextClass.meeting_link_2 ? 'Join (1st Half)' : 'Join Now'}
+                                  {nextClass.meeting_link_2 ? 'Join (1st Session)' : 'Join Now'}
                                 </a>
                               )}
                               {nextClass.meeting_link_2 && (
@@ -843,7 +843,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                     boxShadow: '0 4px 10px rgba(16, 185, 129, 0.2)'
                                   }}
                                 >
-                                  Join (2nd Half)
+                                  Join (2nd Session)
                                 </a>
                               )}
                             </div>
@@ -924,7 +924,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                       borderRadius: '6px'
                                     }}
                                   >
-                                    {sch.meeting_link_2 ? '1st Half' : 'Join'}
+                                    {sch.meeting_link_2 ? '1st Session' : 'Join'}
                                   </a>
                                 )}
                                 {sch.meeting_link_2 && (
@@ -940,7 +940,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                       borderRadius: '6px'
                                     }}
                                   >
-                                    2nd Half
+                                    2nd Session
                                   </a>
                                 )}
                               </div>
@@ -1379,8 +1379,8 @@ export default function StudentDashboard({ user, onLogout }) {
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                                    {sch.meeting_link && <a href={sch.meeting_link} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>{sch.meeting_link_2 ? '1st Half' : 'Join Class'}</a>}
-                                    {sch.meeting_link_2 && <a href={sch.meeting_link_2} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>2nd Half</a>}
+                                    {sch.meeting_link && <a href={sch.meeting_link} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>{sch.meeting_link_2 ? '1st Session' : 'Join Class'}</a>}
+                                    {sch.meeting_link_2 && <a href={sch.meeting_link_2} target="_blank" rel="noreferrer" className="btn-action approve" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>2nd Session</a>}
                                   </div>
                                 ) : (
                                   <span style={{ color: '#cbd5e0' }}>None</span>
