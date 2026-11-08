@@ -1512,6 +1512,11 @@
 @media (min-width: 801px) {
   .dashboard-sidebar { transition: width 0.25s ease, padding 0.25s ease; flex-shrink: 0; }
   .dashboard-sidebar.collapsed { width: 78px; padding-left: 0.85rem; padding-right: 0.85rem; }
+  /* Longer menus (admin) can overflow the rail; keep it scrollable but without a
+     scrollbar eating into the 78px, so every rail lines up like the student one. */
+  .dashboard-sidebar.collapsed { scrollbar-width: none; }
+  .dashboard-sidebar.collapsed::-webkit-scrollbar { display: none; }
+  .dashboard-sidebar.collapsed .sidebar-menu { gap: 0.35rem; }
   .dashboard-sidebar.collapsed .sidebar-brand,
   .dashboard-sidebar.collapsed .sidebar-label { display: none; }
   .dashboard-sidebar.collapsed .sidebar-brand-row { justify-content: center; }
