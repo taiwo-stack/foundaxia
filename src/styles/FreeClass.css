@@ -124,3 +124,14 @@
   .fc-row { flex-direction: column; gap: 0; }
   .fc-form-card { padding: 1.4rem 1.1rem; }
 }
+
+/* WhatsApp contact */
+.fc-page .fc-wa {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: #e9fbf0; color: #128c4a; border: 1.5px solid #b7ebcb;
+  padding: 0.55rem 0.9rem; border-radius: 10px; font-weight: 700; font-size: 0.92rem;
+  text-decoration: none; margin: -0.6rem 0 1.2rem;
+}
+.fc-page .fc-wa:hover { background: #dcf8e7; }
+.fc-wa-line { margin: 0.8rem 0 0; color: #4a5672; }
+.fc-page .fc-wa-line a { color: #128c4a; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 0.3rem; }

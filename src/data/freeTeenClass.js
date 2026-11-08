@@ -1,5 +1,5 @@
 // Free 6-week "Future-Ready Teens" class (church outreach). Shared by the
-// /free-class page; the flyer uses the same wording so they never disagree.
+// /tbn-teens page; the flyer uses the same wording so they never disagree.
 // Built from three real FoundaXia courses, two Saturdays each, using their existing lessons.
 
 export const FREE_CLASS = {
@@ -9,7 +9,10 @@ export const FREE_CLASS = {
   where: 'Online (Zoom / Google Meet)',
   start: 'Starting soon',
   // Saved on each registration so these sign-ups are easy to spot in the admin Students list.
-  tag: 'FREE 6-WEEK TEEN TECH CLASS'
+  tag: 'FREE 6-WEEK TEEN TECH CLASS',
+  // Questions go to the FoundaXia WhatsApp line (same number as the site footer).
+  whatsappDisplay: '+234 906 181 4608',
+  whatsappLink: 'https://wa.me/2349061814608?text=' + encodeURIComponent('Hello FoundaXia, I have a question about the free 6-week class for teenagers.')
 };
 
 export const FREE_CLASS_COURSES = [
@@ -45,4 +48,4 @@ export const FREE_CLASS_COURSES = [
   }
 ];
 
-export const SCHOOL_CLASSES = ['JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3', 'Finished secondary school', 'Other'];
+export const SCHOOL_CLASSES = ['Primary School', 'Junior Secondary (JSS 1–3)', 'Senior Secondary (SS 1–3)', 'University / Polytechnic', 'Other'];

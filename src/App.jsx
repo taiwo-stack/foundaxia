@@ -1,5 +1,5 @@
 import React, { useState, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -62,7 +62,8 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/subjects" element={<SubjectsPage />} />
-          <Route path="/free-class" element={<FreeClassPage />} />
+          <Route path="/tbn-teens" element={<FreeClassPage />} />
+          <Route path="/free-class" element={<Navigate to="/tbn-teens" replace />} />
           <Route path="/login" element={<Login onLoginSuccess={handleLoginSuccess} />} />
           <Route
             path="/whiteboard"
