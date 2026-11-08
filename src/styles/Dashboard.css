@@ -1594,3 +1594,12 @@
   .ch-info { flex-basis: calc(100% - 70px); }
   .ch-status { margin-left: 64px; }
 }
+
+/* Enrollments tab: switch a tutor straight from the table row */
+.dashboard-container .switch-tutor-select {
+  width: 100%; min-width: 130px; max-width: 220px;
+  padding: 0.35rem 0.5rem; border-radius: 8px;
+  border: 1.5px solid #e2e8f0; background: #f8fafc;
+  font-size: 0.82rem; font-family: inherit; color: var(--text-dark); cursor: pointer;
+}
+.dashboard-container .switch-tutor-select:hover { border-color: var(--primary-color); background: #fff; }
