@@ -22,8 +22,8 @@ export const FREE_CLASS_COURSES = [
     image: '/images/ai.jpg',
     summary: 'This activity introduces students to Artificial Intelligence in a developmentally appropriate manner! Students explore the difference between artificial and natural items and learn how machines act “smart” by using sensors and more!',
     weeks: [
-      { title: 'Natural vs. Artificial & What Is AI?', text: 'Tell natural things from human-made ones, then explore what intelligence is and how people build machines that can think.' },
-      { title: 'Senses, Sensors & Meeting an AI Robot', text: 'Compare human senses with machine sensors, learn the key AI words, and explore an AI robot through live games.' }
+      { title: 'What Is AI? From Data to Intelligence', text: 'Tell natural things from human-made ones, compare human senses with machine sensors, and see how machines learn from data to act “smart”.' },
+      { title: 'Build with AI', text: 'Hands-on: collect your own data, train a simple AI model to recognise it (with Google’s free Teachable Machine), then use AI tools to create something of your own.' }
     ]
   },
   {
