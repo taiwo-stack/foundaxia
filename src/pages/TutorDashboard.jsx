@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSidebarCollapsed, SidebarCollapseButton } from '../components/SidebarCollapse';
 import FormattedText, { stripFormatting } from '../components/FormattedText';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -60,6 +61,7 @@ const getSpecialClassImage = (title = '', index = 0) => {
 export default function TutorDashboard({ user }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('schedule');
+  const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed('tutorSidebarCollapsed'); // desktop icon rail
   const [noteStudent, setNoteStudent] = useState(null); // { student, courseOptions } for the Note to parent window
   const [viewingSlide, setViewingSlide] = useState(null); // material row being viewed in the embedded HTML slide modal
   const [bookings, setBookings] = useState([]);
@@ -784,40 +786,43 @@ export default function TutorDashboard({ user }) {
   return (
     <div className="dashboard-container">
       {/* Sidebar */}
-      <aside className="dashboard-sidebar">
-        <div className="sidebar-brand">Tutor Portal</div>
+      <aside className={`dashboard-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <div className="sidebar-brand-row">
+          <div className="sidebar-brand">Tutor Portal</div>
+          <SidebarCollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebarCollapsed} />
+        </div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'schedule' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('schedule')}><Clock size={18} /> Lesson Schedules</button>
+            <button title={sidebarCollapsed ? 'Lesson Schedules' : undefined} onClick={() => setActiveTab('schedule')}><Clock size={18} /> <span className="sidebar-label">Lesson Schedules</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'students' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('students')}><User size={18} /> Assigned Students</button>
+            <button title={sidebarCollapsed ? 'Assigned Students' : undefined} onClick={() => setActiveTab('students')}><User size={18} /> <span className="sidebar-label">Assigned Students</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'courses' ? 'active' : ''}`}>
-            <button onClick={() => { setActiveTab('courses'); setSelectedCourseId(null); }}><BookOpen size={18} /> My Courses</button>
+            <button title={sidebarCollapsed ? 'My Courses' : undefined} onClick={() => { setActiveTab('courses'); setSelectedCourseId(null); }}><BookOpen size={18} /> <span className="sidebar-label">My Courses</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'tasks' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('tasks')}><CheckSquare size={18} /> Tasks & Grading</button>
+            <button title={sidebarCollapsed ? 'Tasks & Grading' : undefined} onClick={() => setActiveTab('tasks')}><CheckSquare size={18} /> <span className="sidebar-label">Tasks & Grading</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('messages')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <MessageSquare size={18} /> Messages
+            <button title={sidebarCollapsed ? 'Messages' : undefined} onClick={() => setActiveTab('messages')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <MessageSquare size={18} /> <span className="sidebar-label">Messages</span>
               {unreadMessageCount > 0 && (
-                <span style={{ background: 'var(--accent-color)', color: 'white', borderRadius: '50%', fontSize: '0.65rem', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 'auto', fontWeight: 'bold' }}>
+                <span className="sidebar-badge" style={{ background: 'var(--accent-color)', color: 'white', borderRadius: '50%', fontSize: '0.65rem', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 'auto', fontWeight: 'bold' }}>
                   {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
                 </span>
               )}
             </button>
           </li>
           <li className={`sidebar-item ${activeTab === 'announcements' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('announcements')}><Megaphone size={18} /> Bulletins</button>
+            <button title={sidebarCollapsed ? 'Bulletins' : undefined} onClick={() => setActiveTab('announcements')}><Megaphone size={18} /> <span className="sidebar-label">Bulletins</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'settings' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('settings')}><Save size={18} /> Profile Settings</button>
+            <button title={sidebarCollapsed ? 'Profile Settings' : undefined} onClick={() => setActiveTab('settings')}><Save size={18} /> <span className="sidebar-label">Profile Settings</span></button>
           </li>
           <li className="sidebar-item" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-            <button onClick={() => setShowStartSessionModal(true)} style={{ color: 'var(--accent-color)', fontWeight: 'bold' }}>
-              <MonitorPlay size={18} /> Start Live Whiteboard ↗
+            <button title={sidebarCollapsed ? 'Start Live Whiteboard' : undefined} onClick={() => setShowStartSessionModal(true)} style={{ color: 'var(--accent-color)', fontWeight: 'bold' }}>
+              <MonitorPlay size={18} /> <span className="sidebar-label">Start Live Whiteboard ↗</span>
             </button>
           </li>
         </ul>
