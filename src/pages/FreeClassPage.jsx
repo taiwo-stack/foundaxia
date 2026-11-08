@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { CalendarDays, Monitor, Gift, CheckCircle2, ArrowDown, Smartphone } from 'lucide-react';
+import { CalendarDays, Monitor, Gift, CheckCircle2, ArrowDown, Smartphone, MessageCircle } from 'lucide-react';
 import { registerStudent } from '../services/dataService';
 import { FREE_CLASS, FREE_CLASS_COURSES, SCHOOL_CLASSES } from '../data/freeTeenClass';
 import '../styles/FreeClass.css';
 
 // Landing + sign-up page for the free 6-week teen class.
-// The church flyer's QR code points here (foundaxia.com/free-class).
+// The church flyer's QR code points here (foundaxia.com/tbn-teens; /free-class redirects here).
 
 const EMPTY = { teenName: '', schoolClass: '', parentName: '', phone: '', email: '', consent: false };
 
@@ -107,12 +107,16 @@ export default function FreeClassPage() {
               <CheckCircle2 size={48} />
               <h2>{done} is registered!</h2>
               <p>Thank you. We will send the start date and the class link to the phone number and email you gave us before the first Saturday.</p>
+              <p className="fc-wa-line">Questions? <a href={FREE_CLASS.whatsappLink} target="_blank" rel="noreferrer"><MessageCircle size={16} /> WhatsApp {FREE_CLASS.whatsappDisplay}</a></p>
               <button type="button" className="fc-link" onClick={() => setDone(null)}>Register another teen</button>
             </div>
           ) : (
             <form onSubmit={submit}>
               <h2>Register for free</h2>
               <p className="fc-lead">Takes one minute. A parent or guardian should fill this in.</p>
+              <a className="fc-wa" href={FREE_CLASS.whatsappLink} target="_blank" rel="noreferrer">
+                <MessageCircle size={18} /> Questions? WhatsApp us on {FREE_CLASS.whatsappDisplay}
+              </a>
 
               <div className="fc-row">
                 <label className="fc-field">
@@ -120,7 +124,7 @@ export default function FreeClassPage() {
                   <input name="teenName" value={form.teenName} onChange={change} required maxLength={80} placeholder="e.g. David Adeyemi" autoComplete="off" />
                 </label>
                 <label className="fc-field">
-                  <span>Class in school *</span>
+                  <span>School level *</span>
                   <select name="schoolClass" value={form.schoolClass} onChange={change} required>
                     <option value="">Select</option>
                     {SCHOOL_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
