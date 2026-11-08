@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { FREE_CLASS } from '../data/freeTeenClass';
 import { useSidebarCollapsed, SidebarCollapseButton } from '../components/SidebarCollapse';
 import RichTextArea from '../components/RichTextArea';
 import FormattedText from '../components/FormattedText';
@@ -1336,6 +1337,11 @@ export default function AdminDashboard({ user, onLogout }) {
                             )}
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                               <span style={{ fontWeight: 'bold' }}>{s.full_name}</span>
+                              {(s.additional_comments || '').includes(FREE_CLASS.tag) && (
+                                <span title={s.additional_comments} style={{ width: 'fit-content', background: 'rgba(15, 44, 89, 0.08)', color: 'var(--primary-color)', padding: '0.15rem 0.45rem', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                                Free Teen Class
+                                </span>
+                              )}
                               {s.status === 'pending' ? (
                                 <span style={{ 
                                   width: 'fit-content',

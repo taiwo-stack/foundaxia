@@ -10,6 +10,7 @@ import './styles/global.css';
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const Login = lazy(() => import('./pages/Login'));
 const SubjectsPage = lazy(() => import('./pages/SubjectsPage'));
+const FreeClassPage = lazy(() => import('./pages/FreeClassPage'));
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
 const TutorDashboard = lazy(() => import('./pages/TutorDashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
@@ -61,6 +62,7 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/subjects" element={<SubjectsPage />} />
+          <Route path="/free-class" element={<FreeClassPage />} />
           <Route path="/login" element={<Login onLoginSuccess={handleLoginSuccess} />} />
           <Route
             path="/whiteboard"
