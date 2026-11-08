@@ -1181,7 +1181,7 @@ export default function StudentDashboard({ user, onLogout }) {
                         return (
                           <div key={t.id} style={{ borderBottom: '1px solid #edf2f7', paddingBottom: '1rem' }}>
                             <h4 style={{ color: 'var(--primary-color)', fontSize: '1rem', fontWeight: 'bold', margin: '0 0 0.3rem 0' }}>Lesson {idx + 1}: {t.title}</h4>
-                            <p style={{ color: '#718096', fontSize: '0.85rem', margin: '0 0 0.8rem 0' }}>{t.description}</p>
+                            {t.description && <FormattedText style={{ color: '#718096', fontSize: '0.85rem', marginBottom: '0.8rem' }} text={t.description} />}
 
                             {/* Downloads / View Files */}
                             {topicMats.length > 0 && (

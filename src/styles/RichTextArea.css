@@ -83,3 +83,21 @@
 
 /* Public subjects page cards are dark */
 .subject-card-desc.formatted-text .ft-heading { color: #fff; }
+
+/* The admin course builder forces padding/font-size on every button and textarea
+   with !important; keep the editor's own sizing there (and anywhere else). */
+.rta .rta-toolbar .rta-btn {
+  padding: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  font-size: 1rem !important;
+}
+.rta .rta-toolbar .rta-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.rta .rta-toolbar .rta-tab { padding: 0.3rem 0.65rem !important; font-size: 0.78rem !important; }
+.rta textarea.rta-input {
+  padding: 0.7rem 0.8rem !important;
+  font-size: 0.88rem !important;
+  border-radius: 0 !important;
+  border: none !important;
+  min-height: 8.5em;
+}

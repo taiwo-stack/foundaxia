@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import RichTextArea from '../components/RichTextArea';
+import FormattedText from '../components/FormattedText';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getStudents, getTutors, getContactMessages,
@@ -1690,20 +1691,20 @@ export default function AdminDashboard({ user, onLogout }) {
                     {/* Top: Add Syllabus Topic */}
                     <div className="dashboard-card" style={{ background: '#fcfdfe', padding: '1.25rem', marginBottom: 0 }}>
                       <h3><Plus size={16} /> Add Syllabus Topic</h3>
-                      <form onSubmit={handleCreateTopic} style={{ display: 'grid', gridTemplateColumns: '2fr 3fr 1fr 1fr', gap: '1rem', alignItems: 'end' }}>
+                      <form onSubmit={handleCreateTopic} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem', alignItems: 'end' }}>
                       <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }}>Topic Title *</label>
                         <input type="text" value={newTopic.title} onChange={(e) => setNewTopic(prev => ({ ...prev, title: e.target.value }))} placeholder="e.g. Intro to Loops" required />
                       </div>
                       <div className="form-group">
-                        <label style={{ fontSize: '0.8rem' }}>Description Summary</label>
-                        <input type="text" value={newTopic.description} onChange={(e) => setNewTopic(prev => ({ ...prev, description: e.target.value }))} placeholder="Briefly describe what students will learn..." />
-                      </div>
-                      <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }}>Sort Order</label>
                         <input type="number" value={newTopic.sort_order} onChange={(e) => setNewTopic(prev => ({ ...prev, sort_order: Number(e.target.value) }))} required />
                       </div>
-                      <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1rem' }}>Add Lesson</button>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: '0.8rem' }}>Description Summary</label>
+                        <RichTextArea value={newTopic.description} onChange={(v) => setNewTopic(prev => ({ ...prev, description: v }))} placeholder="Briefly describe what students will learn... Use the toolbar for bold text and bullet points." rows={5} />
+                      </div>
+                      <button type="submit" className="btn-primary" style={{ padding: '0.75rem 1.5rem', gridColumn: '1 / -1', justifySelf: 'end' }}>Add Lesson</button>
                     </form>
                   </div>
 
@@ -1738,9 +1739,9 @@ export default function AdminDashboard({ user, onLogout }) {
                                   <h4 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: 'var(--primary-color)', margin: '0.2rem 0 0.3rem 0' }}>
                                     {t.title}
                                   </h4>
-                                  <p style={{ fontSize: '0.85rem', color: '#718096', margin: 0 }}>
-                                    {t.description || 'No description summary.'}
-                                  </p>
+                                  {t.description
+                                    ? <FormattedText style={{ fontSize: '0.85rem', color: '#718096' }} text={t.description} />
+                                    : <p style={{ fontSize: '0.85rem', color: '#718096', margin: 0 }}>No description summary.</p>}
                                 </div>
                                 
                                 {/* Topic actions */}
@@ -3045,7 +3046,7 @@ export default function AdminDashboard({ user, onLogout }) {
               </div>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label>Lesson Description Summary</label>
-                <input type="text" value={editingTopic.description || ''} onChange={(e) => setEditingTopic(prev => ({ ...prev, description: e.target.value }))} />
+                <RichTextArea value={editingTopic.description || ''} onChange={(v) => setEditingTopic(prev => ({ ...prev, description: v }))} rows={6} />
               </div>
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                 <label>Sort Order / Lesson Position *</label>

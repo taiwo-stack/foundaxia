@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { stripFormatting } from '../components/FormattedText';
+import FormattedText, { stripFormatting } from '../components/FormattedText';
 import { useNavigate } from 'react-router-dom';
 import { 
   getBookings, getTutors, updateTutor, updateBookingStatus, uploadAvatar,
@@ -1341,9 +1341,9 @@ export default function TutorDashboard({ user }) {
                               <h3 style={{ borderBottom: '1px solid #edf2f7', paddingBottom: '0.5rem', marginBottom: '1rem', color: 'var(--primary-color)' }}>
                                 {activeTopic.title}
                               </h3>
-                              <p style={{ fontSize: '0.88rem', color: '#4a5568', lineHeight: '1.5', margin: 0 }}>
-                                {activeTopic.description || 'No description provided for this lesson.'}
-                              </p>
+                              {activeTopic.description
+                                ? <FormattedText style={{ fontSize: '0.88rem', color: '#4a5568' }} text={activeTopic.description} />
+                                : <p style={{ fontSize: '0.88rem', color: '#4a5568', lineHeight: '1.5', margin: 0 }}>No description provided for this lesson.</p>}
                             </div>
 
                             {/* Lesson Materials / Files */}
