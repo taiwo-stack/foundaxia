@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarDays, Monitor, Users, Gift, CheckCircle2, ArrowDown, Smartphone } from 'lucide-react';
+import { CalendarDays, Monitor, Gift, CheckCircle2, ArrowDown, Smartphone } from 'lucide-react';
 import { registerStudent } from '../services/dataService';
 import { FREE_CLASS, FREE_CLASS_COURSES, SCHOOL_CLASSES } from '../data/freeTeenClass';
 import '../styles/FreeClass.css';
@@ -63,7 +63,6 @@ export default function FreeClassPage() {
           <ul className="fc-facts">
             <li><CalendarDays size={17} /> {FREE_CLASS.when} · {FREE_CLASS.start}</li>
             <li><Monitor size={17} /> {FREE_CLASS.where}</li>
-            <li><Users size={17} /> Limited spaces</li>
           </ul>
           <button type="button" className="fc-cta" onClick={goToForm}>Register for free <ArrowDown size={17} /></button>
         </div>
