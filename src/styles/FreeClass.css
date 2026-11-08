@@ -2,14 +2,30 @@
 .fc-page { background: #f6f8fc; color: #1f2a44; font-family: var(--font-body); padding-bottom: 4rem; }
 .fc-wrap { max-width: 980px; margin: 0 auto; padding: 0 1.25rem; }
 
+/* Same two photos as the home page hero, crossfading, under a navy tint for readable text */
 .fc-hero {
-  background:
-    radial-gradient(circle at 85% 15%, rgba(242, 122, 36, 0.35), transparent 45%),
-    linear-gradient(135deg, #0f2c59 0%, #1e3a8a 100%);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: #0f2c59;
   color: #fff;
   padding: 7.5rem 0 4rem;
   text-align: center;
 }
+.fc-hero-bg {
+  position: absolute; inset: 0; z-index: -2;
+  background-size: cover; background-position: center;
+}
+.fc-hero-bg--a { background-image: url('/images/tutor1.jpg'); }
+.fc-hero-bg--b { background-image: url('/images/bacground_2.png'); animation: fc-crossfade 12s ease-in-out infinite; }
+.fc-hero::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(242, 122, 36, 0.35), transparent 45%),
+    linear-gradient(135deg, rgba(15, 44, 89, 0.88) 0%, rgba(30, 58, 138, 0.78) 100%);
+}
+@keyframes fc-crossfade { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fc-hero-bg--b { animation: none; opacity: 0; } }
 .fc-badge {
   display: inline-flex; align-items: center; gap: 0.4rem;
   background: var(--accent-color, #f27a24); color: #fff;

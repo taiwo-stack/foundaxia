@@ -52,6 +52,8 @@ export default function FreeClassPage() {
   return (
     <div className="fc-page">
       <section className="fc-hero">
+        <div className="fc-hero-bg fc-hero-bg--a" aria-hidden="true" />
+        <div className="fc-hero-bg fc-hero-bg--b" aria-hidden="true" />
         <div className="fc-wrap">
           <span className="fc-badge"><Gift size={15} /> 100% FREE · 6 WEEKS</span>
           <h1>{FREE_CLASS.name}</h1>
