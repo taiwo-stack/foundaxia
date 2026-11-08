@@ -20,30 +20,30 @@ export const FREE_CLASS_COURSES = [
     title: 'AI Fluency: The Journey from Data to Intelligent',
     short: 'AI Fluency',
     image: '/images/ai.jpg',
-    summary: 'This activity introduces students to Artificial Intelligence in a developmentally appropriate manner! Students explore the difference between artificial and natural items and learn how machines act “smart” by using sensors and more!',
+    summary: 'Discover how machines learn from data and act “smart”.',
     weeks: [
-      { title: 'What Is AI? From Data to Intelligence', text: 'Tell natural things from human-made ones, compare human senses with machine sensors, and see how machines learn from data to act “smart”.' },
-      { title: 'Build with AI', text: 'Hands-on: collect your own data, train a simple AI model to recognise it (with Google’s free Teachable Machine), then use AI tools to create something of your own.' }
+      { title: 'What Is AI? From Data to Intelligence', text: 'Natural vs. artificial, senses vs. sensors.' },
+      { title: 'Build with AI', text: 'Train your own AI model, then create with AI tools.' }
     ]
   },
   {
     title: 'Computing Systems and Networks: The Internet',
     short: 'The Internet',
     image: '/images/course-internet.jpg',
-    summary: 'Learners will explore how the internet works as a network of networks and why it needs to be kept secure. They will understand the relationship between the internet and the World Wide Web, explore online content and ownership, and learn what they can access, create, and share. They will also evaluate online information for accuracy and reliability and understand the consequences of false information. This unit requires internet-connected devices, with Chrome Music Lab used to demonstrate content creation on the Web.',
+    summary: 'How the internet works, and how to use it wisely and safely.',
     weeks: [
-      { title: 'How the Internet Works', text: 'See how networks and routers connect to form the internet, and how the internet differs from the World Wide Web.' },
-      { title: 'Websites, Ownership & Truth Online', text: 'Take apart a website, learn who owns what you see online, and spot false or unreliable information.' }
+      { title: 'How the Internet Works', text: 'Networks, routers and the World Wide Web.' },
+      { title: 'Websites, Ownership & Truth Online', text: 'Who owns what online, and spotting false information.' }
     ]
   },
   {
     title: 'Modelling Data Using Spreadsheets',
     short: 'Spreadsheets',
     image: '/images/student5.jpg',
-    summary: 'Introduce your learners to the wonderful world of spreadsheets and the concept of cell referencing. Ask them to collect, analyse, and manipulate data, before turning it into graphs and charts. Data is beautiful!',
+    summary: 'Turn data into answers, graphs and charts. Data is beautiful!',
     weeks: [
-      { title: 'Getting to Know Spreadsheets', text: 'Rows, columns and cell references, then quick calculations with your first formulas and autofill.' },
-      { title: 'Become a Data Master', text: 'Collect real data and analyse it with SUM, MAX, MIN and AVERAGE, then turn it into charts.' }
+      { title: 'Getting to Know Spreadsheets', text: 'Cells, formulas and quick calculations.' },
+      { title: 'Become a Data Master', text: 'Analyse real data and turn it into charts.' }
     ]
   }
 ];
