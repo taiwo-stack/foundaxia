@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSidebarCollapsed, SidebarCollapseButton } from '../components/SidebarCollapse';
 import RichTextArea from '../components/RichTextArea';
 import FormattedText from '../components/FormattedText';
 import { useNavigate } from 'react-router-dom';
@@ -111,6 +112,7 @@ export default function AdminDashboard({ user, onLogout }) {
   const [showStudentModal, setShowStudentModal] = useState(false);
   const [feesStudent, setFeesStudent] = useState(null); // student whose Parent & Fees window is open
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile menu drawer
+  const [sidebarCollapsed, toggleSidebarCollapsed] = useSidebarCollapsed('adminSidebarCollapsed'); // desktop icon rail
   
   // Activation Modal State
   const [showActivationModal, setShowActivationModal] = useState(false);
@@ -1091,51 +1093,52 @@ export default function AdminDashboard({ user, onLogout }) {
 
       {/* Sidebar (a slide-in drawer on phones); picking any item closes it */}
       <aside
-        className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''}`}
+        className={`dashboard-sidebar ${sidebarOpen ? 'open' : ''} ${sidebarCollapsed ? 'collapsed' : ''}`}
         onClick={(e) => { if (e.target.closest('button')) setSidebarOpen(false); }}
       >
         <div className="sidebar-brand-row">
           <div className="sidebar-brand">Admin Console</div>
+          <SidebarCollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebarCollapsed} />
           {/* phones only; any button in the drawer closes it */}
           <button type="button" className="drawer-close" aria-label="Close menu"><X size={20} /></button>
         </div>
         <ul className="sidebar-menu">
           <li className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('overview')}><Layers size={18} /> Overview</button>
+            <button title={sidebarCollapsed ? 'Overview' : undefined} onClick={() => setActiveTab('overview')}><Layers size={18} /> <span className="sidebar-label">Overview</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'bookings' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('bookings')}><Calendar size={18} /> Bookings</button>
+            <button title={sidebarCollapsed ? 'Bookings' : undefined} onClick={() => setActiveTab('bookings')}><Calendar size={18} /> <span className="sidebar-label">Bookings</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'students' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('students')}><Users size={18} /> Students</button>
+            <button title={sidebarCollapsed ? 'Students' : undefined} onClick={() => setActiveTab('students')}><Users size={18} /> <span className="sidebar-label">Students</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'tutors' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('tutors')}><UserCheck size={18} /> Tutors</button>
+            <button title={sidebarCollapsed ? 'Tutors' : undefined} onClick={() => setActiveTab('tutors')}><UserCheck size={18} /> <span className="sidebar-label">Tutors</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'courses' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('courses')}><BookOpen size={18} /> Course Builder</button>
+            <button title={sidebarCollapsed ? 'Course Builder' : undefined} onClick={() => setActiveTab('courses')}><BookOpen size={18} /> <span className="sidebar-label">Course Builder</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'enrollments' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('enrollments')}><BookOpenCheck size={18} /> Enrollments</button>
+            <button title={sidebarCollapsed ? 'Enrollments' : undefined} onClick={() => setActiveTab('enrollments')}><BookOpenCheck size={18} /> <span className="sidebar-label">Enrollments</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'schedules' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('schedules')}><Clock size={18} /> Schedules</button>
+            <button title={sidebarCollapsed ? 'Schedules' : undefined} onClick={() => setActiveTab('schedules')}><Clock size={18} /> <span className="sidebar-label">Schedules</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'inquiries' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('inquiries')}><Mail size={18} /> Inquiries</button>
+            <button title={sidebarCollapsed ? 'Inquiries' : undefined} onClick={() => setActiveTab('inquiries')}><Mail size={18} /> <span className="sidebar-label">Inquiries</span></button>
           </li>
           <li className={`sidebar-item ${activeTab === 'messages' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('messages')} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-              <Inbox size={18} /> Student Messages
-              {adminUnread > 0 && <span className="st-unread-dot" style={{ marginLeft: 'auto' }}>{adminUnread}</span>}
+            <button title={sidebarCollapsed ? 'Student Messages' : undefined} onClick={() => setActiveTab('messages')} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+              <Inbox size={18} /> <span className="sidebar-label">Student Messages</span>
+              {adminUnread > 0 && <span className="st-unread-dot sidebar-badge" style={{ marginLeft: 'auto' }}>{adminUnread}</span>}
             </button>
           </li>
           <li className={`sidebar-item ${activeTab === 'chatmonitor' ? 'active' : ''}`}>
-            <button onClick={() => setActiveTab('chatmonitor')}><MessageSquare size={18} /> Chat Monitor</button>
+            <button title={sidebarCollapsed ? 'Chat Monitor' : undefined} onClick={() => setActiveTab('chatmonitor')}><MessageSquare size={18} /> <span className="sidebar-label">Chat Monitor</span></button>
           </li>
           <li className="sidebar-item" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '0.5rem', paddingTop: '0.5rem' }}>
-            <button onClick={() => setShowStartSessionModal(true)} style={{ color: 'var(--accent-color)', fontWeight: 'bold' }}>
-              <MonitorPlay size={18} /> Start Live Whiteboard ↗
+            <button title={sidebarCollapsed ? 'Start Live Whiteboard' : undefined} onClick={() => setShowStartSessionModal(true)} style={{ color: 'var(--accent-color)', fontWeight: 'bold' }}>
+              <MonitorPlay size={18} /> <span className="sidebar-label">Start Live Whiteboard ↗</span>
             </button>
           </li>
         </ul>
