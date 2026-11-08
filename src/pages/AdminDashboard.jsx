@@ -56,9 +56,6 @@ const getMaterialFileType = (file) => {
   return 'other';
 };
 
-// Age typed on the free teen class sign-up form (stored in additional_comments).
-const freeClassAge = (s) => (String(s?.additional_comments || '').match(/Age: (\d+)/) || [])[1] || '';
-
 export default function AdminDashboard({ user, onLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
@@ -1342,7 +1339,7 @@ export default function AdminDashboard({ user, onLogout }) {
                               <span style={{ fontWeight: 'bold' }}>{s.full_name}</span>
                               {(s.additional_comments || '').includes(FREE_CLASS.tag) && (
                                 <span title={s.additional_comments} style={{ width: 'fit-content', background: 'rgba(15, 44, 89, 0.08)', color: 'var(--primary-color)', padding: '0.15rem 0.45rem', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', marginTop: '0.2rem' }}>
-                                Free Teen Class{freeClassAge(s) ? ` · Age ${freeClassAge(s)}` : ''}
+                                Free Teen Class
                                 </span>
                               )}
                               {s.status === 'pending' ? (

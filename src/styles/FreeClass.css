@@ -54,21 +54,45 @@
 }
 .fc-page .fc-cta:hover { filter: brightness(1.05); }
 
-.fc-weeks-section { padding-top: 3rem; }
+.fc-trio {
+  display: inline-block; margin: -0.6rem 0 1.4rem; padding: 0.35rem 0.9rem;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.12);
+  font-weight: 700; font-size: 0.95rem; letter-spacing: 0.02em; color: #ffd8bd; white-space: pre-wrap;
+}
+
+.fc-courses-section { padding-top: 3rem; }
 .fc-page h2 { font-family: var(--font-heading); color: var(--primary-color, #0f2c59); font-size: clamp(1.5rem, 4.5vw, 2rem); margin: 0 0 0.4rem; }
 .fc-lead { color: #5a6782; margin: 0 0 1.5rem; }
-.fc-weeks {
-  list-style: none; padding: 0; margin: 0;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem;
+.fc-courses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
+.fc-course {
+  background: #fff; border-radius: 18px; overflow: hidden;
+  border: 1px solid #e6ebf5; box-shadow: 0 10px 28px rgba(15, 44, 89, 0.07);
+  display: flex; flex-direction: column;
 }
-.fc-week {
-  background: #fff; border-radius: 14px; padding: 1.1rem 1.2rem;
-  border: 1px solid #e6ebf5; border-top: 4px solid var(--accent-color, #f27a24);
-  box-shadow: 0 6px 18px rgba(15, 44, 89, 0.05);
+.fc-course-img {
+  position: relative; aspect-ratio: 16 / 9;
+  background-size: cover; background-position: center; background-color: #0f2c59;
 }
-.fc-week-num { display: block; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-color, #f27a24); }
-.fc-week strong { display: block; font-family: var(--font-heading); font-size: 1.08rem; color: var(--primary-color, #0f2c59); margin: 0.25rem 0 0.35rem; }
-.fc-week p { margin: 0; color: #5a6782; font-size: 0.92rem; line-height: 1.5; }
+.fc-course-weeks {
+  position: absolute; left: 12px; bottom: 12px;
+  background: var(--accent-color, #f27a24); color: #fff;
+  font-weight: 800; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.3rem 0.65rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.fc-course-body { padding: 1.1rem 1.2rem 1.25rem; display: flex; flex-direction: column; flex: 1; }
+.fc-course h3 { font-family: var(--font-heading); color: var(--primary-color, #0f2c59); font-size: 1.12rem; line-height: 1.3; margin: 0 0 0.35rem; }
+.fc-course-sum { color: #5a6782; font-size: 0.9rem; line-height: 1.5; margin: 0 0 0.9rem; }
+.fc-course-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.fc-course-list li { background: #f6f8fc; border-radius: 12px; padding: 0.7rem 0.8rem; border-left: 3px solid var(--accent-color, #f27a24); }
+.fc-wk { display: block; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-color, #f27a24); }
+.fc-course-list strong { display: block; color: #1f2a44; font-size: 0.95rem; margin: 0.1rem 0 0.2rem; }
+.fc-course-list p { margin: 0; color: #5a6782; font-size: 0.85rem; line-height: 1.45; }
+.fc-need {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  margin: 1.5rem 0 0; color: #34405c; font-weight: 600; text-align: center;
+}
+.fc-need svg { color: var(--accent-color, #f27a24); flex-shrink: 0; }
+@media (max-width: 900px) { .fc-courses { grid-template-columns: 1fr; max-width: 560px; margin: 0 auto; } }
 
 .fc-form-section { padding-top: 3rem; scroll-margin-top: 90px; }
 .fc-form-card {

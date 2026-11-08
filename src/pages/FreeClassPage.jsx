@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { CalendarDays, Monitor, Users, Gift, CheckCircle2, ArrowDown } from 'lucide-react';
+import { CalendarDays, Monitor, Users, Gift, CheckCircle2, ArrowDown, Smartphone } from 'lucide-react';
 import { registerStudent } from '../services/dataService';
-import { FREE_CLASS, FREE_CLASS_WEEKS, SCHOOL_CLASSES } from '../data/freeTeenClass';
+import { FREE_CLASS, FREE_CLASS_COURSES, SCHOOL_CLASSES } from '../data/freeTeenClass';
 import '../styles/FreeClass.css';
 
-// Landing + sign-up page for the free 6-week teen tech class.
+// Landing + sign-up page for the free 6-week teen class.
 // The church flyer's QR code points here (foundaxia.com/free-class).
 
-const EMPTY = { teenName: '', age: '', schoolClass: '', parentName: '', phone: '', email: '', consent: false };
+const EMPTY = { teenName: '', schoolClass: '', parentName: '', phone: '', email: '', consent: false };
 
 export default function FreeClassPage() {
   const [form, setForm] = useState(EMPTY);
@@ -35,7 +35,7 @@ export default function FreeClassPage() {
         date_of_birth: null,
         gender: null,
         start_date: null,
-        additional_comments: `${FREE_CLASS.tag} (church outreach) | Age: ${form.age} | Parent/guardian: ${form.parentName.trim()} | Parent consent: yes`
+        additional_comments: `${FREE_CLASS.tag} (church outreach) | Parent/guardian: ${form.parentName.trim()} | Parent consent: yes`
       });
       setDone(form.teenName.trim().split(' ')[0] || 'your teen');
       setForm(EMPTY);
@@ -49,6 +49,7 @@ export default function FreeClassPage() {
 
   const goToForm = () => document.getElementById('fc-register')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
+  let week = 0;
   return (
     <div className="fc-page">
       <section className="fc-hero">
@@ -58,6 +59,7 @@ export default function FreeClassPage() {
           <span className="fc-badge"><Gift size={15} /> 100% FREE · 6 WEEKS</span>
           <h1>{FREE_CLASS.name}</h1>
           <p className="fc-sub">{FREE_CLASS.tagline} for teenagers</p>
+          <p className="fc-trio">{FREE_CLASS_COURSES.map(c => c.short).join('  ·  ')}</p>
           <ul className="fc-facts">
             <li><CalendarDays size={17} /> {FREE_CLASS.when} · {FREE_CLASS.start}</li>
             <li><Monitor size={17} /> {FREE_CLASS.where}</li>
@@ -67,18 +69,36 @@ export default function FreeClassPage() {
         </div>
       </section>
 
-      <section className="fc-wrap fc-weeks-section">
-        <h2>What your teen will learn</h2>
-        <p className="fc-lead">Six hands-on Saturdays. Each week builds a real skill they can use at school and beyond.</p>
-        <ol className="fc-weeks">
-          {FREE_CLASS_WEEKS.map((w, i) => (
-            <li key={w.title} className="fc-week">
-              <span className="fc-week-num">Week {i + 1}</span>
-              <strong>{w.title}</strong>
-              <p>{w.text}</p>
-            </li>
-          ))}
-        </ol>
+      <section className="fc-wrap fc-courses-section">
+        <h2>3 courses · 6 Saturdays</h2>
+        <p className="fc-lead">Two live, hands-on Saturdays for each course, taught by FoundaXia tutors.</p>
+        <div className="fc-courses">
+          {FREE_CLASS_COURSES.map((c) => {
+            const first = week + 1;
+            week += c.weeks.length;
+            return (
+              <article key={c.title} className="fc-course">
+                <div className="fc-course-img" style={{ backgroundImage: `url('${c.image}')` }}>
+                  <span className="fc-course-weeks">Weeks {first}–{week}</span>
+                </div>
+                <div className="fc-course-body">
+                  <h3>{c.title}</h3>
+                  <p className="fc-course-sum">{c.summary}</p>
+                  <ol className="fc-course-list">
+                    {c.weeks.map((w, i) => (
+                      <li key={w.title}>
+                        <span className="fc-wk">Week {first + i}</span>
+                        <strong>{w.title}</strong>
+                        <p>{w.text}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <p className="fc-need"><Smartphone size={18} /> All your teen needs: a smartphone or laptop with internet.</p>
       </section>
 
       <section className="fc-wrap fc-form-section" id="fc-register">
@@ -95,14 +115,10 @@ export default function FreeClassPage() {
               <h2>Register for free</h2>
               <p className="fc-lead">Takes one minute. A parent or guardian should fill this in.</p>
 
-              <label className="fc-field">
-                <span>Teen's full name *</span>
-                <input name="teenName" value={form.teenName} onChange={change} required maxLength={80} placeholder="e.g. David Adeyemi" autoComplete="off" />
-              </label>
               <div className="fc-row">
                 <label className="fc-field">
-                  <span>Age *</span>
-                  <input name="age" type="number" inputMode="numeric" min="1" max="99" value={form.age} onChange={change} required placeholder="e.g. 15" />
+                  <span>Teen's full name *</span>
+                  <input name="teenName" value={form.teenName} onChange={change} required maxLength={80} placeholder="e.g. David Adeyemi" autoComplete="off" />
                 </label>
                 <label className="fc-field">
                   <span>Class in school *</span>
