@@ -27,3 +27,29 @@ export const isPowerPointMaterial = (m) =>
 
 export const officeViewerUrl = (fileUrl) =>
   `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`;
+
+// Slide shape (width / height) of a PowerPoint, read from ppt/presentation.xml so the
+// viewer can be sized to fit the whole slide. Falls back to 16:9 (or 4:3 for old .ppt).
+const aspectCache = new Map();
+const DEFAULT_ASPECT = 16 / 9;
+
+export const cachedPowerPointAspect = (url) => aspectCache.get(url) || (/\.(ppt|pps)(\?|#|$)/i.test(String(url)) ? 4 / 3 : DEFAULT_ASPECT);
+
+export const getPowerPointAspect = async (url) => {
+  if (aspectCache.has(url)) return aspectCache.get(url);
+  let aspect = cachedPowerPointAspect(url);
+  try {
+    if (/\.(pptx|ppsx|pptm)(\?|#|$)/i.test(new URL(url, window.location.href).pathname)) {
+      const res = await fetch(url);
+      if (res.ok) {
+        const { unzip } = await import('./zip.js');
+        const zip = await unzip(new Uint8Array(await res.arrayBuffer()));
+        const xml = await zip.read('ppt/presentation.xml');
+        const m = xml && xml.match(/<p:sldSz\b[^>]*?\bcx="(\d+)"[^>]*?\bcy="(\d+)"/);
+        if (m && +m[1] > 0 && +m[2] > 0) aspect = +m[1] / +m[2];
+      }
+    }
+  } catch { /* keep the default shape */ }
+  aspectCache.set(url, aspect);
+  return aspect;
+};
