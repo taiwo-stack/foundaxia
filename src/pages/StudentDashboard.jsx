@@ -28,6 +28,7 @@ import '../styles/Dashboard.css';
 import '../styles/StudentProfile.css';
 import '../styles/DashboardMobile.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
+import { tzLabel } from '../utils/timeZone';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -801,7 +802,7 @@ export default function StudentDashboard({ user, onLogout }) {
                           <div>
                             <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#166534', fontWeight: 700, display: 'block' }}>Starts At</span>
                             <strong style={{ fontSize: '0.95rem', color: '#14532d' }}>
-                              {classTime.toLocaleDateString([], { month: 'short', day: 'numeric' })} &bull; {classTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {classTime.toLocaleDateString([], { month: 'short', day: 'numeric' })} &bull; {classTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} {tzLabel(classTime)}
                             </strong>
                           </div>
                           {(nextClass.meeting_link || nextClass.meeting_link_2) && (
@@ -906,7 +907,7 @@ export default function StudentDashboard({ user, onLogout }) {
                                 </div>
                               )}
                               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary-color)', marginTop: '0.25rem' }}>
-                                ⏰ {classTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                ⏰ {classTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} {tzLabel(classTime)}
                               </div>
                             </div>
                             {!isPast && (sch.meeting_link || sch.meeting_link_2) && (
@@ -1375,7 +1376,7 @@ export default function StudentDashboard({ user, onLogout }) {
                             <tr key={sch.id}>
                               <td style={{ fontWeight: 'bold' }}>{sch.title} <div style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#718096' }}>{cTitle}</div></td>
                               <td>{tName}</td>
-                              <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{fmtDay(new Date(sch.start_time))}<div style={{ color: '#718096' }}>{fmtTime(new Date(sch.start_time))} – {fmtTime(classEnd(sch))}</div></td>
+                              <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{fmtDay(new Date(sch.start_time))}<div style={{ color: '#718096' }}>{fmtTime(new Date(sch.start_time))} – {fmtTime(classEnd(sch))}</div><div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(sch.start_time))}</div></td>
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
@@ -1442,7 +1443,7 @@ export default function StudentDashboard({ user, onLogout }) {
                               <div className="ch-meta">{joinMeta(courseTitleOf(sch.course_id), tutorNameOf(sch.tutor_id))}</div>
                             )}
                             <div className="ch-meta">
-                              {start.toLocaleDateString([], { weekday: 'long' })}, {fmtTime(start)} – {fmtTime(end)}
+                              {start.toLocaleDateString([], { weekday: 'long' })}, {fmtTime(start)} – {fmtTime(end)} {tzLabel(start)}
                               {mins > 0 && <> · {mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ''}` : `${mins}m`}</>}
                             </div>
                           </div>
