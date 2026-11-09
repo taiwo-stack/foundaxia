@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isTrustedRemoteUrl } from '../services/whiteboardAuth';
-import { isPowerPointUrl, officeViewerUrl } from '../utils/slideMaterials';
+import { isPowerPointUrl, officeViewerUrl, getPowerPointAspect, cachedPowerPointAspect } from '../utils/slideMaterials';
 
 // Many of this app's uploaded slide decks share one generator template, which drives
 // internal navigation through a top-level `function go(n){...}` (or a couple of common
@@ -174,9 +174,36 @@ function HtmlSlideFrame({ src, title = 'Slide content', allowInteraction = true,
 // URL - only our own Storage/site URLs are accepted, never one from an arbitrary broadcast.
 // The viewer is cross-origin, so there is no slide-number bridge: each viewer clicks
 // through the deck on their own. Draw/Interact still works (pointer-events on the frame).
-function PowerPointFrame({ src, title = 'PowerPoint slides', allowInteraction = true, style }) {
+// Height of Microsoft's own bar under the slide (slide counter, arrows).
+const OFFICE_BAR_PX = 40;
+
+// `safeArea` keeps the slide clear of things floating over it (e.g. the whiteboard
+// toolbar on the left, participant strip on the right, zoom controls at the bottom).
+function PowerPointFrame({ src, title = 'PowerPoint slides', allowInteraction = true, style, safeArea }) {
   const [loaded, setLoaded] = useState(false);
+  const [aspect, setAspect] = useState(() => cachedPowerPointAspect(src));
+  const [box, setBox] = useState(null);
+  const areaRef = useRef(null);
   const ok = typeof src === 'string' && !/^data:/i.test(src) && isTrustedRemoteUrl(src);
+
+  useEffect(() => {
+    if (!ok) return undefined;
+    let alive = true;
+    setAspect(cachedPowerPointAspect(src));
+    getPowerPointAspect(src).then(a => { if (alive) setAspect(a); });
+    return () => { alive = false; };
+  }, [src, ok]);
+
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setBox({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ok]);
 
   if (!ok) {
     return (
@@ -186,32 +213,47 @@ function PowerPointFrame({ src, title = 'PowerPoint slides', allowInteraction = 
     );
   }
 
+  // Largest frame of the slide's shape (plus Microsoft's bar) that fits the free area,
+  // so no part of a slide is cropped or hidden behind the whiteboard controls.
+  let frame = { width: '100%', height: '100%' };
+  if (box && box.w > 0 && box.h > 0) {
+    const w = Math.max(0, Math.min(box.w, (box.h - OFFICE_BAR_PX) * aspect));
+    frame = { width: Math.floor(w), height: Math.floor(w / aspect + OFFICE_BAR_PX) };
+  }
+  const pad = safeArea || {};
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#1f1f1f', ...style }}>
-      {!loaded && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', color: '#cbd5e0', pointerEvents: 'none' }}>
-          <div className="loading-spinner" style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: 'white', width: '20px', height: '20px' }} />
-          Loading PowerPoint…
-        </div>
-      )}
-      <iframe
-        key={src}
-        src={officeViewerUrl(src)}
-        title={title}
-        onLoad={() => setLoaded(true)}
-        allow="fullscreen"
-        allowFullScreen
-        referrerPolicy="no-referrer"
-        // Microsoft's own origin, so allow-same-origin cannot reach our cookies or storage.
-        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation"
-        style={{
-          border: 'none',
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          pointerEvents: allowInteraction ? 'auto' : 'none'
-        }}
-      />
+    <div style={{
+      position: 'relative', width: '100%', height: '100%', background: '#1f1f1f', boxSizing: 'border-box',
+      paddingTop: pad.top || 0, paddingRight: pad.right || 0, paddingBottom: pad.bottom || 0, paddingLeft: pad.left || 0,
+      ...style
+    }}>
+      <div ref={areaRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+        {!loaded && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem', color: '#cbd5e0', pointerEvents: 'none' }}>
+            <div className="loading-spinner" style={{ borderColor: 'rgba(255,255,255,0.15)', borderTopColor: 'white', width: '20px', height: '20px' }} />
+            Loading PowerPoint…
+          </div>
+        )}
+        <iframe
+          key={src}
+          src={officeViewerUrl(src)}
+          title={title}
+          onLoad={() => setLoaded(true)}
+          allow="fullscreen"
+          allowFullScreen
+          referrerPolicy="no-referrer"
+          // Microsoft's own origin, so allow-same-origin cannot reach our cookies or storage.
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-presentation"
+          style={{
+            border: 'none',
+            ...frame,
+            display: 'block',
+            flex: 'none',
+            pointerEvents: allowInteraction ? 'auto' : 'none'
+          }}
+        />
+      </div>
     </div>
   );
 }
