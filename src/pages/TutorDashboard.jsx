@@ -27,6 +27,7 @@ import '../styles/Dashboard.css';
 import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 import { tzLabel } from '../utils/timeZone';
+import QuizImport from '../components/QuizImport';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -1927,6 +1928,8 @@ export default function TutorDashboard({ user }) {
                   {/* ── Quiz Question Builder ── */}
                   {newTaskType === 'quiz' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
+                      {/* Untouched blank question cards are replaced by the imported ones */}
+                      <QuizImport onImport={(qs) => setQuizQuestions(prev => [...prev.filter((q) => String(q.question || '').trim() || (q.options || []).some(o => String(o || '').trim())), ...qs])} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: '700', color: 'var(--primary-color)', fontSize: '0.9rem' }}>
                           🧩 Questions ({quizQuestions.length})
@@ -2419,6 +2422,8 @@ export default function TutorDashboard({ user }) {
                                     })()}
                                   </div>
                                 </div>
+
+                                <QuizImport onImport={(qs) => setEditQuizQuestions(prev => [...prev.filter((q) => String(q.question || '').trim() || (q.options || []).some(o => String(o || '').trim())), ...qs])} />
 
                                 {editQuizQuestions.map((q, qIdx) => (
                                   <div key={qIdx} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem' }}>

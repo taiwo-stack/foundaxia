@@ -44,6 +44,7 @@ import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../util
 import '../styles/Dashboard.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 import { tzLabel } from '../utils/timeZone';
+import QuizImport from '../components/QuizImport';
 
 // Material file_type convention shared with the tutor and student dashboards:
 // 'html_slide' | 'powerpoint' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
@@ -1950,6 +1951,10 @@ export default function AdminDashboard({ user, onLogout }) {
                                       <input type="text" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Task Title" required style={{ padding: '0.35rem', fontSize: '0.8rem' }} />
                                       <textarea value={taskDesc} onChange={(e) => setTaskDesc(e.target.value)} placeholder="Instructions..." rows={2} style={{ padding: '0.35rem', fontSize: '0.8rem' }}></textarea>
 
+                                      {(taskType === 'quiz' || taskType === 'true_false') && (
+                                        <QuizImport onImport={(qs) => { setTaskType('quiz'); setQuizQuestions(prev => [...prev, ...qs]); }} />
+                                      )}
+
                                       {taskType === 'true_false' && (
                                         <div style={{ background: 'white', padding: '0.6rem', borderRadius: '8px', borderLeft: '3px solid var(--accent-color)', fontSize: '0.8rem' }}>
                                           <div className="form-group" style={{ margin: 0 }}>
@@ -3169,6 +3174,19 @@ export default function AdminDashboard({ user, onLogout }) {
                 <label>Instructions Details</label>
                 <textarea value={editingTask.description || ''} onChange={(e) => setEditingTask(prev => ({ ...prev, description: e.target.value }))} rows={3}></textarea>
               </div>
+
+              {(editingTask.task_type === 'quiz' || editingTask.task_type === 'true_false') && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <QuizImport onImport={(qs) => setEditingTask(prev => ({
+                    ...prev,
+                    task_type: 'quiz',
+                    // a single True/False task becomes the first question of the quiz
+                    quiz_questions: prev.task_type === 'true_false'
+                      ? [{ question: prev.title, options: ['True', 'False'], correct: Number(editQCorrect) }, ...qs]
+                      : [...(prev.quiz_questions || []), ...qs]
+                  }))} />
+                </div>
+              )}
 
               {editingTask.task_type === 'true_false' && (
                 <div style={{ background: '#f7fafc', padding: '1rem', borderRadius: '10px', marginBottom: '1.5rem', borderLeft: '4px solid var(--accent-color)', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
