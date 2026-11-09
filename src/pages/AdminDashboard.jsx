@@ -45,6 +45,8 @@ import '../styles/Dashboard.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 import { tzLabel } from '../utils/timeZone';
 import QuizImport from '../components/QuizImport';
+import EditScheduleModal, { TimeZoneSelect } from '../components/EditScheduleModal';
+import { zonedToUtc, recallStudentZone, rememberStudentZone } from '../utils/timeZone';
 
 // Material file_type convention shared with the tutor and student dashboards:
 // 'html_slide' | 'powerpoint' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
@@ -198,6 +200,9 @@ export default function AdminDashboard({ user, onLogout }) {
 
   // Class scheduling state inputs
   const [schStudentId, setSchStudentId] = useState('');
+  const [schTz, setSchTz] = useState(() => recallStudentZone(''));
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  useEffect(() => { if (schStudentId) setSchTz(recallStudentZone(schStudentId)); }, [schStudentId]);
   const [schCourseId, setSchCourseId] = useState('');
   const [schTutorId, setSchTutorId] = useState('');
   const [schTitle, setSchTitle] = useState('');
@@ -1103,12 +1108,13 @@ export default function AdminDashboard({ user, onLogout }) {
         course_id: schCourseId,
         tutor_id: schTutorId,
         title: schTitle,
-        start_time: new Date(schStart).toISOString(),
-        end_time: new Date(schEnd).toISOString(),
+        start_time: zonedToUtc(schStart, schTz).toISOString(),
+        end_time: zonedToUtc(schEnd, schTz).toISOString(),
         meeting_link: schLink || null,
         meeting_link_2: schLink2 || null
       });
       setSchedules(prev => [...prev, saved]);
+      rememberStudentZone(schStudentId, schTz);
       setSchTitle('');
       setSchStart('');
       setSchEnd('');
@@ -2254,9 +2260,13 @@ export default function AdminDashboard({ user, onLogout }) {
                   <label>Class Title *</label>
                   <input type="text" value={schTitle} onChange={(e) => setSchTitle(e.target.value)} placeholder="e.g. Algebra Revision" required />
                 </div>
+                <div className="form-group">
+                  <label>Time zone for these times</label>
+                  <TimeZoneSelect value={schTz} onChange={setSchTz} previewDate={schStart ? zonedToUtc(schStart, schTz) : null} />
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
                   <div className="form-group">
-                    <label>Start Time * <span style={{ fontSize: '0.72rem', color: '#718096' }}>({tzLabel()})</span></label>
+                    <label>Start Time *</label>
                     <input type="datetime-local" value={schStart} onChange={(e) => setSchStart(e.target.value)} required />
                   </div>
                   <div className="form-group">
@@ -2316,7 +2326,10 @@ export default function AdminDashboard({ user, onLogout }) {
                                 </div>
                               ) : <span style={{ color: '#cbd5e0' }}>None</span>}
                             </td>
-                            <td><button className="btn-action delete" style={{ padding: '0.2rem 0.4rem' }} onClick={() => handleDeleteSchedule(s.id)}><Trash2 size={12} /></button></td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              <button className="btn-action edit" style={{ padding: '0.2rem 0.4rem', marginRight: '0.3rem' }} onClick={() => setEditingSchedule(s)} title="Edit class / change time zone"><Edit size={12} /></button>
+                              <button className="btn-action delete" style={{ padding: '0.2rem 0.4rem' }} onClick={() => handleDeleteSchedule(s.id)}><Trash2 size={12} /></button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -2546,6 +2559,15 @@ export default function AdminDashboard({ user, onLogout }) {
           </div>
         )}
       </main>
+
+      {editingSchedule && (
+        <EditScheduleModal
+          schedule={editingSchedule}
+          studentName={students.find(st => st.id === editingSchedule.student_id)?.full_name}
+          onClose={() => setEditingSchedule(null)}
+          onSaved={(updated) => { setSchedules(prev => prev.map(x => x.id === updated.id ? updated : x)); setEditingSchedule(null); }}
+        />
+      )}
 
       {/* Add Tutor Modal Overlay */}
       {showTutorModal && (

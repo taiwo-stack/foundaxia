@@ -28,6 +28,8 @@ import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 import { tzLabel } from '../utils/timeZone';
 import QuizImport from '../components/QuizImport';
+import EditScheduleModal, { TimeZoneSelect } from '../components/EditScheduleModal';
+import { zonedToUtc, recallStudentZone, rememberStudentZone } from '../utils/timeZone';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -183,6 +185,9 @@ export default function TutorDashboard({ user }) {
   // submit handler) are composed from them.
   const [schDate, setSchDate] = useState('');
   const [schStartTime, setSchStartTime] = useState('');
+  // Time zone the class times are typed in (remembered per student)
+  const [schTz, setSchTz] = useState(() => recallStudentZone(''));
+  useEffect(() => { if (schStudentId) setSchTz(recallStudentZone(schStudentId)); }, [schStudentId]);
   const [schEndTime, setSchEndTime] = useState('');
   const [schShowLink2, setSchShowLink2] = useState(false);
   const [schRecurStartDate, setSchRecurStartDate] = useState('');
@@ -536,12 +541,13 @@ export default function TutorDashboard({ user }) {
           // real UTC instant. Without this, Postgres stores the literal string as if it were
           // already UTC, silently shifting the effective time by the tutor's own UTC offset -
           // which can push a class that's genuinely upcoming into appearing already past.
-          start_time: new Date(schStart).toISOString(),
-          end_time: new Date(schEnd).toISOString(),
+          start_time: zonedToUtc(schStart, schTz).toISOString(),
+          end_time: zonedToUtc(schEnd, schTz).toISOString(),
           meeting_link: schLink,
           meeting_link_2: schLink2
         });
         setSchedules(prev => [...prev, saved]);
+        rememberStudentZone(schStudentId, schTz);
         setSchTitle('');
         setSchStart('');
         setSchEnd('');
@@ -588,8 +594,8 @@ export default function TutorDashboard({ user }) {
             const d = String(curr.getDate()).padStart(2, '0');
             const dateStr = `${y}-${m}-${d}`;
 
-            const startISO = new Date(`${dateStr}T${schRecurStartTime}`).toISOString();
-            const endISO = new Date(`${dateStr}T${schRecurEndTime}`).toISOString();
+            const startISO = zonedToUtc(`${dateStr}T${schRecurStartTime}`, schTz).toISOString();
+            const endISO = zonedToUtc(`${dateStr}T${schRecurEndTime}`, schTz).toISOString();
 
             const saved = await saveSchedule({
               student_id: schStudentId,
@@ -610,6 +616,7 @@ export default function TutorDashboard({ user }) {
           alert('No classes scheduled. Verify that selected weekdays fall within your start and end date range.');
         } else {
           setSchedules(prev => [...prev, ...generated.filter(Boolean)]);
+          rememberStudentZone(schStudentId, schTz);
           setSchTitle('');
           setSchLink('');
           setSchLink2('');
@@ -646,44 +653,9 @@ export default function TutorDashboard({ user }) {
     }
   };
 
-  // datetime-local inputs take LOCAL wall time; toISOString() gives UTC, which made
-  // every save shift the class by the tutor's UTC offset.
-  const toLocalInputValue = (iso) => {
-    const d = new Date(iso);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  };
-
   const handleEditScheduleClick = (sch) => {
-    setEditingSchedule({
-      ...sch,
-      start_time: sch.start_time ? toLocalInputValue(sch.start_time) : '',
-      end_time: sch.end_time ? toLocalInputValue(sch.end_time) : ''
-    });
+    setEditingSchedule({ ...sch });
     setShowEditScheduleModal(true);
-  };
-
-  const handleEditScheduleSubmit = async (e) => {
-    e.preventDefault();
-    if (!editingSchedule.start_time) return alert('Start time is required.');
-    if (editingSchedule.end_time && new Date(editingSchedule.end_time) <= new Date(editingSchedule.start_time)) {
-      return alert('End time must be after the start time.');
-    }
-    try {
-      const updates = {
-        title: editingSchedule.title,
-        start_time: new Date(editingSchedule.start_time).toISOString(),
-        end_time: editingSchedule.end_time ? new Date(editingSchedule.end_time).toISOString() : null,
-        meeting_link: editingSchedule.meeting_link || null,
-        meeting_link_2: editingSchedule.meeting_link_2 || null
-      };
-      const updated = await updateSchedule(editingSchedule.id, updates);
-      setSchedules(prev => prev.map(s => s.id === updated.id ? updated : s));
-      setShowEditScheduleModal(false);
-      setEditingSchedule(null);
-      alert('Class schedule updated!');
-    } catch (err) {
-      alert('Error updating schedule: ' + err.message);
-    }
   };
 
   const handleStartLiveSession = async () => {
@@ -939,8 +911,10 @@ export default function TutorDashboard({ user }) {
                   {/* Step 2: when */}
                   <div className="tsch-step">
                     <div className="tsch-step-label"><span>2</span> When</div>
-                    <div style={{ fontSize: '0.8rem', color: '#4a5568', background: '#f0f7ff', border: '1px solid #cfe3ff', borderRadius: 8, padding: '0.45rem 0.7rem', margin: '0.4rem 0 0.8rem' }}>
-                      🌍 Enter times in <strong>your</strong> time zone: <strong>{tzLabel()}</strong>. Each student and parent automatically sees the class in their own local time (e.g. Canada or UK time).
+                    <div style={{ fontSize: '0.8rem', color: '#4a5568', background: '#f0f7ff', border: '1px solid #cfe3ff', borderRadius: 8, padding: '0.55rem 0.7rem', margin: '0.4rem 0 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <span>🌍 <strong>Times below are in:</strong> pick the student's zone (e.g. UK time) to type their local time. Everyone sees the class in their own clock.</span>
+                      <TimeZoneSelect value={schTz} onChange={setSchTz}
+                        previewDate={schType === 'single' ? (schStart ? zonedToUtc(schStart, schTz) : null) : (schRecurStartDate && schRecurStartTime ? zonedToUtc(`${schRecurStartDate}T${schRecurStartTime}`, schTz) : null)} />
                     </div>
                     <div className="tsch-toggle" role="radiogroup" aria-label="Schedule type">
                       {[['single', 'One class'], ['recurring', 'Repeating']].map(([key, label]) => (
@@ -2626,40 +2600,12 @@ export default function TutorDashboard({ user }) {
       </main>
 
       {showEditScheduleModal && editingSchedule && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <button className="modal-close" onClick={() => { setShowEditScheduleModal(false); setEditingSchedule(null); }}><X size={20} /></button>
-            <h3 className="modal-title">Edit Class Schedule</h3>
-            <form onSubmit={handleEditScheduleSubmit}>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Class Title *</label>
-                <input type="text" value={editingSchedule.title || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, title: e.target.value }))} required />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label>Start Time * <span style={{ fontSize: '0.72rem', color: '#718096' }}>({tzLabel()})</span></label>
-                  <input type="datetime-local" value={editingSchedule.start_time || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, start_time: e.target.value }))} required />
-                </div>
-                <div className="form-group">
-                  <label>End Time</label>
-                  <input type="datetime-local" value={editingSchedule.end_time || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, end_time: e.target.value }))} />
-                </div>
-              </div>
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label>Meeting Join Link - First Session</label>
-                <input type="url" value={editingSchedule.meeting_link || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, meeting_link: e.target.value }))} placeholder="https://zoom.us/j/..." />
-              </div>
-              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label>Meeting Join Link - Second Session (optional)</label>
-                <input type="url" value={editingSchedule.meeting_link_2 || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, meeting_link_2: e.target.value }))} placeholder="https://zoom.us/j/..." />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-                <button type="button" className="btn-prev" onClick={() => { setShowEditScheduleModal(false); setEditingSchedule(null); }}>Cancel</button>
-                <button type="submit" className="btn-submit">Save Changes</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <EditScheduleModal
+          schedule={editingSchedule}
+          studentName={students.find(st => st.id === editingSchedule.student_id)?.full_name}
+          onClose={() => { setShowEditScheduleModal(false); setEditingSchedule(null); }}
+          onSaved={(updated) => { setSchedules(prev => prev.map(x => x.id === updated.id ? updated : x)); setShowEditScheduleModal(false); setEditingSchedule(null); }}
+        />
       )}
 
       {showStartSessionModal && (
