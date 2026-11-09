@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 
 import { fmtDay, fmtTime, fmtDate, scoreTone } from '../utils/parentInsights';
+import { tzLabel } from '../utils/timeZone';
 
 // Parent-facing views of the child's learning: built from the data the student dashboard
 // already loads (classes, attendance, homework, grades, tutors) plus tutor notes.
@@ -21,7 +22,7 @@ export function OverviewTab({ ins, notes, outstandingText, onGo }) {
         {next ? (
           <div className="pi-big">
             <strong>{next.title || ins.courseTitle(next.course_id)}</strong>
-            <span>{fmtDay(new Date(next.start_time))} · {fmtTime(new Date(next.start_time))}</span>
+            <span>{fmtDay(new Date(next.start_time))} · {fmtTime(new Date(next.start_time))} {tzLabel(new Date(next.start_time))}</span>
             <small>{ins.courseTitle(next.course_id)} with {ins.tutorName(next.tutor_id)}</small>
           </div>
         ) : <p className="pa-muted">No upcoming classes scheduled.</p>}
@@ -197,7 +198,7 @@ export function AttendanceTab({ ins }) {
                   <li key={s.id} className="pa-fee">
                     <div className="pa-fee-main">
                       <div className="pa-fee-title">{s.title || ins.courseTitle(s.course_id)}</div>
-                      <div className="pa-fee-due">{fmtDay(d)} · {fmtTime(d)} · {ins.tutorName(s.tutor_id)}</div>
+                      <div className="pa-fee-due">{fmtDay(d)} · {fmtTime(d)} {tzLabel(d)} · {ins.tutorName(s.tutor_id)}</div>
                     </div>
                     <span className={`pi-status ${st.cls}`}><st.Icon size={14} /> {st.label}</span>
                   </li>
@@ -221,7 +222,7 @@ export function AttendanceTab({ ins }) {
                 <li key={s.id} className="pa-fee">
                   <div className="pa-fee-main">
                     <div className="pa-fee-title">{s.title || ins.courseTitle(s.course_id)}</div>
-                    <div className="pa-fee-due">{fmtDay(d)} · {fmtTime(d)} · {ins.tutorName(s.tutor_id)}</div>
+                    <div className="pa-fee-due">{fmtDay(d)} · {fmtTime(d)} {tzLabel(d)} · {ins.tutorName(s.tutor_id)}</div>
                   </div>
                 </li>
               );

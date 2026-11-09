@@ -43,6 +43,7 @@ import HtmlSlideModal from '../components/HtmlSlideModal';
 import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../utils/slideMaterials';
 import '../styles/Dashboard.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
+import { tzLabel } from '../utils/timeZone';
 
 // Material file_type convention shared with the tutor and student dashboards:
 // 'html_slide' | 'powerpoint' (set by caller) | 'pdf' | 'image' | 'video' | 'doc' | 'other'
@@ -2250,7 +2251,7 @@ export default function AdminDashboard({ user, onLogout }) {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
                   <div className="form-group">
-                    <label>Start Time *</label>
+                    <label>Start Time * <span style={{ fontSize: '0.72rem', color: '#718096' }}>({tzLabel()})</span></label>
                     <input type="datetime-local" value={schStart} onChange={(e) => setSchStart(e.target.value)} required />
                   </div>
                   <div className="form-group">
@@ -2300,7 +2301,7 @@ export default function AdminDashboard({ user, onLogout }) {
                             <td>{sName}</td>
                             <td>{tName}</td>
                             <td style={{ fontSize: '0.8rem' }}>
-                              {new Date(s.start_time).toLocaleString()} - {new Date(s.end_time).toLocaleTimeString()}
+                              {new Date(s.start_time).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} – {new Date(s.end_time || new Date(s.start_time).getTime() + 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(s.start_time))}</div>
                             </td>
                             <td>
                               {s.meeting_link || s.meeting_link_2 ? (

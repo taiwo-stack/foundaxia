@@ -26,6 +26,7 @@ import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../util
 import '../styles/Dashboard.css';
 import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
+import { tzLabel } from '../utils/timeZone';
 
 const formatMessageTime = (dateStr) => {
   if (!dateStr) return '';
@@ -937,6 +938,9 @@ export default function TutorDashboard({ user }) {
                   {/* Step 2: when */}
                   <div className="tsch-step">
                     <div className="tsch-step-label"><span>2</span> When</div>
+                    <div style={{ fontSize: '0.8rem', color: '#4a5568', background: '#f0f7ff', border: '1px solid #cfe3ff', borderRadius: 8, padding: '0.45rem 0.7rem', margin: '0.4rem 0 0.8rem' }}>
+                      🌍 Enter times in <strong>your</strong> time zone: <strong>{tzLabel()}</strong>. Each student and parent automatically sees the class in their own local time (e.g. Canada or UK time).
+                    </div>
                     <div className="tsch-toggle" role="radiogroup" aria-label="Schedule type">
                       {[['single', 'One class'], ['recurring', 'Repeating']].map(([key, label]) => (
                         <button key={key} type="button" role="radio" aria-checked={schType === key}
@@ -1078,7 +1082,7 @@ export default function TutorDashboard({ user }) {
                               <td>{sName}</td>
                               <td>{new Date(sch.start_time).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
                               {/* Classes saved without an end time are assumed to last an hour */}
-                              <td>{new Date(sch.end_time || new Date(new Date(sch.start_time).getTime() + 3600000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                              <td>{new Date(sch.end_time || new Date(new Date(sch.start_time).getTime() + 3600000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(sch.start_time))}</div></td>
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
@@ -2628,7 +2632,7 @@ export default function TutorDashboard({ user }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="form-group">
-                  <label>Start Time *</label>
+                  <label>Start Time * <span style={{ fontSize: '0.72rem', color: '#718096' }}>({tzLabel()})</span></label>
                   <input type="datetime-local" value={editingSchedule.start_time || ''} onChange={(e) => setEditingSchedule(prev => ({ ...prev, start_time: e.target.value }))} required />
                 </div>
                 <div className="form-group">
