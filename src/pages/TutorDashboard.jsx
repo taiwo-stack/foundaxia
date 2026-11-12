@@ -26,7 +26,7 @@ import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../util
 import '../styles/Dashboard.css';
 import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
-import { tzLabel } from '../utils/timeZone';
+import { tzLabel, classZone, timeIn, dateTimeIn } from '../utils/timeZone';
 import QuizImport from '../components/QuizImport';
 import EditScheduleModal, { TimeZoneSelect } from '../components/EditScheduleModal';
 import { zonedToUtc, recallStudentZone, rememberStudentZone } from '../utils/timeZone';
@@ -544,9 +544,10 @@ export default function TutorDashboard({ user }) {
           start_time: zonedToUtc(schStart, schTz).toISOString(),
           end_time: zonedToUtc(schEnd, schTz).toISOString(),
           meeting_link: schLink,
-          meeting_link_2: schLink2
+          meeting_link_2: schLink2,
+          time_zone: schTz
         });
-        setSchedules(prev => [...prev, saved]);
+        setSchedules(prev => [...prev, { ...saved, time_zone: schTz }]);
         rememberStudentZone(schStudentId, schTz);
         setSchTitle('');
         setSchStart('');
@@ -605,9 +606,10 @@ export default function TutorDashboard({ user }) {
               start_time: startISO,
               end_time: endISO,
               meeting_link: schLink,
-              meeting_link_2: schLink2
+              meeting_link_2: schLink2,
+              time_zone: schTz
             });
-            generated.push(saved);
+            generated.push(saved && { ...saved, time_zone: schTz });
           }
           curr.setDate(curr.getDate() + 1);
         }
@@ -1055,9 +1057,9 @@ export default function TutorDashboard({ user }) {
                             <tr key={sch.id}>
                               <td style={{ fontWeight: 'bold' }}>{sch.title}</td>
                               <td>{sName}</td>
-                              <td>{new Date(sch.start_time).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                              <td>{dateTimeIn(sch.start_time, classZone(sch), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
                               {/* Classes saved without an end time are assumed to last an hour */}
-                              <td>{new Date(sch.end_time || new Date(new Date(sch.start_time).getTime() + 3600000)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(sch.start_time))}</div></td>
+                              <td>{timeIn(sch.end_time || new Date(new Date(sch.start_time).getTime() + 3600000), classZone(sch))}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(sch.start_time), classZone(sch))}</div></td>
                               <td>
                                 {sch.meeting_link || sch.meeting_link_2 ? (
                                   <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>

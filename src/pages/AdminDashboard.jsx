@@ -43,7 +43,7 @@ import HtmlSlideModal from '../components/HtmlSlideModal';
 import { isPowerPointName, POWERPOINT_MAX_BYTES, isSlideMaterial } from '../utils/slideMaterials';
 import '../styles/Dashboard.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
-import { tzLabel } from '../utils/timeZone';
+import { tzLabel, classZone, timeIn, dateTimeIn } from '../utils/timeZone';
 import QuizImport from '../components/QuizImport';
 import EditScheduleModal, { TimeZoneSelect } from '../components/EditScheduleModal';
 import { zonedToUtc, recallStudentZone, rememberStudentZone } from '../utils/timeZone';
@@ -1111,9 +1111,10 @@ export default function AdminDashboard({ user, onLogout }) {
         start_time: zonedToUtc(schStart, schTz).toISOString(),
         end_time: zonedToUtc(schEnd, schTz).toISOString(),
         meeting_link: schLink || null,
-        meeting_link_2: schLink2 || null
+        meeting_link_2: schLink2 || null,
+        time_zone: schTz
       });
-      setSchedules(prev => [...prev, saved]);
+      setSchedules(prev => [...prev, { ...saved, time_zone: schTz }]);
       rememberStudentZone(schStudentId, schTz);
       setSchTitle('');
       setSchStart('');
@@ -2316,7 +2317,7 @@ export default function AdminDashboard({ user, onLogout }) {
                             <td>{sName}</td>
                             <td>{tName}</td>
                             <td style={{ fontSize: '0.8rem' }}>
-                              {new Date(s.start_time).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} – {new Date(s.end_time || new Date(s.start_time).getTime() + 3600000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(s.start_time))}</div>
+                              {dateTimeIn(s.start_time, classZone(s), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} – {timeIn(s.end_time || new Date(new Date(s.start_time).getTime() + 3600000), classZone(s))}<div style={{ fontSize: '0.72rem', color: '#718096' }}>{tzLabel(new Date(s.start_time), classZone(s))}</div>
                             </td>
                             <td>
                               {s.meeting_link || s.meeting_link_2 ? (

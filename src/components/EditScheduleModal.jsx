@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { updateSchedule } from '../services/dataService';
 import {
-  zoneOptions, zonedToUtc, utcToZonedInput, recallStudentZone, rememberStudentZone,
+  zoneOptions, zonedToUtc, utcToZonedInput, classZone, rememberStudentZone,
   viewerTimeZone, fmtInViewerZone, tzAbbr
 } from '../utils/timeZone';
 
@@ -27,7 +27,7 @@ export const TimeZoneSelect = ({ value, onChange, previewDate, style }) => {
 
 // Edit one class. Times can be typed in any time zone (e.g. the student's UK time).
 const EditScheduleModal = ({ schedule, studentName, onClose, onSaved }) => {
-  const [zone, setZone] = useState(() => recallStudentZone(schedule.student_id));
+  const [zone, setZone] = useState(() => classZone(schedule));
   const [title, setTitle] = useState(schedule.title || '');
   const [start, setStart] = useState(() => schedule.start_time ? utcToZonedInput(schedule.start_time, zone) : '');
   const [end, setEnd] = useState(() => schedule.end_time ? utcToZonedInput(schedule.end_time, zone) : '');
@@ -51,15 +51,18 @@ const EditScheduleModal = ({ schedule, studentName, onClose, onSaved }) => {
     if (endDate && endDate <= startDate) return alert('End time must be after the start time.');
     setSaving(true);
     try {
-      const updated = await updateSchedule(schedule.id, {
+      const changes = {
         title,
         start_time: startDate.toISOString(),
         end_time: endDate ? endDate.toISOString() : null,
         meeting_link: link || null,
-        meeting_link_2: link2 || null
-      });
+        meeting_link_2: link2 || null,
+        time_zone: zone
+      };
+      const updated = await updateSchedule(schedule.id, changes);
       rememberStudentZone(schedule.student_id, zone);
-      onSaved(updated || { ...schedule, title, start_time: startDate.toISOString(), end_time: endDate ? endDate.toISOString() : null, meeting_link: link || null, meeting_link_2: link2 || null });
+      // Keep the zone on screen even if the database column isn't there yet.
+      onSaved({ ...schedule, ...changes, ...(updated || {}), time_zone: zone });
       alert('Class schedule updated!');
     } catch (err) {
       alert('Error updating schedule: ' + err.message);

@@ -1428,10 +1428,19 @@ export const getSchedules = async () => {
   }
 };
 
+// Until add_schedule_time_zone.sql has been run, the time_zone column is missing:
+// save without it rather than failing.
+const missingTimeZoneColumn = (error) =>
+  !!error && /time_zone/.test(error.message || '') && /column|schema cache/i.test(error.message || '');
+const withoutTimeZone = ({ time_zone, ...rest }) => rest; // eslint-disable-line no-unused-vars
+
 export const saveSchedule = async (schedule) => {
   const scheduleId = 'sch_' + crypto.randomUUID();
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from('schedules').insert([{ id: scheduleId, ...schedule }]).select();
+    let { data, error } = await supabase.from('schedules').insert([{ id: scheduleId, ...schedule }]).select();
+    if (missingTimeZoneColumn(error)) {
+      ({ data, error } = await supabase.from('schedules').insert([{ id: scheduleId, ...withoutTimeZone(schedule) }]).select());
+    }
     if (error) throw error;
     return data[0];
   } else {
@@ -1446,7 +1455,10 @@ export const saveSchedule = async (schedule) => {
 
 export const updateSchedule = async (id, updates) => {
   if (hasSupabaseConfig) {
-    const { data, error } = await supabase.from('schedules').update(updates).eq('id', id).select();
+    let { data, error } = await supabase.from('schedules').update(updates).eq('id', id).select();
+    if (missingTimeZoneColumn(error)) {
+      ({ data, error } = await supabase.from('schedules').update(withoutTimeZone(updates)).eq('id', id).select());
+    }
     if (error) throw error;
     return data[0];
   } else {

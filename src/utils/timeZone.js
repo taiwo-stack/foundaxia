@@ -1,5 +1,5 @@
-// Class times are stored as one universal moment and shown in the VIEWER's own clock.
-// These helpers label that clock so nobody has to guess, e.g. "5:00 PM Canada time (EST)".
+// Class times are stored as one universal moment plus the zone they were booked in
+// (the student's). They are shown in that zone and labelled, e.g. "4:00 PM UK time (GMT)".
 
 const CANADA = [
   'Toronto', 'Montreal', 'Vancouver', 'Edmonton', 'Winnipeg', 'Halifax', 'Regina',
@@ -121,6 +121,28 @@ export const recallStudentZone = (studentId) => {
 export const rememberStudentZone = (studentId, tz) => {
   try { if (studentId && tz) localStorage.setItem('classTz:' + studentId, tz); } catch { /* storage blocked */ }
 };
+
+/* ---------- showing a class in the zone it was booked in ---------- */
+
+// The zone a class was booked in (the student's), saved with the class.
+// Older classes have none: use the zone remembered for that student, else the viewer's.
+export const classZone = (sch) => {
+  const tz = sch && sch.time_zone;
+  if (tz) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch { /* unknown zone */ }
+  }
+  return recallStudentZone(sch && sch.student_id);
+};
+
+const inZone = (d, tz, opts, kind) => {
+  const date = d instanceof Date ? d : new Date(d);
+  if (isNaN(date)) return '';
+  try { return date[kind]([], { ...opts, timeZone: tz }); } catch { return date[kind]([], opts); }
+};
+// Date / time / day-of-month as the clock reads in `tz`.
+export const dateIn = (d, tz, opts) => inZone(d, tz, opts, 'toLocaleDateString');
+export const timeIn = (d, tz, opts = { hour: '2-digit', minute: '2-digit' }) => inZone(d, tz, opts, 'toLocaleTimeString');
+export const dateTimeIn = (d, tz, opts) => inZone(d, tz, opts, 'toLocaleString');
 
 // "5:00 PM Nigeria time (WAT)" for a Date, in the viewer's own zone.
 export const fmtInViewerZone = (d) => d && !isNaN(d)
