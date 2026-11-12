@@ -4,8 +4,9 @@ const classEnd = (sch) => (sch.end_time
   ? new Date(sch.end_time)
   : new Date(new Date(sch.start_time).getTime() + 60 * 60 * 1000));
 
-export const fmtDay = (d) => d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
-export const fmtTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+// tz (optional): show the class in the zone it was booked in.
+export const fmtDay = (d, tz) => d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short', ...(tz ? { timeZone: tz } : {}) });
+export const fmtTime = (d, tz) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', ...(tz ? { timeZone: tz } : {}) });
 export const fmtDate = (v) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
