@@ -5,6 +5,7 @@ import {
   Undo2,
   Redo2,
   Download,
+  FileDown,
   MonitorPlay,
   Trash2,
   Share2,
@@ -34,6 +35,9 @@ export default function WhiteboardHeader({
   isHost,
   elements,
   handleExport,
+  handleExportPdf,
+  isExportingPdf,
+  pageCount,
   isProcessingPdf,
   pdfProgress,
   pdfInputRef,
@@ -106,6 +110,18 @@ export default function WhiteboardHeader({
           <Download size={16} />
           <span>Export Board</span>
         </button>
+
+        {handleExportPdf && (
+          <button
+            className="whiteboard-btn"
+            onClick={handleExportPdf}
+            disabled={isExportingPdf}
+            data-tooltip="Download every page of the board as one PDF"
+          >
+            <FileDown size={16} />
+            <span>{isExportingPdf ? 'Making PDF…' : `PDF (${pageCount || 1} page${pageCount === 1 ? '' : 's'})`}</span>
+          </button>
+        )}
 
         {/* PDF / Presentation Upload — Host only */}
         {isHost && (
