@@ -23,6 +23,7 @@ import '../styles/Whiteboard.css';
 // â”€â”€ Whiteboard Sub-Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import WhiteboardHeader from '../components/whiteboard/WhiteboardHeader';
 import SlideLayer from '../components/whiteboard/SlideLayer';
+import { imagesToPdf } from '../utils/imagesToPdf';
 import WhiteboardToolbar from '../components/whiteboard/WhiteboardToolbar';
 import WhiteboardProperties from '../components/whiteboard/WhiteboardProperties';
 import CollaborationSidebar from '../components/whiteboard/CollaborationSidebar';
@@ -347,6 +348,7 @@ function WhiteboardBoard({ user }) {
 
   const [pages, setPages] = useState(loadPersistedPages);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   // Latest-value mirrors for realtime callbacks (subscribe/reconnect handlers outlive renders)
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
@@ -3748,9 +3750,9 @@ function WhiteboardBoard({ user }) {
     ctx.restore();
   };
 
-  // Convert canvas output to PNG download link
-  const handleExport = () => {
-    if (elements.length === 0) return;
+  // Draw one page's elements onto an offscreen canvas cropped to the drawings (null if empty)
+  const buildPageCanvas = (pageEls) => {
+    if (!Array.isArray(pageEls) || pageEls.length === 0) return null;
     
     // Create an offscreen canvas to compute bounding boundaries of all drawings
     const tempCanvas = document.createElement('canvas');
@@ -3759,7 +3761,7 @@ function WhiteboardBoard({ user }) {
     // Find bounding box containing all drawings to crop intelligently
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     
-    elements.forEach(el => {
+    pageEls.forEach(el => {
       if (!el || typeof el !== 'object') return;
       if (el.type === 'stroke') {
         (Array.isArray(el.points) ? el.points : []).forEach(p => {
@@ -3768,6 +3770,13 @@ function WhiteboardBoard({ user }) {
           maxX = Math.max(maxX, p.x);
           maxY = Math.max(maxY, p.y);
         });
+      } else if (el.type === 'shape' && el.shapeType === 'circle') {
+        // A circle is drawn around (x1, y1) with radius = distance to (x2, y2)
+        const r = Math.hypot(el.x2 - el.x1, el.y2 - el.y1);
+        minX = Math.min(minX, el.x1 - r);
+        minY = Math.min(minY, el.y1 - r);
+        maxX = Math.max(maxX, el.x1 + r);
+        maxY = Math.max(maxY, el.y1 + r);
       } else if (el.type === 'shape') {
         minX = Math.min(minX, el.x1, el.x2);
         minY = Math.min(minY, el.y1, el.y2);
@@ -3798,7 +3807,7 @@ function WhiteboardBoard({ user }) {
     const width = maxX - minX;
     const height = maxY - minY;
 
-    if (!isFiniteNum(width) || !isFiniteNum(height) || width <= 0 || height <= 0) return;
+    if (!isFiniteNum(width) || !isFiniteNum(height) || width <= 0 || height <= 0) return null;
 
     tempCanvas.width = width;
     tempCanvas.height = height;
@@ -3911,13 +3920,19 @@ function WhiteboardBoard({ user }) {
     };
 
     // Draw highlighters first (so they are rendered behind other drawing elements in export)
-    elements.filter(el => el.isHighlighter).forEach(renderExportElement);
+    pageEls.filter(el => el && el.isHighlighter).forEach(renderExportElement);
     // Draw all non-highlighters on top
-    elements.filter(el => !el.isHighlighter).forEach(renderExportElement);
+    pageEls.filter(el => el && !el.isHighlighter).forEach(renderExportElement);
 
     tempCtx.restore();
 
-    // Trigger PNG image download link
+    return tempCanvas;
+  };
+
+  // Current page -> PNG download
+  const handleExport = () => {
+    const tempCanvas = buildPageCanvas(elements);
+    if (!tempCanvas) return;
     const link = document.createElement('a');
     link.download = `foundaxia-whiteboard-${Date.now()}.png`;
     try {
@@ -3929,6 +3944,64 @@ function WhiteboardBoard({ user }) {
       return;
     }
     link.click();
+  };
+
+  // Every page of the board (what was drawn / written on it) -> one PDF, one page per board page.
+  // HTML / PowerPoint slides shown live behind a page are not part of the drawing and are left out.
+  const handleExportPdf = async () => {
+    if (isExportingPdf) return;
+    const allPages = pages.map((pg, i) => (i === currentPageIndex ? elements : (pg?.elements || [])));
+    if (!allPages.some(els => Array.isArray(els) && els.length > 0)) {
+      triggerToast('Nothing to export yet: the board is empty.');
+      return;
+    }
+    setIsExportingPdf(true);
+    try {
+      // Make sure images on pages that are not open have loaded before drawing them.
+      const srcs = new Set();
+      allPages.forEach(els => (els || []).forEach(el => { if (el && el.type === 'image' && el.src) srcs.add(el.src); }));
+      await Promise.all([...srcs].map(src => new Promise(resolve => {
+        const cached = imageCache.current[src];
+        if (cached && cached.complete && cached.naturalWidth > 0) return resolve();
+        const img = new Image();
+        if (!src.startsWith('data:')) img.crossOrigin = 'anonymous';
+        img.onload = () => { imageCache.current[src] = img; resolve(); };
+        img.onerror = () => resolve();
+        img.src = src;
+      })));
+
+      const pdfPages = [];
+      let skipped = 0;
+      allPages.forEach(els => {
+        const c = buildPageCanvas(els);
+        if (!c) return;
+        try {
+          pdfPages.push({ dataUrl: c.toDataURL('image/jpeg', 0.92), width: c.width, height: c.height });
+        } catch {
+          skipped++; // a remote image without CORS headers taints that page
+        }
+      });
+      if (pdfPages.length === 0) {
+        triggerToast('Export failed: the pages could not be included.');
+        return;
+      }
+      const blob = imagesToPdf(pdfPages, { title: 'FoundaXia whiteboard' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `foundaxia-whiteboard-${new Date().toISOString().slice(0, 10)}.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      const empty = allPages.length - pdfPages.length - skipped;
+      triggerToast(`PDF downloaded: ${pdfPages.length} page${pdfPages.length === 1 ? '' : 's'}` +
+        (empty > 0 ? ` (${empty} empty page${empty === 1 ? '' : 's'} left out)` : '') +
+        (skipped > 0 ? `, ${skipped} could not be included` : '') + '.');
+    } catch (err) {
+      console.error('PDF export failed:', err);
+      triggerToast('PDF export failed: ' + err.message);
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   // Get selected element screen bounds for rendering delete/resize UI
@@ -4014,6 +4087,9 @@ function WhiteboardBoard({ user }) {
         isHost={isHost}
         elements={elements}
         handleExport={handleExport}
+        handleExportPdf={handleExportPdf}
+        isExportingPdf={isExportingPdf}
+        pageCount={pages.length}
         isProcessingPdf={isProcessingPdf}
         pdfProgress={pdfProgress}
         pdfInputRef={pdfInputRef}
