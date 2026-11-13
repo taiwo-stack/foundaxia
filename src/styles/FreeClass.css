@@ -63,7 +63,7 @@
 .fc-courses-section { padding-top: 3rem; }
 .fc-page h2 { font-family: var(--font-heading); color: var(--primary-color, #0f2c59); font-size: clamp(1.5rem, 4.5vw, 2rem); margin: 0 0 0.4rem; }
 .fc-lead { color: #5a6782; margin: 0 0 1.5rem; }
-.fc-courses { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; }
+.fc-courses { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.1rem; max-width: 900px; margin: 0 auto; }
 .fc-course {
   background: #fff; border-radius: 18px; overflow: hidden;
   border: 1px solid #e6ebf5; box-shadow: 0 10px 28px rgba(15, 44, 89, 0.07);
