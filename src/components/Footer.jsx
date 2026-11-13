@@ -31,7 +31,7 @@ export default function Footer() {
             <div>📍 Darka Street,</div>
             <div>📍 Wuse Zone I, FCT Abuja, Nigeria</div>
             <div>📞 +2349061814608</div>
-            <div style={{ marginTop: '0.2rem' }}>✉️ info@foundaxia.com</div>
+            <div style={{ marginTop: '0.2rem' }}>✉️ foundaxia@gmail.com</div>
           </div>
         </div>
 
