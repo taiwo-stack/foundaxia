@@ -34,7 +34,7 @@ export default function FreeClassPage() {
         relationship: 'Parent/Guardian',
         date_of_birth: null,
         gender: null,
-        start_date: null,
+        start_date: FREE_CLASS.startDate,
         additional_comments: `${FREE_CLASS.tag} (church outreach) | Parent/guardian: ${form.parentName.trim()} | Parent consent: yes`
       });
       setDone(form.teenName.trim().split(' ')[0] || 'your teen');
@@ -69,8 +69,8 @@ export default function FreeClassPage() {
       </section>
 
       <section className="fc-wrap fc-courses-section">
-        <h2>3 courses · 6 Saturdays</h2>
-        <p className="fc-lead">Two live, hands-on Saturdays for each course, taught by FoundaXia tutors.</p>
+        <h2>{FREE_CLASS_COURSES.length} courses · 6 Saturdays</h2>
+        <p className="fc-lead">Live, hands-on classes every Saturday from 28 November. First the teens learn to work with data, then they see how AI learns from data. Certificate at the end.</p>
         <div className="fc-courses">
           {FREE_CLASS_COURSES.map((c) => {
             const first = week + 1;
@@ -106,7 +106,7 @@ export default function FreeClassPage() {
             <div className="fc-done">
               <CheckCircle2 size={48} />
               <h2>{done} is registered!</h2>
-              <p>Thank you. We will send the start date and the class link to the phone number and email you gave us before the first Saturday.</p>
+              <p>Thank you. Classes start on Saturday 28 November. We will send the class link to the phone number and email you gave us before then.</p>
               <p className="fc-wa-line">Questions? <a href={FREE_CLASS.whatsappLink} target="_blank" rel="noreferrer"><MessageCircle size={16} /> WhatsApp {FREE_CLASS.whatsappDisplay}</a></p>
               <button type="button" className="fc-link" onClick={() => setDone(null)}>Register another teen</button>
             </div>

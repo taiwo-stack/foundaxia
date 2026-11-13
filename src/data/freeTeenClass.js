@@ -1,13 +1,15 @@
 // Free 6-week "Future-Ready Teens" class (church outreach). Shared by the
 // /tbn-teens page; the flyer uses the same wording so they never disagree.
-// Built from three real FoundaXia courses, two Saturdays each, using their existing lessons.
+// Two courses, three Saturdays each: data first, then AI (AI learns from data).
 
 export const FREE_CLASS = {
   name: 'Future-Ready Teens',
   tagline: 'Tech & Digital Skills',
   when: 'Every Saturday',
   where: 'Online (Zoom / Google Meet)',
-  start: 'Starting soon',
+  start: 'Starts Saturday 28 November',
+  // Saved on each registration as the student's start date.
+  startDate: '2026-11-28',
   // Saved on each registration so these sign-ups are easy to spot in the admin Students list.
   tag: 'FREE 6-WEEK TEEN TECH CLASS',
   // Questions go to the FoundaXia WhatsApp line (same number as the site footer).
@@ -17,33 +19,25 @@ export const FREE_CLASS = {
 
 export const FREE_CLASS_COURSES = [
   {
-    title: 'AI Fluency: The Journey from Data to Intelligent',
-    short: 'AI Fluency',
-    image: '/images/ai.jpg',
-    summary: 'Discover how machines learn from data and act “smart”.',
-    weeks: [
-      { title: 'What Is AI? From Data to Intelligence', text: 'Natural vs. artificial, senses vs. sensors.' },
-      { title: 'Build with AI', text: 'Train your own AI model, then create with AI tools.' }
-    ]
-  },
-  {
-    title: 'Computing Systems and Networks: The Internet',
-    short: 'The Internet',
-    image: '/images/course-internet.jpg',
-    summary: 'How the internet works, and how to use it wisely and safely.',
-    weeks: [
-      { title: 'How the Internet Works', text: 'Networks, routers and the World Wide Web.' },
-      { title: 'Websites, Ownership & Truth Online', text: 'Who owns what online, and spotting false information.' }
-    ]
-  },
-  {
-    title: 'Modelling Data Using Spreadsheets',
-    short: 'Spreadsheets',
+    title: 'Spreadsheet Data Master',
+    short: 'Spreadsheets & Data',
     image: '/images/student5.jpg',
-    summary: 'Turn data into answers, graphs and charts. Data is beautiful!',
+    summary: 'Collect real data, find the patterns and turn them into charts.',
     weeks: [
       { title: 'Getting to Know Spreadsheets', text: 'Cells, formulas and quick calculations.' },
-      { title: 'Become a Data Master', text: 'Analyse real data and turn it into charts.' }
+      { title: 'Collecting Real Data', text: 'Run a survey of the group, then clean and sort the answers.' },
+      { title: 'Tell a Story with Data', text: 'Find patterns, make charts and present what the data shows.' }
+    ]
+  },
+  {
+    title: 'AI Fluency: The Journey from Data to Intelligence',
+    short: 'Artificial Intelligence',
+    image: '/images/ai.jpg',
+    summary: 'Discover how machines learn from data, and use AI wisely and safely.',
+    weeks: [
+      { title: 'What Is AI? From Data to Intelligence', text: 'How machines learn rules from examples.' },
+      { title: 'Train Your Own AI', text: 'Train an AI model and see how good data makes better AI.' },
+      { title: 'Create with AI, Wisely', text: 'Create with AI tools, check what AI tells you, and get your certificate.' }
     ]
   }
 ];
