@@ -7,18 +7,19 @@
 // the browser before submission, and the score can't be forged client-side.
 import { authenticate, getUserIds, setCors, sendError, HttpError } from './_lib.js';
 import { randomUUID } from 'crypto';
+import { stripQuestion, gradeQuiz, isFlashcardTask } from './_quizGrade.js';
 
 const parseQuestions = (raw) => {
   if (Array.isArray(raw)) return raw;
   try { return JSON.parse(raw || '[]') || []; } catch { return []; }
 };
 
+// Flashcards are study cards, shown whole. Quiz questions lose their answers.
 const stripAnswers = (task) => {
+  if (isFlashcardTask(task)) return task;
   const questions = parseQuestions(task.quiz_questions);
   if (questions.length === 0) return task;
-  // eslint-disable-next-line no-unused-vars
-  const safe = questions.map(({ correct, answer, correct_answer, ...rest }) => rest);
-  return { ...task, quiz_questions: safe };
+  return { ...task, quiz_questions: questions.map(stripQuestion) };
 };
 
 export default async function handler(req, res) {
@@ -60,6 +61,7 @@ export default async function handler(req, res) {
       if (targets.length > 0 && !targets.map(String).some(t => studentIds.includes(t))) {
         throw new HttpError(403, 'This quiz was not assigned to you');
       }
+      if (isFlashcardTask(task)) throw new HttpError(400, 'Flashcards are for study and are not submitted');
       const questions = parseQuestions(task.quiz_questions);
       if (questions.length === 0) throw new HttpError(400, 'This task has no quiz questions');
 
@@ -72,9 +74,7 @@ export default async function handler(req, res) {
       if (priorErr) throw priorErr;
       if (prior && prior.length > 0) throw new HttpError(409, 'You have already submitted this quiz');
 
-      const correctAnswers = questions.map(q => q.correct);
-      const correctCount = questions.filter((q, i) => Number(answers[i]) === Number(q.correct) && answers[i] !== null && answers[i] !== undefined).length;
-      const percent = Math.round((correctCount / questions.length) * 100);
+      const { correctCount, percent, correctAnswers } = gradeQuiz(questions, answers);
       const maxPoints = Number(task.max_points) || 100;
       const now = new Date().toISOString();
 

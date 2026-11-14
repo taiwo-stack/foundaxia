@@ -1,4 +1,5 @@
 import { supabase, hasSupabaseConfig } from '../supabaseClient';
+import { gradeQuiz, stripQuestion, isFlashcardTask } from '../../api/_quizGrade.js';
 import { compressImage } from '../utils/imageCompress';
 
 const initialMockUsers = [
@@ -1342,7 +1343,12 @@ export const getTasksForStudent = async () => {
     const result = await callAuthedApi('/api/quiz', { action: 'list' });
     return result.tasks || [];
   }
-  return getTasks();
+  // Offline mode: hide answers the same way the server does.
+  return (await getTasks()).map(t => {
+    if (isFlashcardTask(t)) return t;
+    const qs = parseQuestions(t.quiz_questions);
+    return qs.length ? { ...t, quiz_questions: qs.map(stripQuestion) } : t;
+  });
 };
 
 const parseQuestions = (raw) => {
@@ -1350,7 +1356,8 @@ const parseQuestions = (raw) => {
   try { return JSON.parse(raw || '[]'); } catch { return []; }
 };
 
-// Submit quiz answers (array of selected option indexes). Graded on the server; the
+// Submit quiz answers (one per question: an option index, or for drag-and-drop
+// questions the list of answers placed). Graded on the server; the
 // submission row gets grade = points out of the task's max_points.
 // Returns { submission, correctCount, total, percent, correctAnswers }.
 export const submitQuiz = async (taskId, answers) => {
@@ -1361,9 +1368,7 @@ export const submitQuiz = async (taskId, answers) => {
   const task = (await getTasks()).find(t => t.id === taskId);
   if (!task) throw new Error('Quiz not found.');
   const questions = parseQuestions(task.quiz_questions);
-  const correctAnswers = questions.map(q => q.correct);
-  const correctCount = questions.filter((q, i) => answers[i] === q.correct).length;
-  const percent = questions.length ? Math.round((correctCount / questions.length) * 100) : 0;
+  const { correctCount, percent, correctAnswers } = gradeQuiz(questions, answers);
   const maxPoints = Number(task.max_points) || 100;
   const user = JSON.parse(sessionStorage.getItem('currentUser') || '{}');
   const submission = await submitStudentTask({

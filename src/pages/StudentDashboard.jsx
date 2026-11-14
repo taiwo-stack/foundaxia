@@ -15,7 +15,7 @@ import {
   Calendar, User, BookOpen, Clock, Save,
   MessageSquare, FileText, Send, CheckSquare, Award, X, Megaphone, Play, LayoutDashboard, Menu,
   ChevronLeft, History, PanelLeftClose, PanelLeftOpen, CheckCircle2, XCircle, HelpCircle,
-  Camera, Mail, Phone, GraduationCap, Copy, Check, Video, MapPin, Lock
+  Camera, Mail, Phone, GraduationCap, Copy, Check, Video, MapPin, Lock, Layers
 } from 'lucide-react';
 import ParentArea from '../components/ParentArea';
 import MobileMenuSheet from '../components/MobileMenuSheet';
@@ -24,6 +24,9 @@ import useResponsiveTables from '../hooks/useResponsiveTables';
 import HtmlSlideModal from '../components/HtmlSlideModal';
 import BookingForm from '../components/BookingForm';
 import NotificationToggle from '../components/NotificationToggle';
+import FlashcardDeck, { parseCards, knownCount } from '../components/FlashcardDeck';
+import { MatchQuestion, OrderQuestion } from '../components/DragQuestion';
+import { questionKind, isFlashcardTask } from '../../api/_quizGrade.js';
 import '../styles/Dashboard.css';
 import '../styles/StudentProfile.css';
 import '../styles/DashboardMobile.css';
@@ -56,6 +59,9 @@ const parseQuizQuestions = (raw) => {
   if (Array.isArray(raw)) return raw;
   try { return JSON.parse(raw); } catch { return []; }
 };
+
+// Quizzes (not homework, not flashcard decks)
+const isQuizTask = (tk) => !isFlashcardTask(tk) && (tk.task_type === 'quiz' || tk.task_type === 'Quiz' || (tk.quiz_questions && tk.quiz_questions !== '[]' && tk.quiz_questions !== 'null'));
 
 export default function StudentDashboard({ user, onLogout }) {
   // Paystack sends parents back to /student?reference=... when its pop-up couldn't open.
@@ -115,6 +121,7 @@ export default function StudentDashboard({ user, onLogout }) {
   // Interactive Quiz state variables
   const [activeQuizId, setActiveQuizId] = useState(null);
   const [quizAnswers, setQuizAnswers] = useState({});
+  const [activeDeckId, setActiveDeckId] = useState(null);
   const [quizScore, setQuizScore] = useState(null);
   const [quizCorrectAnswers, setQuizCorrectAnswers] = useState(null); // revealed only after submitting
   const [quizSubmitting, setQuizSubmitting] = useState(false);
@@ -346,14 +353,26 @@ export default function StudentDashboard({ user, onLogout }) {
   const handleQuizSubmit = async (taskObj) => {
     if (!taskObj || quizSubmitting) return;
     const questions = parseQuizQuestions(taskObj.quiz_questions);
-    const unanswered = questions.filter((_, idx) => quizAnswers[idx] === undefined).length;
+    // A match question counts as answered once every box is filled; an order question
+    // is always answered (its current order).
+    const unanswered = questions.filter((q, idx) => {
+      const a = quizAnswers[idx];
+      const kind = questionKind(q);
+      if (kind === 'order') return false;
+      if (kind === 'match') return !Array.isArray(a) || a.some(v => v == null);
+      return a === undefined;
+    }).length;
     if (unanswered > 0 && !window.confirm(`You have ${unanswered} unanswered question(s). Submit anyway?`)) return;
 
     setQuizSubmitting(true);
     try {
       // Graded on the server: the answer key never reaches the browser beforehand and
       // the saved grade can't be altered client-side.
-      const answers = questions.map((_, idx) => (quizAnswers[idx] === undefined ? null : quizAnswers[idx]));
+      const answers = questions.map((q, idx) => {
+        const a = quizAnswers[idx];
+        if (questionKind(q) === 'order') return Array.isArray(a) ? a : (q.items || []);
+        return a === undefined ? null : a;
+      });
       const result = await submitQuiz(taskObj.id, answers);
       setQuizScore(result.percent);
       setQuizCorrectAnswers(result.correctAnswers || null);
@@ -486,7 +505,7 @@ export default function StudentDashboard({ user, onLogout }) {
   });
 
   // Filter tasks that are actually assigned to this student (active course, not draft, student in target_student_ids if defined)
-  const activeStudentTasks = tasks.filter(tk => {
+  const visibleToMe = (tk) => {
     // 1. Must be enrolled in the task's course
     if (!enrollments.some(e => e.course_id === tk.course_id)) return false;
     // 2. Hide drafts
@@ -496,7 +515,10 @@ export default function StudentDashboard({ user, onLogout }) {
       return tk.target_student_ids.includes(studentInfo?.id || studentId);
     }
     return true; // no target list = visible to all course students
-  });
+  };
+  // Homework and quizzes; flashcard decks are study material with nothing to submit.
+  const activeStudentTasks = tasks.filter(tk => visibleToMe(tk) && !isFlashcardTask(tk));
+  const studentDecks = tasks.filter(tk => visibleToMe(tk) && isFlashcardTask(tk));
 
   // Next incoming class (future class, sorted by start_time ascending)
   const nextClass = schedules
@@ -615,6 +637,9 @@ export default function StudentDashboard({ user, onLogout }) {
           <li className={`sidebar-item ${activeTab === 'homework' ? 'active' : ''}`}>
             <button title={sidebarCollapsed ? 'Tasks & Grades' : undefined} onClick={() => { setActiveTab('homework'); setSidebarOpen(false); }}><CheckSquare size={18} /> <span className="sidebar-label">Tasks & Grades</span></button>
           </li>
+          <li className={`sidebar-item ${activeTab === 'flashcards' ? 'active' : ''}`}>
+            <button title={sidebarCollapsed ? 'Flashcards' : undefined} onClick={() => { setActiveTab('flashcards'); setSidebarOpen(false); }}><Layers size={18} /> <span className="sidebar-label">Flashcards</span></button>
+          </li>
           <li className={`sidebar-item ${activeTab === 'bookings' ? 'active' : ''}`}>
             <button title={sidebarCollapsed ? 'Consultations' : undefined} onClick={() => { setActiveTab('bookings'); setSidebarOpen(false); }}><Calendar size={18} /> <span className="sidebar-label">Consultations</span></button>
           </li>
@@ -640,6 +665,7 @@ export default function StudentDashboard({ user, onLogout }) {
             badge: chatMessages.filter(m => isOneOf(m.receiver_id, personIds(studentInfo, studentId)) && !m.read).length
           },
           { key: 'homework', label: 'Tasks & Grades', Icon: CheckSquare },
+          { key: 'flashcards', label: 'Flashcards', Icon: Layers },
           { key: 'bookings', label: 'Consultations', Icon: Calendar },
           { key: 'profile', label: 'Personal Info', Icon: User },
           { key: 'parent', label: 'Parent Area', Icon: Lock }
@@ -658,6 +684,7 @@ export default function StudentDashboard({ user, onLogout }) {
             timetable: ['Timetable', 'Your upcoming classes, join links and attendance.'],
             chat: ['Messages', 'Chat with FoundaXia Admin and your tutors.'],
             homework: ['Tasks & Grades', 'Homework and quizzes from your tutors, and your results.'],
+            flashcards: ['Flashcards', 'Study cards from your tutors. Flip, test yourself, and repeat the ones you are still learning.'],
             bookings: ['Consultations', 'Book a consultation and keep track of your appointments.']
           };
           const info = PAGE_INFO[activeTab];
@@ -1288,9 +1315,16 @@ export default function StudentDashboard({ user, onLogout }) {
                               </div>
                             )}
 
+                            {/* Flashcard decks for this lesson */}
+                            {topicTasks.filter(isFlashcardTask).map(tk => (
+                              <button key={tk.id} type="button" className="fc-launch" onClick={() => setActiveDeckId(tk.id)}>
+                                <Layers size={13} /> Flashcards: {tk.title} ({parseCards(tk.quiz_questions).length})
+                              </button>
+                            ))}
+
                             {/* Interactive Quiz trigger links */}
                             {topicTasks
-                              .filter(tk => tk.task_type === 'quiz' || tk.task_type === 'Quiz' || (tk.quiz_questions && tk.quiz_questions !== '[]' && tk.quiz_questions !== 'null'))
+                              .filter(isQuizTask)
                               .map(tk => {
                                 const sub = submissions.find(x => x.task_id === tk.id);
                                 return (
@@ -1612,6 +1646,44 @@ export default function StudentDashboard({ user, onLogout }) {
           </div>
         )}
 
+        {/* Flashcards: decks from tutors, grouped by course */}
+        {activeTab === 'flashcards' && (
+          <div className="dashboard-card">
+            <h3><Layers size={20} color="var(--primary-color)" /> Your Flashcards</h3>
+            {studentDecks.length === 0 ? (
+              <div className="st-empty st-empty-flat">
+                <Layers size={28} />
+                <strong>No flashcards yet</strong>
+                <span>When your tutor makes a flashcard deck, it will appear here.</span>
+              </div>
+            ) : (
+              [...new Set(studentDecks.map(d => d.course_id))].map(cid => {
+                const cTitle = courseTitleOf(cid) || 'Course';
+                return (
+                  <div key={cid} style={{ marginBottom: '1.25rem' }}>
+                    <h4 style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#4a5568' }}>{cTitle}</h4>
+                    <div className="fc-decks">
+                      {studentDecks.filter(d => d.course_id === cid).map(d => {
+                        const total = parseCards(d.quiz_questions).length;
+                        const k = knownCount(d);
+                        const lesson = topics.find(t => t.id === d.topic_id)?.title;
+                        return (
+                          <button key={d.id} type="button" className="fc-deck" onClick={() => setActiveDeckId(d.id)}>
+                            <strong>🃏 {d.title}</strong>
+                            <span>{total} card{total !== 1 ? 's' : ''}{lesson ? ` · ${lesson}` : ''}</span>
+                            <span>{k === total && total > 0 ? '✓ You know them all' : `${k} of ${total} known`}</span>
+                            <div className="fc-progress"><span style={{ width: `${total ? (k / total) * 100 : 0}%` }} /></div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
         {/* Tab 5: Homework Assignments & Grading Summary */}
         {activeTab === 'homework' && (
           <div>
@@ -1658,7 +1730,7 @@ export default function StudentDashboard({ user, onLogout }) {
                   {shown.map(tk => {
                     const sub = submissions.find(s => s.task_id === tk.id);
                     const cTitle = courseTitleOf(tk.course_id);
-                    const isQuiz = tk.task_type === 'quiz' || tk.task_type === 'Quiz' || (tk.quiz_questions && tk.quiz_questions !== '[]' && tk.quiz_questions !== 'null');
+                    const isQuiz = isQuizTask(tk);
 
                     return (
                       <li key={tk.id} className={`st-task is-${statusOf(tk)}`}>
@@ -1929,6 +2001,11 @@ export default function StudentDashboard({ user, onLogout }) {
                     {questions.map((q, qIdx) => (
                       <div key={qIdx} style={{ background: 'white', padding: '1.25rem', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', border: '1px solid #f0f4f8' }}>
                         <p style={{ fontWeight: 'bold', fontSize: '0.92rem', marginBottom: '0.75rem', color: 'var(--text-dark)' }}>{qIdx + 1}. {q.question}</p>
+                        {questionKind(q) === 'match' ? (
+                          <MatchQuestion q={q} value={quizAnswers[qIdx]} onChange={(v) => handleQuizOptionSelect(qIdx, v)} disabled={quizScore !== null} correct={quizCorrectAnswers ? quizCorrectAnswers[qIdx] : null} />
+                        ) : questionKind(q) === 'order' ? (
+                          <OrderQuestion q={q} value={quizAnswers[qIdx]} onChange={(v) => handleQuizOptionSelect(qIdx, v)} disabled={quizScore !== null} correct={quizCorrectAnswers ? quizCorrectAnswers[qIdx] : null} />
+                        ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                           {(q.options || []).map((opt, optIdx) => (
                             <label
@@ -1964,6 +2041,7 @@ export default function StudentDashboard({ user, onLogout }) {
                             </label>
                           ))}
                         </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1992,6 +2070,9 @@ export default function StudentDashboard({ user, onLogout }) {
           </div>
         )}
       </main>
+      {activeDeckId && tasks.find(t => t.id === activeDeckId) && (
+        <FlashcardDeck key={activeDeckId} deck={tasks.find(t => t.id === activeDeckId)} onClose={() => setActiveDeckId(null)} />
+      )}
       <HtmlSlideModal url={viewingSlide?.file_url} title={viewingSlide?.title} onClose={() => setViewingSlide(null)} />
     </div>
   );
