@@ -914,7 +914,7 @@ export default function AdminDashboard({ user, onLogout }) {
       const actualType = editingTask.task_type === 'true_false' ? 'quiz' : editingTask.task_type;
       const actualQuestions = editingTask.task_type === 'true_false'
         ? [{ question: editingTask.title, options: ['True', 'False'], correct: Number(editQCorrect) }]
-        : (editingTask.task_type === 'quiz' ? editingTask.quiz_questions : null);
+        : (editingTask.task_type === 'quiz' || editingTask.task_type === 'flashcards' ? editingTask.quiz_questions : null);
 
       const updated = await saveTask({
         ...editingTask,
@@ -3182,6 +3182,7 @@ export default function AdminDashboard({ user, onLogout }) {
                     <option value="quiz">Interactive Quiz</option>
                     <option value="true_false">True / False Question</option>
                     <option value="instruction">Instructional Text</option>
+                    {editingTask.task_type === 'flashcards' && <option value="flashcards">Flashcards (edit the cards from the tutor dashboard)</option>}
                   </select>
                 </div>
                 <div className="form-group">

@@ -28,6 +28,9 @@ import '../styles/TutorSchedule.css';
 import { personIds, isOneOf, inThread } from '../utils/chatIds';
 import { tzLabel, classZone, timeIn, dateTimeIn } from '../utils/timeZone';
 import QuizImport from '../components/QuizImport';
+import { QuestionTypePicker, DragQuestionEditor, validateQuestions, isBlankQuestion, FlashcardEditor, blankCards, validateCards, cleanCards } from '../components/QuestionEditors';
+import { parseCards } from '../components/FlashcardDeck';
+import { questionKind, isFlashcardTask } from '../../api/_quizGrade.js';
 import EditScheduleModal, { TimeZoneSelect } from '../components/EditScheduleModal';
 import { zonedToUtc, recallStudentZone, rememberStudentZone } from '../utils/timeZone';
 
@@ -113,7 +116,11 @@ export default function TutorDashboard({ user }) {
   const [newTaskCourse, setNewTaskCourse] = useState('');
   const [newTaskTopic, setNewTaskTopic] = useState(''); // NEW: topic_id
   const [newTaskMax, setNewTaskMax] = useState(100);
-  const [newTaskType, setNewTaskType] = useState('assignment'); // 'assignment' | 'quiz'
+  const [newTaskType, setNewTaskType] = useState('assignment'); // 'assignment' | 'quiz' | 'flashcards'
+  const [newCards, setNewCards] = useState(blankCards);
+  // Editing a published flashcard deck
+  const [editingDeckId, setEditingDeckId] = useState(null);
+  const [editDeckCards, setEditDeckCards] = useState([]);
 
   // Quiz edit state (for viewing/editing published quizzes)
   const [editingQuizId, setEditingQuizId] = useState(null);
@@ -390,19 +397,7 @@ export default function TutorDashboard({ user }) {
   // --- LMS TUTOR HANDLERS ---
 
   // Returns an error message, or null when every question has text, 2+ filled options and a valid correct answer
-  const validateQuizQuestions = (qs) => {
-    if (!qs || qs.length === 0) return 'Add at least one quiz question.';
-    for (let i = 0; i < qs.length; i++) {
-      const q = qs[i];
-      const opts = Array.isArray(q.options) ? q.options : [];
-      if (!String(q.question || '').trim()) return `Question ${i + 1} is empty.`;
-      if (opts.length < 2 || opts.some(o => !String(o || '').trim())) return `Fill in every option for question ${i + 1}.`;
-      if (!Number.isInteger(q.correct) || q.correct < 0 || q.correct >= opts.length) {
-        return `Select the correct answer for question ${i + 1}.`;
-      }
-    }
-    return null;
-  };
+  const validateQuizQuestions = (qs) => validateQuestions(qs);
 
   const handleCreateTask = async (e, status = 'published') => {
     e.preventDefault();
@@ -414,7 +409,12 @@ export default function TutorDashboard({ user }) {
       const problem = validateQuizQuestions(quizQuestions);
       if (problem) return alert(problem);
     }
-    const maxPoints = Number(newTaskMax);
+    if (newTaskType === 'flashcards') {
+      const problem = validateCards(newCards);
+      if (problem) return alert(problem);
+    }
+    // Flashcards aren't graded; max_points just keeps the column filled.
+    const maxPoints = newTaskType === 'flashcards' ? 100 : Number(newTaskMax);
     if (!Number.isFinite(maxPoints) || maxPoints <= 0) return alert('Max points must be a number greater than 0.');
     if (!targetAll && targetStudentIds.length === 0) return alert('Select at least one student, or send to all.');
 
@@ -434,7 +434,8 @@ export default function TutorDashboard({ user }) {
         status,
         created_by: myTutorId,
         target_student_ids: resolvedTargets,
-        ...(newTaskType === 'quiz' && { quiz_questions: quizQuestions })
+        ...(newTaskType === 'quiz' && { quiz_questions: quizQuestions }),
+        ...(newTaskType === 'flashcards' && { quiz_questions: cleanCards(newCards) })
       };
       const saved = await saveTask(taskPayload);
       setTasks(prev => [...prev, saved]);
@@ -445,6 +446,7 @@ export default function TutorDashboard({ user }) {
       setNewTaskType('assignment');
       setNewTaskTopic('');
       setQuizQuestions([{ question: '', options: ['', '', '', ''], correct: 0 }]);
+      setNewCards(blankCards());
       setTargetStudentIds([]);
       setTargetAll(true);
       setNewTaskCourse('');
@@ -452,7 +454,7 @@ export default function TutorDashboard({ user }) {
         alert('Saved as draft. Students cannot see it yet.');
       } else {
         const who = targetAll ? 'all enrolled students' : `${resolvedTargets.length} selected student(s)`;
-        alert(`${newTaskType === 'quiz' ? 'Quiz' : 'Task'} published to ${who}!`);
+        alert(`${newTaskType === 'quiz' ? 'Quiz' : newTaskType === 'flashcards' ? 'Flashcards' : 'Task'} published to ${who}!`);
       }
     } catch (err) {
       alert('Error creating task: ' + err.message);
@@ -1410,8 +1412,8 @@ export default function TutorDashboard({ user }) {
                                     <li key={tk.id} style={{ padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid #edf2f7', background: '#fcfdfe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                       <div>
                                         <div style={{ fontWeight: 'bold', fontSize: '0.82rem', color: '#2d3748' }}>{tk.title}</div>
-                                        <span style={{ fontSize: '0.7rem', color: tk.task_type === 'quiz' ? 'var(--accent-color)' : '#718096', textTransform: 'capitalize', fontWeight: '600' }}>
-                                          {tk.task_type === 'quiz' ? '🧩 Quiz' : '📝 Homework'}
+                                        <span style={{ fontSize: '0.7rem', color: tk.task_type === 'quiz' || isFlashcardTask(tk) ? 'var(--accent-color)' : '#718096', textTransform: 'capitalize', fontWeight: '600' }}>
+                                          {tk.task_type === 'quiz' ? '🧩 Quiz' : isFlashcardTask(tk) ? '🃏 Flashcards' : '📝 Homework'}
                                         </span>
                                       </div>
                                       <span style={{ fontSize: '0.72rem', color: '#718096' }}>Max: {tk.max_points ?? 100} pts</span>
@@ -1801,7 +1803,7 @@ export default function TutorDashboard({ user }) {
                   <div className="form-group">
                     <label>Task Type *</label>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      {['assignment', 'quiz'].map(type => (
+                      {['assignment', 'quiz', 'flashcards'].map(type => (
                         <button
                           key={type}
                           type="button"
@@ -1815,7 +1817,7 @@ export default function TutorDashboard({ user }) {
                             transition: 'all 0.15s'
                           }}
                         >
-                          {type === 'assignment' ? '📝 Assignment' : '🧪 Quiz'}
+                          {type === 'assignment' ? '📝 Assignment' : type === 'quiz' ? '🧪 Quiz' : '🃏 Flashcards'}
                         </button>
                       ))}
                     </div>
@@ -1865,16 +1867,17 @@ export default function TutorDashboard({ user }) {
 
                   {/* Title */}
                   <div className="form-group">
-                    <label>{newTaskType === 'quiz' ? 'Quiz Title *' : 'Task Title *'}</label>
+                    <label>{newTaskType === 'quiz' ? 'Quiz Title *' : newTaskType === 'flashcards' ? 'Deck Title *' : 'Task Title *'}</label>
                     <input
                       type="text"
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
-                      placeholder={newTaskType === 'quiz' ? 'e.g. Chapter 3 Comprehension Quiz' : 'e.g. Read Chapter 2 and Write Abstract'}
+                      placeholder={newTaskType === 'quiz' ? 'e.g. Chapter 3 Comprehension Quiz' : newTaskType === 'flashcards' ? 'e.g. Spreadsheet words to know' : 'e.g. Read Chapter 2 and Write Abstract'}
                       required
                     />
                   </div>
 
+                  {newTaskType !== 'flashcards' && (
                   <div className="form-group">
                     <label>Max Grading Points</label>
                     <input type="number" min={1} value={newTaskMax} onChange={(e) => setNewTaskMax(e.target.value === '' ? '' : Number(e.target.value))} required />
@@ -1882,6 +1885,7 @@ export default function TutorDashboard({ user }) {
                       <small style={{ color: '#718096', fontSize: '0.72rem' }}>Quizzes are auto-graded: the score is scaled to this many points.</small>
                     )}
                   </div>
+                  )}
 
                   {/* Description (only for assignments) */}
                   {newTaskType === 'assignment' && (
@@ -1894,9 +1898,9 @@ export default function TutorDashboard({ user }) {
                   )}
 
                   {/* Quiz Instructions (optional note) */}
-                  {newTaskType === 'quiz' && (
+                  {(newTaskType === 'quiz' || newTaskType === 'flashcards') && (
                     <div className="form-group">
-                      <label>Quiz Instructions (Optional)</label>
+                      <label>{newTaskType === 'flashcards' ? 'Note for Students (Optional)' : 'Quiz Instructions (Optional)'}</label>
                       <textarea value={newTaskDesc} onChange={(e) => setNewTaskDesc(e.target.value)} placeholder="e.g. Read Chapter 3 before attempting." rows={2}></textarea>
                     </div>
                   )}
@@ -1905,7 +1909,7 @@ export default function TutorDashboard({ user }) {
                   {newTaskType === 'quiz' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
                       {/* Untouched blank question cards are replaced by the imported ones */}
-                      <QuizImport onImport={(qs) => setQuizQuestions(prev => [...prev.filter((q) => String(q.question || '').trim() || (q.options || []).some(o => String(o || '').trim())), ...qs])} />
+                      <QuizImport onImport={(qs) => setQuizQuestions(prev => [...prev.filter(q => !isBlankQuestion(q)), ...qs])} />
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: '700', color: 'var(--primary-color)', fontSize: '0.9rem' }}>
                           🧩 Questions ({quizQuestions.length})
@@ -1953,10 +1957,12 @@ export default function TutorDashboard({ user }) {
                             )}
                           </div>
 
+                          <QuestionTypePicker q={q} onChange={(nq) => setQuizQuestions(prev => prev.map((x, i) => (i === qIdx ? nq : x)))} />
+
                           {/* Question text */}
                           <input
                             type="text"
-                            placeholder={`Question ${qIdx + 1}...`}
+                            placeholder={questionKind(q) === 'match' ? 'e.g. Match each part to what it does' : questionKind(q) === 'order' ? 'e.g. Put the steps in order' : `Question ${qIdx + 1}...`}
                             value={q.question}
                             onChange={(e) => updateQuizQuestion(qIdx, 'question', e.target.value)}
                             required
@@ -1967,6 +1973,9 @@ export default function TutorDashboard({ user }) {
                             }}
                           />
 
+                          {questionKind(q) !== 'mc' ? (
+                            <DragQuestionEditor q={q} onChange={(nq) => setQuizQuestions(prev => prev.map((x, i) => (i === qIdx ? nq : x)))} />
+                          ) : (<>
                           {/* Options */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                             {q.options.map((opt, optIdx) => (
@@ -2015,9 +2024,14 @@ export default function TutorDashboard({ user }) {
                           <p style={{ margin: 0, fontSize: '0.7rem', color: '#a0aec0' }}>
                             🟢 Click the circle next to an option to mark it as the correct answer.
                           </p>
+                          </>)}
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  {newTaskType === 'flashcards' && (
+                    <FlashcardEditor cards={newCards} onChange={setNewCards} />
                   )}
 
                   {/* ── Target Students Selector ── */}
@@ -2127,7 +2141,7 @@ export default function TutorDashboard({ user }) {
                         opacity: (!newTaskTitle || !newTaskCourse) ? 0.5 : 1
                       }}
                     >
-                      {newTaskType === 'quiz' ? '🚀 Publish Quiz' : '📤 Publish Assignment'}
+                      {newTaskType === 'quiz' ? '🚀 Publish Quiz' : newTaskType === 'flashcards' ? '🃏 Publish Flashcards' : '📤 Publish Assignment'}
                     </button>
                   </div>
                 </form>
@@ -2189,6 +2203,87 @@ export default function TutorDashboard({ user }) {
                   </ul>
                 )}
               </div>
+
+              {/* My Flashcard Decks: view + edit */}
+              {tasks.some(t => isFlashcardTask(t) && canEditTask(t)) && (
+                <div className="dashboard-card">
+                  <h3>🃏 My Flashcard Decks</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                    {tasks.filter(t => isFlashcardTask(t) && canEditTask(t)).map(deck => {
+                      const deckCards = parseCards(deck.quiz_questions);
+                      const cName = courses.find(c => c.id === deck.course_id)?.title || 'Course';
+                      const tName = topics.find(tp => tp.id === deck.topic_id)?.title || null;
+                      const isEditing = editingDeckId === deck.id;
+                      const saveDeck = async (changes, done) => {
+                        try {
+                          const updated = await saveTask({ ...deck, ...changes });
+                          setTasks(prev => prev.map(t => (t.id === deck.id ? updated : t)));
+                          alert(done);
+                          return true;
+                        } catch (err) {
+                          alert('Failed to save flashcards: ' + err.message);
+                          return false;
+                        }
+                      };
+                      return (
+                        <div key={deck.id} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1rem', background: '#fffaf5' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--primary-color)' }}>🃏 {deck.title}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#718096', marginTop: '0.2rem' }}>
+                                {cName}{tName ? ` › ${tName}` : ''} &bull; {deckCards.length} card{deckCards.length !== 1 ? 's' : ''}
+                                {deck.status === 'draft' && <span style={{ marginLeft: '0.4rem', color: '#b7791f', fontWeight: 700 }}>&bull; Draft (students can't see it)</span>}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              {deck.status === 'draft' && (
+                                <button className="btn-action approve" style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem' }}
+                                  onClick={() => saveDeck({ status: 'published' }, 'Flashcards published to students!')}>
+                                  🚀 Publish
+                                </button>
+                              )}
+                              <button className="btn-action edit" style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem' }}
+                                onClick={() => {
+                                  if (isEditing) { setEditingDeckId(null); setEditDeckCards([]); }
+                                  else { setEditingDeckId(deck.id); setEditDeckCards(deckCards.length ? deckCards : blankCards()); }
+                                }}>
+                                {isEditing ? '✕ Cancel Edit' : '✏ Edit Cards'}
+                              </button>
+                              <button className="btn-action delete" style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem', background: '#fed7d7', color: '#c53030', border: '1px solid #feb2b2' }}
+                                onClick={async () => {
+                                  if (!window.confirm('Delete this flashcard deck for all students? This cannot be undone.')) return;
+                                  try {
+                                    await deleteTask(deck.id);
+                                    setTasks(prev => prev.filter(t => t.id !== deck.id));
+                                  } catch (err) {
+                                    alert('Failed to delete flashcards: ' + err.message);
+                                  }
+                                }}>
+                                🗑 Delete
+                              </button>
+                            </div>
+                          </div>
+                          {isEditing && (
+                            <div style={{ marginTop: '1rem', borderTop: '1px solid #edf2f7', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                              <FlashcardEditor cards={editDeckCards} onChange={setEditDeckCards} />
+                              <button type="button" className="btn-action approve" style={{ alignSelf: 'flex-end', padding: '0.4rem 0.9rem', fontSize: '0.82rem' }}
+                                onClick={async () => {
+                                  const problem = validateCards(editDeckCards);
+                                  if (problem) return alert(problem);
+                                  if (await saveDeck({ quiz_questions: cleanCards(editDeckCards) }, 'Flashcards updated!')) {
+                                    setEditingDeckId(null); setEditDeckCards([]);
+                                  }
+                                }}>
+                                💾 Save Cards
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* My Published Quizzes \u2014 view + edit */}
               <div className="dashboard-card">
@@ -2399,7 +2494,7 @@ export default function TutorDashboard({ user }) {
                                   </div>
                                 </div>
 
-                                <QuizImport onImport={(qs) => setEditQuizQuestions(prev => [...prev.filter((q) => String(q.question || '').trim() || (q.options || []).some(o => String(o || '').trim())), ...qs])} />
+                                <QuizImport onImport={(qs) => setEditQuizQuestions(prev => [...prev.filter(q => !isBlankQuestion(q)), ...qs])} />
 
                                 {editQuizQuestions.map((q, qIdx) => (
                                   <div key={qIdx} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem' }}>
@@ -2409,6 +2504,9 @@ export default function TutorDashboard({ user }) {
                                         <button type="button" onClick={() => setEditQuizQuestions(prev => prev.filter((_, i) => i !== qIdx))} style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: '0.75rem' }}>✕ Remove</button>
                                       )}
                                     </div>
+                                    <div style={{ marginBottom: '0.5rem' }}>
+                                      <QuestionTypePicker q={q} onChange={(nq) => setEditQuizQuestions(prev => prev.map((item, i) => (i === qIdx ? nq : item)))} />
+                                    </div>
                                     <input
                                       type="text"
                                       placeholder="Question text"
@@ -2416,7 +2514,9 @@ export default function TutorDashboard({ user }) {
                                       onChange={e => setEditQuizQuestions(prev => prev.map((item, i) => i === qIdx ? { ...item, question: e.target.value } : item))}
                                       style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.85rem', marginBottom: '0.5rem', boxSizing: 'border-box' }}
                                     />
-                                    {q.options.map((opt, oIdx) => (
+                                    {questionKind(q) !== 'mc' ? (
+                                      <DragQuestionEditor q={q} onChange={(nq) => setEditQuizQuestions(prev => prev.map((item, i) => (i === qIdx ? nq : item)))} />
+                                    ) : q.options.map((opt, oIdx) => (
                                       <div key={oIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
                                         <input
                                           type="radio"
