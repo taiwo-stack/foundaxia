@@ -108,6 +108,8 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          {/* Unknown addresses go to the homepage instead of a blank page */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
       {!isDashboardOrWhiteboard && !location.pathname.startsWith('/login') && <Footer />}
