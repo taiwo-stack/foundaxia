@@ -211,7 +211,7 @@ export function FounderSection({ onBook }) {
           <div>
             <p className="lg-founder-name">Adedotun Kehinde Taiwo</p>
             <p className="lg-founder-role">Founder · AI engineer</p>
-            <p className="lg-founder-role">B.Sc. Electronic &amp; Electrical Engineering, Obafemi Awolowo University</p>
+            <p className="lg-founder-role">Electrical &amp; Electronic Engineering graduate</p>
           </div>
         </div>
         <div className="lg-founder-copy">
