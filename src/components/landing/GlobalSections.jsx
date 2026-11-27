@@ -372,45 +372,6 @@ export function ContactSection({ form, onChange, onSubmit, sending, success, onB
   );
 }
 
-/* ---------- 3. Time zones (live clocks) ---------- */
-const CITIES = [
-  { city: 'London', tz: 'Europe/London' },
-  { city: 'Toronto', tz: 'America/Toronto' },
-  { city: 'New York', tz: 'America/New_York' },
-  { city: 'Lagos', tz: 'Africa/Lagos' }
-];
-const clock = (tz, d) => {
-  try { return d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
-};
-
-export function TimeZoneBand({ onBook }) {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <section className="lg-section lg-dark" id="time-zones">
-      <div className="container lg-tz">
-        <div className="lg-tz-copy">
-          <p className="lg-eyebrow">Lessons in your time zone</p>
-          <h2 className="landing-section-heading">Lessons at times that work for your family, wherever you are</h2>
-          <p className="lg-lead">Tell us when your child is free and we’ll find a lesson time that fits, whether you’re in London, Toronto, New York or Lagos. Every lesson time and join link shows in your own local time, so there’s nothing to convert.</p>
-          <button type="button" className="btn-primary lg-cta" onClick={onBook}>Find a lesson time</button>
-        </div>
-        <div className="lg-clocks" aria-label="Current time in four cities">
-          {CITIES.map(c => (
-            <div key={c.city} className="lg-clock">
-              <span className="lg-clock-time">{clock(c.tz, now)}</span>
-              <span className="lg-clock-city">{c.city}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ---------- 4. Founder ---------- */
 // Add a real photo at /public/images/founder.jpg and set FOUNDER_PHOTO to '/images/founder.jpg'.
 const FOUNDER_PHOTO = '/images/founder.jpg';

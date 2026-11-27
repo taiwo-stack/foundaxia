@@ -9,7 +9,7 @@ import BookingForm from '../components/BookingForm';
 import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
 import '../styles/LandingMobile.css';
-import { CountryPaths, InsideClassroom, SubjectsAndExams, ContactSection, TimeZoneBand, FounderSection, Testimonials } from '../components/landing/GlobalSections';
+import { CountryPaths, InsideClassroom, SubjectsAndExams, ContactSection, FounderSection, Testimonials } from '../components/landing/GlobalSections';
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
@@ -944,7 +944,6 @@ export default function LandingPage() {
       </section>
 
       <InsideClassroom />
-      <TimeZoneBand onBook={openConsultation} />
 
       {/* Subjects & exam boards */}
       <SubjectsAndExams

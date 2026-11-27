@@ -41,13 +41,6 @@
 .lg-shot h3 { font-family: var(--font-heading); color: white; font-size: 1.15rem; font-weight: 800; }
 .lg-shot p { color: rgba(255, 255, 255, 0.75); font-size: 0.92rem; line-height: 1.6; margin-top: 0.35rem; }
 
-/* time zones */
-.lg-tz { display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; align-items: center; }
-.lg-tz-copy .landing-section-heading { text-align: left; }
-.lg-clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.lg-clock { background: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 1.4rem 1rem; text-align: center; display: flex; flex-direction: column; gap: 0.3rem; }
-.lg-clock-time { font-family: var(--font-heading); font-size: 2.2rem; font-weight: 800; color: white; font-variant-numeric: tabular-nums; }
-.lg-clock-city { color: var(--accent-color); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.04em; }
 
 /* founder */
 .lg-founder { display: grid; grid-template-columns: 340px 1fr; gap: 3rem; align-items: center; }
@@ -69,14 +62,13 @@
 
 @media (max-width: 1024px) {
   .lg-countries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lg-tz, .lg-founder { grid-template-columns: 1fr; }
+  .lg-founder { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .lg-section { padding: 3.5rem 0; }
   .lg-countries { grid-template-columns: 1fr; }
   .lg-shot { flex-basis: 86%; }
   .lg-arrow { display: none; }
-  .lg-clock-time { font-size: 1.8rem; }
   .lg-founder-card { padding: 1.5rem; }
 }
 
