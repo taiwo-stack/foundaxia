@@ -245,7 +245,7 @@ export function ContactSection({ form, onChange, onSubmit, sending, success, onB
               </span>
               <span>
                 <strong>WhatsApp</strong>
-                <small>+234 906 181 4608</small>
+                <small>Chat with our team</small>
               </span>
             </a>
             <a className="lg-contact-way" href="mailto:foundaxia@gmail.com">

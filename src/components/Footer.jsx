@@ -28,10 +28,9 @@ export default function Footer() {
             Expert one-to-one online tutoring for students in the UK, US, Canada and Nigeria.
           </p>
           <div style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.8)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            <div>📍 Darka Street,</div>
-            <div>📍 Wuse Zone I, FCT Abuja, Nigeria</div>
-            <div>📞 +234 906 181 4608 (WhatsApp)</div>
-            <div style={{ marginTop: '0.2rem' }}>✉️ foundaxia@gmail.com</div>
+            <div>🌍 100% online, wherever you are</div>
+            <div><a href="https://wa.me/2349061814608" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>💬 Chat with us on WhatsApp</a></div>
+            <div><a href="mailto:foundaxia@gmail.com" style={{ color: 'inherit' }}>✉️ foundaxia@gmail.com</a></div>
           </div>
         </div>
 

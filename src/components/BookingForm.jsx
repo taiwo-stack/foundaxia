@@ -48,7 +48,7 @@ const tzOptions = allTimeZones.map(tz => {
 
 const TIME_SLOTS = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM'];
 
-const getDefaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
+const getDefaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
 
 // Today's date in the visitor's local timezone, formatted YYYY-MM-DD (matches <input type="date">)
 const getLocalDateString = () => {
