@@ -47,12 +47,27 @@ const FAQ_ITEMS = [
   }
 ];
 
-// Year/grade choices for every country we teach.
-const GRADE_GROUPS = [
-  ['United Kingdom', ['Reception', ...Array.from({ length: 13 }, (_, i) => `Year ${i + 1}`)]],
-  ['US & Canada', ['Kindergarten', ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`)]],
-  ['Nigeria', [...Array.from({ length: 6 }, (_, i) => `Primary ${i + 1}`), 'JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3']]
-];
+// Year/grade choices, shown for the country the parent picks.
+const US_GRADES = ['Kindergarten', ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`)];
+const GRADES_BY_COUNTRY = {
+  'United Kingdom': ['Reception', ...Array.from({ length: 13 }, (_, i) => `Year ${i + 1}`)],
+  'United States': US_GRADES,
+  'Canada': US_GRADES,
+  'Nigeria': [...Array.from({ length: 6 }, (_, i) => `Primary ${i + 1}`), 'JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3'],
+  'Other': US_GRADES
+};
+
+// Best guess from the visitor's time zone; they can change it.
+const guessCountry = () => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (tz === 'Europe/London' || tz === 'Europe/Belfast') return 'United Kingdom';
+    if (tz === 'Africa/Lagos') return 'Nigeria';
+    if (/^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|Regina|St_Johns|Moncton|Whitehorse|Yellowknife|Iqaluit)$/.test(tz)) return 'Canada';
+    if (/^(America\/(New_York|Chicago|Denver|Los_Angeles|Phoenix|Anchorage|Detroit|Boise)|Pacific\/Honolulu)$/.test(tz)) return 'United States';
+  } catch { /* unknown zone */ }
+  return '';
+};
 
 const SUBJECT_CATEGORIES = {
   'Math': ['Elementary Math', 'Pre-Algebra', 'Algebra I & II', 'Geometry', 'Trigonometry', 'Calculus'],
@@ -65,6 +80,7 @@ const SUBJECT_CATEGORIES = {
 
 const EMPTY_STUDENT_FORM = {
   studentName: '',
+  country: '',
   gradeLevel: '',
   primaryPhone: '',
   email: '',
@@ -130,7 +146,7 @@ export default function LandingPage() {
   const [requestedSubject, setRequestedSubject] = useState(null);
 
   // Quick Register form state (only the fields the form actually collects)
-  const [studentForm, setStudentForm] = useState(EMPTY_STUDENT_FORM);
+  const [studentForm, setStudentForm] = useState(() => ({ ...EMPTY_STUDENT_FORM, country: guessCountry() }));
 
   // Contact form state
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM);
@@ -235,7 +251,8 @@ export default function LandingPage() {
   // Student Registration Form Handlers
   const handleRegChange = (e) => {
     const { name, value } = e.target;
-    setStudentForm(prev => ({ ...prev, [name]: value }));
+    // A new country means a different list of years/grades.
+    setStudentForm(prev => (name === 'country' ? { ...prev, country: value, gradeLevel: '' } : { ...prev, [name]: value }));
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -254,13 +271,13 @@ export default function LandingPage() {
         program: studentForm.program,
         schedule: null,
         start_date: null,
-        additional_comments: withRequestedSubject(requestedSubject, ''),
+        additional_comments: withRequestedSubject(requestedSubject, studentForm.country ? `Country: ${studentForm.country}` : ''),
         email: studentForm.email,
         phone: studentForm.primaryPhone
       };
       await registerStudent(dataToSave);
       setRegisterSuccess(true);
-      setStudentForm(EMPTY_STUDENT_FORM);
+      setStudentForm({ ...EMPTY_STUDENT_FORM, country: studentForm.country });
       setRequestedSubject(null);
       clearNavigationState();
       setTimeout(() => setRegisterSuccess(false), 5000);
@@ -568,7 +585,7 @@ export default function LandingPage() {
                 {activeTab === 'registration' && (
                   <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <p style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.75)', margin: '0 0 0.4rem 0', lineHeight: '1.4' }}>
-                      Enroll your child in our courses to setup their study account and choose grade programs.
+                      Ready to start? Enrol your child and our team will set up their learning account and match their tutor.
                     </p>
                     {registerSuccess && (
                       <div style={{ padding: '0.5rem', background: 'rgba(40, 167, 69, 0.2)', border: '1px solid #28a745', borderRadius: '6px', fontSize: '0.75rem', textAlign: 'center', color: '#28a745', fontWeight: 'bold' }}>
@@ -591,17 +608,21 @@ export default function LandingPage() {
                     </div>
                     <div className="form-row-2col">
                       <div className="form-group" style={{ margin: 0 }}>
-                        <label>Year / Grade *</label>
-                        <select name="gradeLevel" value={studentForm.gradeLevel} onChange={handleRegChange} required>
-                          <option value="">Select year / grade</option>
-                          {GRADE_GROUPS.map(([group, list]) => (
-                            <optgroup key={group} label={group}>
-                              {list.map(g => <option key={g} value={g}>{g}</option>)}
-                            </optgroup>
-                          ))}
+                        <label>Country *</label>
+                        <select name="country" value={studentForm.country} onChange={handleRegChange} required>
+                          <option value="">Select country</option>
+                          {Object.keys(GRADES_BY_COUNTRY).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="form-group" style={{ margin: 0 }}>
+                        <label>{studentForm.country === 'United Kingdom' ? 'School Year *' : studentForm.country === 'Nigeria' ? 'Class *' : 'Grade *'}</label>
+                        <select name="gradeLevel" value={studentForm.gradeLevel} onChange={handleRegChange} required disabled={!studentForm.country}>
+                          <option value="">{studentForm.country ? 'Select' : 'Choose country first'}</option>
+                          {(GRADES_BY_COUNTRY[studentForm.country] || []).map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
                         <label>Preferred Program *</label>
                         <select name="program" value={studentForm.program} onChange={handleRegChange} required>
                           <option value="">Select Program</option>
@@ -609,7 +630,6 @@ export default function LandingPage() {
                           <option value="tutoring">One-on-One Tutoring</option>
                           <option value="group">Group Sessions</option>
                         </select>
-                      </div>
                     </div>
                     <button type="submit" className="btn-primary" disabled={isRegistering} aria-busy={isRegistering} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isRegistering ? 0.7 : 1, cursor: isRegistering ? 'not-allowed' : 'pointer' }}>
                       {isRegistering ? 'Submitting...' : 'Submit Registration'}

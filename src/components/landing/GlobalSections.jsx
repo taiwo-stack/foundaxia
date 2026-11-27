@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import '../../styles/LandingGlobal.css';
+import { FLAGS } from './Flags';
 
 // Homepage sections for families outside Nigeria as well as inside it.
 // Copy rule: only say what is true today. No guarantees, no unverifiable checks or stats.
@@ -38,10 +39,12 @@ export function CountryPaths({ onBook }) {
           <p className="lg-lead">Tell us your child’s year or grade and what they are studying. We match a tutor who knows that syllabus and teaches at times that suit your family.</p>
         </div>
         <div className="lg-countries">
-          {COUNTRY_PATHS.map(c => (
+          {COUNTRY_PATHS.map(c => {
+            const Flag = FLAGS[c.key];
+            return (
             <article key={c.key} className="lg-country">
               <div className="lg-country-top">
-                <span className="lg-flag" aria-hidden="true">{c.code}</span>
+                <span className="lg-flag" aria-hidden="true"><Flag width="100%" height="100%" /></span>
                 <div>
                   <h3>{c.name}</h3>
                   <p>{c.note}</p>
@@ -51,7 +54,8 @@ export function CountryPaths({ onBook }) {
                 {c.items.map(i => <li key={i}>{i}</li>)}
               </ul>
             </article>
-          ))}
+            );
+          })}
         </div>
         <div className="lg-center">
           <button type="button" className="btn-primary lg-cta" onClick={onBook}>Book a free consultation</button>

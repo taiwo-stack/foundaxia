@@ -15,7 +15,8 @@
 .lg-countries { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; }
 .lg-country { background: rgba(255, 255, 255, 0.05); border: 1.5px solid rgba(255, 255, 255, 0.08); border-top: 4px solid var(--accent-color); border-radius: 20px; padding: 1.6rem 1.4rem; }
 .lg-country-top { display: flex; gap: 0.8rem; align-items: center; margin-bottom: 1rem; }
-.lg-flag { flex-shrink: 0; width: 48px; height: 48px; border-radius: 14px; background: var(--accent-color); color: #14213D; font-family: var(--font-heading); font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; display: flex; align-items: center; justify-content: center; }
+.lg-flag { flex-shrink: 0; width: 60px; height: 40px; border-radius: 8px; overflow: hidden; display: block; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 6px 14px rgba(0, 0, 0, 0.35); }
+.lg-flag svg { display: block; }
 .lg-country h3 { font-family: var(--font-heading); color: white; font-size: 1.15rem; font-weight: 800; }
 .lg-country-top p { color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; margin-top: 0.15rem; }
 .lg-country ul { list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
