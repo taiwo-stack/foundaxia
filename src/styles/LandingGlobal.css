@@ -24,8 +24,17 @@
 .lg-country li::before { content: ''; position: absolute; left: 0; top: 0.5em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-color); }
 
 /* classroom screenshots */
-.lg-shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
-.lg-shot { margin: 0; }
+.lg-slider { position: relative; }
+.lg-shots { display: flex; gap: 1.5rem; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; padding: 0.5rem 0.25rem 1rem; scrollbar-width: none; -webkit-overflow-scrolling: touch; outline: none; }
+.lg-shots::-webkit-scrollbar { display: none; }
+.lg-arrow { position: absolute; top: 38%; transform: translateY(-50%); z-index: 2; width: 48px; height: 48px; border-radius: 50%; border: none; background: var(--accent-color); color: white; font-size: 1.8rem; line-height: 1; cursor: pointer; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; padding-bottom: 4px; }
+.lg-arrow.prev { left: -18px; }
+.lg-arrow.next { right: -18px; }
+.lg-arrow:disabled { opacity: 0; pointer-events: none; }
+.lg-dots { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
+.lg-dot { width: 10px; height: 10px; border-radius: 999px; border: none; padding: 0; background: rgba(255, 255, 255, 0.3); cursor: pointer; transition: width 0.2s, background 0.2s; }
+.lg-dot.on { width: 28px; background: var(--accent-color); }
+.lg-shot { margin: 0; flex: 0 0 min(680px, 78%); scroll-snap-align: center; }
 .lg-shot-frame { background: #F7F5F0; border-radius: 18px; padding: 10px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35); }
 .lg-shot-frame img { display: block; width: 100%; height: auto; border-radius: 10px; }
 .lg-shot figcaption { padding: 1rem 0.25rem 0; }
@@ -64,7 +73,9 @@
 }
 @media (max-width: 640px) {
   .lg-section { padding: 3.5rem 0; }
-  .lg-countries, .lg-shots { grid-template-columns: 1fr; }
+  .lg-countries { grid-template-columns: 1fr; }
+  .lg-shot { flex-basis: 86%; }
+  .lg-arrow { display: none; }
   .lg-clock-time { font-size: 1.8rem; }
   .lg-founder-card { padding: 1.5rem; }
 }

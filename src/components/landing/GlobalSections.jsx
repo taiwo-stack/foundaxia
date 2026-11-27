@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import '../../styles/LandingGlobal.css';
 import { FLAGS } from './Flags';
 
@@ -75,6 +75,47 @@ const CLASSROOM = [
 ];
 
 export function InsideClassroom() {
+  const trackRef = useRef(null);
+  const [active, setActive] = useState(0);
+
+  // Which slide is mostly in view, for the dots and arrows.
+  const onScroll = () => {
+    const el = trackRef.current;
+    if (!el) return;
+    const slides = [...el.children];
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    let best = 0, bestDist = Infinity;
+    slides.forEach((s, i) => {
+      const d = Math.abs(s.offsetLeft + s.offsetWidth / 2 - mid);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    setActive(best);
+  };
+  const goTo = (i) => {
+    const el = trackRef.current;
+    const slide = el && el.children[Math.max(0, Math.min(CLASSROOM.length - 1, i))];
+    if (slide) el.scrollTo({ left: slide.offsetLeft - (el.clientWidth - slide.offsetWidth) / 2, behavior: 'smooth' });
+  };
+
+  // Move to the next screenshot every 15 seconds, looping back to the first.
+  // Pauses while the visitor hovers or touches the slider, and for 30 seconds after
+  // they use it, so it never moves under their finger. Off for "reduce motion".
+  const activeRef = useRef(0);
+  activeRef.current = active;
+  const hoverRef = useRef(false);
+  const lastTouchRef = useRef(0);
+  const touched = () => { lastTouchRef.current = Date.now(); };
+  useEffect(() => {
+    let reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { /* old browser */ }
+    if (reduce) return undefined;
+    const t = setInterval(() => {
+      if (hoverRef.current || Date.now() - lastTouchRef.current < 30000 || document.hidden) return;
+      goTo((activeRef.current + 1) % CLASSROOM.length);
+    }, 15000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <section className="lg-section lg-darker" id="platform">
       <div className="container">
@@ -83,18 +124,34 @@ export function InsideClassroom() {
           <h2 className="landing-section-heading">A live tutor, plus a learning platform built for families</h2>
           <p className="lg-lead">Every FoundaXia student gets live one-to-one lessons and their own online classroom. Here is what you and your child see.</p>
         </div>
-        <div className="lg-shots">
-          {CLASSROOM.map(s => (
-            <figure key={s.title} className="lg-shot">
-              <div className="lg-shot-frame"><img src={s.img} alt={s.alt} loading="lazy" width="1200" height="750" /></div>
-              <figcaption>
-                <h3>{s.title}</h3>
-                <p>{s.text}</p>
-              </figcaption>
-            </figure>
+        <div
+          className="lg-slider"
+          onMouseEnter={() => { hoverRef.current = true; }}
+          onMouseLeave={() => { hoverRef.current = false; }}
+          onTouchStart={touched}
+          onPointerDown={touched}
+          onFocus={touched}
+        >
+          <button type="button" className="lg-arrow prev" onClick={() => goTo(active - 1)} disabled={active === 0} aria-label="Previous screenshot">‹</button>
+          <div className="lg-shots" ref={trackRef} onScroll={onScroll} tabIndex={0} aria-label="Screenshots of the FoundaXia platform">
+            {CLASSROOM.map((s, i) => (
+              <figure key={s.title} className="lg-shot" aria-label={`${i + 1} of ${CLASSROOM.length}`}>
+                <div className="lg-shot-frame"><img src={s.img} alt={s.alt} width="1200" height="750" /></div>
+                <figcaption>
+                  <h3>{s.title}</h3>
+                  <p>{s.text}</p>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+          <button type="button" className="lg-arrow next" onClick={() => goTo(active + 1)} disabled={active === CLASSROOM.length - 1} aria-label="Next screenshot">›</button>
+        </div>
+        <div className="lg-dots">
+          {CLASSROOM.map((s, i) => (
+            <button key={s.title} type="button" className={`lg-dot${i === active ? ' on' : ''}`} onClick={() => { touched(); goTo(i); }} aria-label={`Show: ${s.title}`} aria-current={i === active} />
           ))}
         </div>
-        <p className="lg-small lg-center">Screenshots of the FoundaXia platform, shown with sample students.</p>
+        <p className="lg-small lg-center" style={{ marginTop: '1rem' }}>Screenshots of the FoundaXia platform, shown with sample students.</p>
       </div>
     </section>
   );
