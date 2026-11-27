@@ -158,6 +158,8 @@ export function InsideClassroom() {
 }
 
 /* ---------- 2b. Subjects & exam boards ---------- */
+const TAB_ICONS = { 'Maths': '📐', 'English': '📖', 'Science': '🔬', 'Coding & Tech': '💻' };
+
 // Subjects match the courses FoundaXia offers.
 const SUBJECT_TABS = {
   'Maths': ['Early maths & number', 'Times tables & arithmetic', 'Fractions, decimals & percentages', 'Ratio & proportion', 'Pre-algebra', 'Algebra', 'Geometry', 'Trigonometry', 'Statistics & probability', 'Functions & pre-calculus', 'Calculus', 'Exam technique & past papers'],
@@ -219,7 +221,11 @@ export function SubjectsAndExams({ onPickSubject, onViewAll }) {
 
         <div className="lg-tabs" role="tablist" aria-label="Subjects">
           {Object.keys(SUBJECT_TABS).map(t => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} className={`lg-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>{t}</button>
+            <button key={t} type="button" role="tab" aria-selected={tab === t} className={`lg-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>
+              <span className="lg-tab-icon" aria-hidden="true">{TAB_ICONS[t]}</span>
+              <span className="lg-tab-name">{t}</span>
+              <span className="lg-tab-count">{SUBJECT_TABS[t].length}</span>
+            </button>
           ))}
         </div>
         <div className="lg-chips" role="tabpanel">
