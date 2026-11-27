@@ -755,7 +755,7 @@ export default function LandingPage() {
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                Enroll Your Child Today
+                Enrol Your Child Today
               </button>
             </div>
 
@@ -774,7 +774,7 @@ export default function LandingPage() {
                 },
                 {
                   icon: '🎯',
-                  title: 'Personalized Study Plans',
+                  title: 'Personalised Study Plans',
                   text: 'We target and resolve specific academic weaknesses with custom-tailored curriculums built uniquely around your child\'s schedule.'
                 },
                 {
@@ -881,7 +881,7 @@ export default function LandingPage() {
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                Enroll Your Child Today
+                Enrol Your Child Today
               </button>
             </div>
             
@@ -1107,7 +1107,7 @@ export default function LandingPage() {
               }}>03</div>
               <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Start Learning, 1-on-1</h3>
               <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
-                Begin personalized live sessions built around your child, not a generic curriculum.
+                Begin personalised live sessions built around your child, not a generic curriculum.
               </p>
             </div>
 
