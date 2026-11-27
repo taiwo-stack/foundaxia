@@ -137,7 +137,7 @@ export function TimeZoneBand({ onBook }) {
 
 /* ---------- 4. Founder ---------- */
 // Add a real photo at /public/images/founder.jpg and set FOUNDER_PHOTO to '/images/founder.jpg'.
-const FOUNDER_PHOTO = '';
+const FOUNDER_PHOTO = '/images/founder.jpg';
 
 export function FounderSection({ onBook }) {
   return (
