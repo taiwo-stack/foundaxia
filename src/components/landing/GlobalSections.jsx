@@ -216,8 +216,8 @@ export function FounderSection({ onBook }) {
         </div>
         <div className="lg-founder-copy">
           <p className="lg-eyebrow">Why FoundaXia exists</p>
-          <h2 className="landing-section-heading">Founded by an engineer who knows what a head start is worth</h2>
-          <p className="lg-lead">“At university, I noticed that some classmates were already building real projects, not because they were smarter, but because they had started earlier. That stayed with me. Today I work as an AI engineer, and I believe something about every child, wherever they live: talent is everywhere, but a head start isn’t. FoundaXia exists to give young people that head start: strong foundations in maths, English and science, and the confidence and tech skills to build the future, not just use it.”</p>
+          <h2 className="landing-section-heading">Talent is everywhere. A great start should be too.</h2>
+          <p className="lg-lead">“As an AI engineer, I see how quickly the world is changing. The students in classrooms today will do jobs that don’t exist yet, whether they live in London, Toronto, New York or Lagos. What will set them apart isn’t where they started, but how well they learned to think, ask questions and keep learning. A great tutor at the right moment can change a child’s whole direction. That is what FoundaXia is built to give: one child, one dedicated tutor, and foundations in maths, English, science and technology that last a lifetime.”</p>
           <p className="lg-small">Every family speaks with our team before lessons begin, and every tutor match is made by a person, not an algorithm.</p>
           <button type="button" className="btn-primary lg-cta" onClick={onBook}>Book a free consultation</button>
         </div>
