@@ -1165,3 +1165,10 @@ footer {
 .form-consent a { color: inherit; text-decoration: underline; }
 .form-consent.light { color: #718096; }
 .booking-form--light .form-consent { color: #718096; }
+
+/* "Free Consultation" button in the site menu */
+.header-cta { padding: 0.5rem 1.15rem !important; font-size: 0.85rem !important; font-weight: 700; border-radius: 999px !important; white-space: nowrap; background: var(--accent-color); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(242, 122, 36, 0.3); }
+.header-cta:hover { background: var(--accent-dark); }
+
+/* Leave room for the fixed menu bar when jumping to a section */
+section[id], #exams, #register { scroll-margin-top: 96px; }

@@ -50,7 +50,7 @@ export default function Footer() {
           <h3>For Families</h3>
           <ul>
             <li><a onClick={() => handleNavClick('how-it-works')}>How It Works</a></li>
-            <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
+            <li><a onClick={() => handleNavClick('register', { openBooking: true })}>Free Consultation</a></li>
             <li><a onClick={() => handleNavClick('faq')}>FAQs</a></li>
           </ul>
         </div>

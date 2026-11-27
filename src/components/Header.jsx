@@ -78,30 +78,9 @@ export default function Header({ currentUser, onLogout }) {
         <ul className={`nav-links ${mobileOpen ? 'show' : ''}`}>
           {!isDashboard ? (
             <>
-              {/* Grades Dropdown */}
-              <li className={`dropdown ${activeMobileDropdown === 'grades' ? 'open' : ''}`}>
-                <a 
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    if (window.innerWidth <= 1150) {
-                      e.preventDefault();
-                      setActiveMobileDropdown(activeMobileDropdown === 'grades' ? null : 'grades');
-                    }
-                  }}
-                >
-                  Grades <span style={{ fontSize: '0.62rem', opacity: 0.8, transform: activeMobileDropdown === 'grades' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
-                </a>
-                <ul className={`dropdown-menu ${activeMobileDropdown === 'grades' ? 'mobile-show' : ''}`}>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Primary · KS1–KS2 · Grades K–5</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('Middle School'); }}>Middle · KS3 · Grades 6–8</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('High School'); }}>Secondary · GCSE · Grades 9–12</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Homeschool Support</a></li>
-                </ul>
-              </li>
-
               {/* Subjects Dropdown */}
               <li className={`dropdown ${activeMobileDropdown === 'subjects' ? 'open' : ''}`}>
-                <a 
+                <a
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
                   onClick={(e) => {
                     if (window.innerWidth <= 1150) {
@@ -114,19 +93,48 @@ export default function Header({ currentUser, onLogout }) {
                 </a>
                 <ul className={`dropdown-menu ${activeMobileDropdown === 'subjects' ? 'mobile-show' : ''}`}>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Math'); }}>Maths</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('English & Reading'); }}>Reading &amp; English</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('English & Reading'); }}>English &amp; Reading</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Science'); }}>Science</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Coding & Tech'); }}>Coding &amp; Tech</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Test Prep'); }}>Exam Prep</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Coding & Tech'); }}>Coding</a></li>
                 </ul>
               </li>
 
+              {/* Levels Dropdown (filter values unchanged) */}
+              <li className={`dropdown ${activeMobileDropdown === 'levels' ? 'open' : ''}`}>
+                <a
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    if (window.innerWidth <= 1150) {
+                      e.preventDefault();
+                      setActiveMobileDropdown(activeMobileDropdown === 'levels' ? null : 'levels');
+                    }
+                  }}
+                >
+                  Levels <span style={{ fontSize: '0.62rem', opacity: 0.8, transform: activeMobileDropdown === 'levels' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
+                </a>
+                <ul className={`dropdown-menu ${activeMobileDropdown === 'levels' ? 'mobile-show' : ''}`}>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Primary · KS1–KS2 · Grades K–5</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('Middle School'); }}>Middle · KS3 · Grades 6–8</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('High School'); }}>Secondary · GCSE &amp; A-level · Grades 9–12</a></li>
+                </ul>
+              </li>
+
+              <li><a onClick={() => handleNavClick('exams')}>Exams</a></li>
               <li><a onClick={() => handleNavClick('how-it-works')}>How It Works</a></li>
               <li><a onClick={() => handleNavClick('about')}>Why FoundaXia</a></li>
 
-              {/* No public pricing table yet: pricing enquiries go through the contact form */}
-              <li><a onClick={() => handleNavClick('contact', { contactSubject: 'fees' })}>Pricing</a></li>
-              
+              {/* Main action on every public page */}
+              <li>
+                <button
+                  type="button"
+                  className="btn-primary header-cta"
+                  onClick={() => handleNavClick('register', { openBooking: true })}
+                >
+                  Free Consultation
+                </button>
+              </li>
+
               {/* Add direct Dashboard link if already logged in */}
               {currentUser && currentUser.role !== 'guest' && (
                 <li>
@@ -166,7 +174,7 @@ export default function Header({ currentUser, onLogout }) {
               <button 
                 onClick={() => { setMobileOpen(false); navigate('/login'); }}
                 className="btn-next"
-                style={{ padding: '0.45rem 1.4rem', fontSize: '0.85rem' }}
+                style={{ padding: '0.45rem 1.3rem', fontSize: '0.85rem', background: 'transparent', color: 'var(--primary-color)', border: '1.5px solid var(--primary-color)', boxShadow: 'none', borderRadius: '999px' }}
               >
                 Login
               </button>

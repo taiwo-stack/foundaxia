@@ -175,7 +175,7 @@ export function SubjectsAndExams({ onPickSubject, onViewAll }) {
           ))}
         </div>
 
-        <div className="lg-exams">
+        <div className="lg-exams" id="exams">
           <div className="lg-exams-head">
             <h3>Exams &amp; boards we prepare for</h3>
             <p>Tell us the exam board and we’ll match a tutor who knows that specification.</p>
