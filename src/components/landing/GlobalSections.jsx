@@ -270,6 +270,106 @@ export function SubjectsAndExams({ onPickSubject, onViewAll }) {
   );
 }
 
+/* ---------- 2c. Contact ---------- */
+// Topic values stay the same (admin inbox and the Pricing link rely on them); only labels changed.
+const CONTACT_TOPICS = [
+  ['enrollment', 'Free consultation & enrolment'],
+  ['programs', 'Subjects, exams & programmes'],
+  ['scheduling', 'Lesson times & scheduling'],
+  ['fees', 'Fees & payments'],
+  ['tutor_application', 'Become a tutor'],
+  ['careers', 'Careers & partnerships'],
+  ['other', 'Something else']
+];
+
+export function ContactSection({ form, onChange, onSubmit, sending, success, onBook }) {
+  return (
+    <section className="lg-section lg-darker" id="contact">
+      <div className="container">
+        <div className="lg-head">
+          <p className="lg-eyebrow">Get in touch</p>
+          <h2 className="landing-section-heading">Questions? Talk to a real person.</h2>
+          <p className="lg-lead">Message us on WhatsApp, send an email, or use the form. We usually reply within 24 hours.</p>
+        </div>
+
+        <div className="lg-contact">
+          <aside className="lg-contact-info">
+            <h3>Reach us directly</h3>
+            <a className="lg-contact-way" href="https://wa.me/2349061814608" target="_blank" rel="noopener noreferrer">
+              <span className="lg-contact-icon wa" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-3.2-.7-2.7-1.1-4.4-3.8-4.5-4-.1-.2-1.1-1.4-1.1-2.7s.7-1.9.9-2.2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.6-.1l1.9.9c.3.1.5.2.5.3.1.2.1.6-.1 1.2z"/></svg>
+              </span>
+              <span>
+                <strong>WhatsApp</strong>
+                <small>+234 906 181 4608</small>
+              </span>
+            </a>
+            <a className="lg-contact-way" href="mailto:foundaxia@gmail.com">
+              <span className="lg-contact-icon mail" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
+              </span>
+              <span>
+                <strong>Email</strong>
+                <small>foundaxia@gmail.com</small>
+              </span>
+            </a>
+            <div className="lg-contact-flags">
+              <span className="lg-contact-label">Supporting families in</span>
+              <div>
+                {['uk', 'us', 'ca', 'ng'].map(k => {
+                  const Flag = FLAGS[k];
+                  return <span key={k} className="lg-flag sm" aria-hidden="true"><Flag width="100%" height="100%" /></span>;
+                })}
+              </div>
+              <span className="lg-contact-label">the UK, US, Canada and Nigeria</span>
+            </div>
+            <div className="lg-contact-book">
+              <p>Prefer to talk it through?</p>
+              <button type="button" className="btn-primary lg-cta" onClick={onBook}>Book a free consultation</button>
+            </div>
+          </aside>
+
+          <form className="lg-contact-form" onSubmit={onSubmit}>
+            <h3>Send us a message</h3>
+            {success && <div className="lg-contact-success" role="status">Thank you! Your message is on its way. We’ll get back to you within 24 hours.</div>}
+            <div className="lg-form-row">
+              <label className="lg-field">
+                <span>Your name *</span>
+                <input type="text" name="contactName" value={form.contactName} onChange={onChange} placeholder="Full name" required />
+              </label>
+              <label className="lg-field">
+                <span>Email *</span>
+                <input type="email" name="contactEmail" value={form.contactEmail} onChange={onChange} placeholder="you@example.com" required />
+              </label>
+            </div>
+            <div className="lg-form-row">
+              <label className="lg-field">
+                <span>Phone or WhatsApp</span>
+                <input type="tel" name="contactPhone" value={form.contactPhone} onChange={onChange} placeholder="With country code, e.g. +44" />
+              </label>
+              <label className="lg-field">
+                <span>Topic</span>
+                <select name="contactSubject" value={form.contactSubject} onChange={onChange}>
+                  <option value="">Choose a topic</option>
+                  {CONTACT_TOPICS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            </div>
+            <label className="lg-field">
+              <span>Your message *</span>
+              <textarea name="contactMessage" value={form.contactMessage} onChange={onChange} rows={5} placeholder="Tell us about your child, their year or grade, and how we can help." required />
+            </label>
+            <button type="submit" className="btn-primary lg-contact-send" disabled={sending} aria-busy={sending}>
+              {sending ? 'Sending…' : 'Send message'}
+            </button>
+            <p className="lg-contact-note">We only use your details to reply to you.</p>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ---------- 3. Time zones (live clocks) ---------- */
 const CITIES = [
   { city: 'London', tz: 'Europe/London' },

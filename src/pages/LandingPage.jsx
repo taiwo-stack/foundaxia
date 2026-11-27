@@ -9,7 +9,7 @@ import BookingForm from '../components/BookingForm';
 import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
 import '../styles/LandingMobile.css';
-import { CountryPaths, InsideClassroom, SubjectsAndExams, TimeZoneBand, FounderSection, Testimonials } from '../components/landing/GlobalSections';
+import { CountryPaths, InsideClassroom, SubjectsAndExams, ContactSection, TimeZoneBand, FounderSection, Testimonials } from '../components/landing/GlobalSections';
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
@@ -1405,94 +1405,15 @@ export default function LandingPage() {
 
 
 
-      {/* Contact Section */}
-      <section className="contact" id="contact">
-        <div className="container">
-          <div className="section-title">
-            <h2>Get in Touch</h2>
-            <p>Have questions? We're here to help! Contact us for any information about our programs.</p>
-          </div>
-          <div className="contact-content">
-            <div className="contact-image-placeholder"></div>
-            <div className="contact-form">
-              {contactSuccess && (
-                <div className="success-message">
-                  Thank you for your message! We will get back to you within 24 hours.
-                </div>
-              )}
-              <h3>Send us a Message</h3>
-              <form onSubmit={handleContactSubmit}>
-                <div className="form-group">
-                  <label>Your Name *</label>
-                  <input
-                    type="text"
-                    name="contactName"
-                    value={contactForm.contactName}
-                    onChange={handleContactChange}
-                    placeholder="Enter your full name"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Your Email *</label>
-                  <input
-                    type="email"
-                    name="contactEmail"
-                    value={contactForm.contactEmail}
-                    onChange={handleContactChange}
-                    placeholder="Enter your email address"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Your Phone</label>
-                  <input
-                    type="tel"
-                    name="contactPhone"
-                    value={contactForm.contactPhone}
-                    onChange={handleContactChange}
-                    placeholder="Enter your phone number"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Subject</label>
-                  <select
-                    name="contactSubject"
-                    value={contactForm.contactSubject}
-                    onChange={handleContactChange}
-                  >
-                    <option value="">Select a topic</option>
-                    <option value="enrollment">Enrollment Information</option>
-                    <option value="programs">Program Details</option>
-                    <option value="scheduling">Scheduling Questions</option>
-                    <option value="fees">Fees & Pricing</option>
-                    <option value="tutor_application">Become a Tutor</option>
-                    <option value="careers">Careers</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Your Message *</label>
-                  <textarea
-                    name="contactMessage"
-                    value={contactForm.contactMessage}
-                    onChange={handleContactChange}
-                    rows={4}
-                    placeholder="Tell us how we can help you..."
-                    required
-                  ></textarea>
-                </div>
-                <div className="step-buttons">
-                  <div></div>
-                  <button type="submit" className="btn-submit" disabled={isSendingContact} aria-busy={isSendingContact} style={{ opacity: isSendingContact ? 0.7 : 1, cursor: isSendingContact ? 'not-allowed' : 'pointer' }}>
-                    {isSendingContact ? 'Sending...' : 'Send Message'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Contact */}
+      <ContactSection
+        form={contactForm}
+        onChange={handleContactChange}
+        onSubmit={handleContactSubmit}
+        sending={isSendingContact}
+        success={contactSuccess}
+        onBook={openConsultation}
+      />
 
       {/* Final CTA Banner */}
       <section style={{
