@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { createBooking } from '../services/dataService';
 import { withRequestedSubject } from '../utils/booking';
+import { tzLabel } from '../utils/timeZone';
 import '../styles/BookingForm.css';
 
 // The "Book Meeting" consultation form. Shared by the landing page hero card and the
@@ -243,7 +244,7 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
       </div>
       {compact && !showTz && (
         <p className="booking-tz-line">
-          Times shown in <strong>{form.bookingTimezone}</strong>
+          Times shown in <strong title={form.bookingTimezone}>{tzLabel(new Date(), form.bookingTimezone)}</strong>
           <button type="button" className="booking-link" onClick={() => setShowTz(true)}>Change</button>
         </p>
       )}
