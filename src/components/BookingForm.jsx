@@ -129,6 +129,11 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
     };
   }, [tzOpen]);
 
+  // Homepage ('dark') form is compact: time zone and note open only on request.
+  const compact = variant === 'dark';
+  const [showTz, setShowTz] = useState(false);
+  const [showNote, setShowNote] = useState(false);
+
   const isLocked = (name) => lockedFields.includes(name);
 
   const handleChange = (e) => {
@@ -184,16 +189,29 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
     <form onSubmit={handleSubmit} className={`booking-form booking-form--${variant}`}>
       <p className="booking-form-intro">
         {variant === 'dark'
-          ? 'Book a free, no-obligation call with our team. We’ll talk about your child’s curriculum and goals, then recommend a tutor and a lesson plan.'
+          ? 'A free, no-obligation call with our team to plan your child’s lessons.'
           : 'Schedule a 1-on-1 counseling call or academic consultation session with a tutor.'}
       </p>
       {success && (
         <div className="booking-form-success" role="status">Meeting scheduled successfully!</div>
       )}
-      <div className="form-group" style={{ margin: 0 }}>
-        <label>Parent Name *</label>
-        <input type="text" name="bookingParentName" value={form.bookingParentName} onChange={handleChange} placeholder="e.g. David Doe" required {...lockedProps('bookingParentName')} />
-      </div>
+      {compact ? (
+        <div className="form-row-2col">
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Parent Name *</label>
+            <input type="text" name="bookingParentName" value={form.bookingParentName} onChange={handleChange} placeholder="Your name" required {...lockedProps('bookingParentName')} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Child’s Name *</label>
+            <input type="text" name="bookingStudentName" value={form.bookingStudentName} onChange={handleChange} placeholder="Child’s name" required {...lockedProps('bookingStudentName')} />
+          </div>
+        </div>
+      ) : (
+        <div className="form-group" style={{ margin: 0 }}>
+          <label>Parent Name *</label>
+          <input type="text" name="bookingParentName" value={form.bookingParentName} onChange={handleChange} placeholder="e.g. David Doe" required {...lockedProps('bookingParentName')} />
+        </div>
+      )}
       <div className="form-row-2col">
         <div className="form-group" style={{ margin: 0 }}>
           <label>Parent Email *</label>
@@ -201,13 +219,15 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
         </div>
         <div className="form-group" style={{ margin: 0 }}>
           <label>Contact Phone *</label>
-          <input type="tel" name="bookingPhone" value={form.bookingPhone} onChange={handleChange} placeholder="With country code, e.g. +44" required {...lockedProps('bookingPhone')} />
+          <input type="tel" name="bookingPhone" value={form.bookingPhone} onChange={handleChange} placeholder={compact ? "+ country code" : "With country code, e.g. +44"} required {...lockedProps('bookingPhone')} />
         </div>
       </div>
-      <div className="form-group" style={{ margin: 0 }}>
-        <label>Student's Full Name *</label>
-        <input type="text" name="bookingStudentName" value={form.bookingStudentName} onChange={handleChange} placeholder="Child's Name" required {...lockedProps('bookingStudentName')} />
-      </div>
+      {!compact && (
+        <div className="form-group" style={{ margin: 0 }}>
+          <label>Student's Full Name *</label>
+          <input type="text" name="bookingStudentName" value={form.bookingStudentName} onChange={handleChange} placeholder="Child's Name" required {...lockedProps('bookingStudentName')} />
+        </div>
+      )}
       <div className="form-row-2col">
         <div className="form-group" style={{ margin: 0 }}>
           <label>Preferred Date *</label>
@@ -221,6 +241,13 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
           </select>
         </div>
       </div>
+      {compact && !showTz && (
+        <p className="booking-tz-line">
+          Times shown in <strong>{form.bookingTimezone}</strong>
+          <button type="button" className="booking-link" onClick={() => setShowTz(true)}>Change</button>
+        </p>
+      )}
+      {(!compact || showTz) && (
       <div className="form-group" style={{ margin: 0 }}>
         <label>Time Zone *</label>
         {/* Panel is portalled to body to escape transform stacking contexts */}
@@ -315,6 +342,11 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
           )}
         </div>
       </div>
+      )}
+      {compact && !showNote && !form.bookingMessage && (
+        <button type="button" className="booking-link booking-note-toggle" onClick={() => setShowNote(true)}>+ Add a note (optional)</button>
+      )}
+      {(!compact || showNote || form.bookingMessage) && (
       <div className="form-group" style={{ margin: 0 }}>
         <label>Add Message (Optional)</label>
         <textarea
@@ -326,6 +358,7 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
           style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1.5px solid #cbd5e0', background: 'white', color: '#2d3748', fontFamily: 'inherit', fontSize: '0.85rem' }}
         />
       </div>
+      )}
       <button
         type="submit"
         className="btn-primary booking-form-submit"
