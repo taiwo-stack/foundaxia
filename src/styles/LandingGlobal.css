@@ -134,3 +134,4 @@
 
 .lg-exam-country > div { display: flex; flex-direction: column; }
 .lg-exam-country small { color: rgba(255, 255, 255, 0.6); font-size: 0.78rem; margin-top: 0.1rem; }
+.lg-contact-note a { color: #D9620F; font-weight: 600; }

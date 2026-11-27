@@ -1159,3 +1159,9 @@ footer {
 
 
 
+
+/* "By submitting, you agree to our Privacy Policy" under forms */
+.form-consent { margin: 0.35rem 0 0; font-size: 0.72rem; line-height: 1.4; color: rgba(255, 255, 255, 0.65); text-align: center; }
+.form-consent a { color: inherit; text-decoration: underline; }
+.form-consent.light { color: #718096; }
+.booking-form--light .form-consent { color: #718096; }

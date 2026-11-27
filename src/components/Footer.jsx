@@ -70,7 +70,12 @@ export default function Footer() {
       </div>
       
       <div className="footer-bottom" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', padding: '1.5rem 2rem', textAlign: 'center', color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.85rem' }}>
-        <p>&copy; 2026 FoundaXia. All rights reserved.</p>
+        <p>&copy; 2026 FoundaXia Academy. All rights reserved.
+          <span style={{ margin: '0 0.6rem' }}>·</span>
+          <a href="/privacy" style={{ color: 'inherit' }}>Privacy Policy</a>
+          <span style={{ margin: '0 0.6rem' }}>·</span>
+          <a href="/terms" style={{ color: 'inherit' }}>Terms of Service</a>
+        </p>
       </div>
     </footer>
   );

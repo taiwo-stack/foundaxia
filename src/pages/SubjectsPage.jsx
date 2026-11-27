@@ -11,11 +11,11 @@ const courseEnrichment = {
   'Algebra I & II':                { grades: ['Middle School', 'High School'], skills: ['Polynomials', 'Quadratic Formulas', 'Factoring', 'Systems of Equations'] },
   'Geometry':                      { grades: ['Middle School', 'High School'], skills: ['Coordinate Geometry', 'Congruence Proofs', 'Similarity', 'Trig Basics'] },
   'Trigonometry':                  { grades: ['High School'], skills: ['Unit Circle', 'Trig Identities', 'Sine & Cosine Laws', 'Wave Graphs'] },
-  'Calculus':                      { grades: ['High School'], skills: ['Limits', 'Derivatives', 'Integrals', 'AP Calculus prep'] },
+  'Calculus':                      { grades: ['High School'], skills: ['Limits', 'Derivatives', 'Integrals', 'A-level & AP prep'] },
   'Phonics':                       { grades: ['K-5'], skills: ['Letter Sounds', 'Vowel Blends', 'Sight Words', 'Early Reading'] },
   'Reading Comprehension':         { grades: ['K-5', 'Middle School', 'High School'], skills: ['Text Analysis', 'Main Idea Finding', 'Inference Drawing', 'Vocabulary'] },
   'Creative Writing':              { grades: ['K-5', 'Middle School'], skills: ['Character Development', 'Plot Outlining', 'Dialogue Rules', 'Spelling'] },
-  'Essay Writing':                 { grades: ['Middle School', 'High School'], skills: ['Thesis Statements', 'MLA/APA Citation', 'Persuasive Structure', 'Editing'] },
+  'Essay Writing':                 { grades: ['Middle School', 'High School'], skills: ['Thesis Statements', 'Referencing', 'Persuasive Structure', 'Editing'] },
   'Literature':                    { grades: ['Middle School', 'High School'], skills: ['Classic Prose Analysis', 'Theme Tracking', 'Poetry Metrics', 'Motif Analysis'] },
   'Life Science':                  { grades: ['K-5', 'Middle School'], skills: ['Cell Structures', 'Ecosystems', 'Food Chains', 'Plant Biology'] },
   'Biology':                       { grades: ['Middle School', 'High School'], skills: ['Genetics', 'Photosynthesis', 'Evolution', 'Human Anatomy'] },
@@ -33,7 +33,24 @@ const courseEnrichment = {
   'French':                        { grades: ['K-5', 'Middle School', 'High School'], skills: ['Pronunciation', 'French Grammar', 'Listening Comprehension', 'Writing Skills'] },
   'Intro to Coding':               { grades: ['K-5', 'Middle School'], skills: ['Scratch block logic', 'Sequencing', 'Loops intro', 'Conditionals'] },
   'Computer Science Fundamentals': { grades: ['Middle School', 'High School'], skills: ['Python / JS syntax', 'Algorithm Design', 'Data structures', 'Git basics'] },
+  'Modelling data using spreadsheets': { grades: ['Middle School', 'High School'], skills: ['Formulas', 'Cleaning data', 'Charts', 'Telling a story with data'] },
+  'Data Base':                     { grades: ['Middle School', 'High School'], skills: ['Tables & records', 'Queries', 'Organising data', 'Real-world databases'] },
+  'Computing systems and networks - The Internet': { grades: ['Middle School', 'High School'], skills: ['How the internet works', 'Networks', 'Websites', 'Staying safe online'] },
+  'AI Fluency':                    { grades: ['Middle School', 'High School'], skills: ['What AI is', 'How machines learn', 'Train your own model', 'Using AI wisely'] },
+  'Biology (Year 10)':             { grades: ['High School'], skills: ['GCSE Biology', 'Cells & organisms', 'Required practicals', 'Exam technique'] },
+  'Chemistry (Year 10)':           { grades: ['High School'], skills: ['GCSE Chemistry', 'Atomic structure', 'Required practicals', 'Exam technique'] },
+  'Physics (Year 10)':             { grades: ['High School'], skills: ['GCSE Physics', 'Forces & energy', 'Required practicals', 'Exam technique'] },
 };
+
+// Display names: the database keeps its values, visitors see international labels.
+const CATEGORY_LABELS = { 'Math': 'Maths', 'Test Prep': 'Exam Prep', 'English & Reading': 'English & Reading' };
+const catLabel = (c) => CATEGORY_LABELS[c] || c;
+const GRADE_LABELS = {
+  'K-5': 'Primary · KS1–KS2 · Grades K–5',
+  'Middle School': 'Middle · KS3 · Grades 6–8',
+  'High School': 'Secondary · GCSE & A-level · Grades 9–12'
+};
+const GRADE_SHORT = { 'K-5': 'Primary', 'Middle School': 'Middle', 'High School': 'Secondary' };
 
 export default function SubjectsPage() {
   const navigate = useNavigate();
@@ -240,7 +257,7 @@ export default function SubjectsPage() {
             lineHeight: '1.2',
             marginBottom: '1.25rem'
           }}>
-            Our Academic Subjects
+            Subjects & Courses
           </h1>
           <p style={{
             color: 'rgba(255, 255, 255, 0.85)',
@@ -249,7 +266,7 @@ export default function SubjectsPage() {
             margin: '0 auto',
             lineHeight: '1.6'
           }}>
-            Filter, search, and discover learning map details across all K–12 grade levels and STEM categories.
+            Every subject we teach, from first steps in reading to final exam revision, for students in the UK, US, Canada and Nigeria.
           </p>
         </div>
 
@@ -350,7 +367,7 @@ export default function SubjectsPage() {
                         checked={isChecked}
                         onChange={() => handleCategoryChange(category)}
                       />
-                      {category}
+                      {catLabel(category)}
                     </label>
                   );
                 })}
@@ -372,7 +389,7 @@ export default function SubjectsPage() {
                         checked={isChecked}
                         onChange={() => handleGradeChange(grade)}
                       />
-                      {grade === 'K-5' ? 'Early Learners (K-5)' : grade}
+                      {GRADE_LABELS[grade] || grade}
                     </label>
                   );
                 })}
@@ -402,12 +419,12 @@ export default function SubjectsPage() {
                   )}
                   {selectedCategories.map(cat => (
                     <span key={cat} className="filter-active-chip" onClick={() => handleCategoryChange(cat)}>
-                      {cat} <span className="chip-close-icon">✕</span>
+                      {catLabel(cat)} <span className="chip-close-icon">✕</span>
                     </span>
                   ))}
                   {selectedGrades.map(g => (
                     <span key={g} className="filter-active-chip" onClick={() => handleGradeChange(g)}>
-                      {g === 'K-5' ? 'Early Learners' : g} <span className="chip-close-icon">✕</span>
+                      {GRADE_SHORT[g] || g} <span className="chip-close-icon">✕</span>
                     </span>
                   ))}
                   <button className="active-filters-clear-btn" onClick={handleResetFilters}>
@@ -454,7 +471,7 @@ export default function SubjectsPage() {
                       {/* Category badge + Grade chips */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                         <span className="subject-card-category">
-                          {subj.category}
+                          {catLabel(subj.category)}
                         </span>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           {subj.grades.map(g => {
@@ -463,7 +480,7 @@ export default function SubjectsPage() {
                             if (g === 'High School') gradeClass = 'high';
                             return (
                               <span key={g} className={`subject-card-grade-tag ${gradeClass}`}>
-                                {g}
+                                {GRADE_SHORT[g] || g}
                               </span>
                             );
                           })}
@@ -498,7 +515,7 @@ export default function SubjectsPage() {
                       onClick={() => handleRequestTutor(subj.name)}
                       className="subject-card-button"
                     >
-                      Request a Tutor
+                      Book a Free Consultation
                     </button>
                   </div>
                 ))}

@@ -624,6 +624,7 @@ export default function LandingPage() {
                     <button type="submit" className="btn-primary" disabled={isRegistering} aria-busy={isRegistering} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isRegistering ? 0.7 : 1, cursor: isRegistering ? 'not-allowed' : 'pointer' }}>
                       {isRegistering ? 'Submitting...' : 'Submit Registration'}
                     </button>
+                    <p className="form-consent">By submitting, you agree to our <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</p>
                   </form>
                 )}
 
