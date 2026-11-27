@@ -160,10 +160,10 @@ export function InsideClassroom() {
 /* ---------- 2b. Subjects & exam boards ---------- */
 // Subjects match the courses FoundaXia offers.
 const SUBJECT_TABS = {
-  'Maths': ['Early maths & number', 'Pre-algebra', 'Algebra', 'Geometry', 'Trigonometry', 'Calculus'],
-  'English': ['Phonics', 'Reading comprehension', 'Creative writing', 'Essay writing', 'Literature'],
-  'Science': ['Life science', 'Biology', 'Chemistry', 'Physics', 'Earth science'],
-  'Coding & Tech': ['Intro to coding', 'Computer science', 'Spreadsheets & data', 'Databases', 'The internet & networks', 'AI fluency']
+  'Maths': ['Early maths & number', 'Times tables & arithmetic', 'Fractions, decimals & percentages', 'Ratio & proportion', 'Pre-algebra', 'Algebra', 'Geometry', 'Trigonometry', 'Statistics & probability', 'Functions & pre-calculus', 'Calculus', 'Exam technique & past papers'],
+  'English': ['Phonics', 'Reading & comprehension', 'Spelling, grammar & punctuation', 'Vocabulary', 'Creative writing', 'Essay writing', 'English language', 'English literature', 'Poetry & set texts', 'Speaking & presenting'],
+  'Science': ['Primary & general science', 'Life science', 'Combined science', 'Biology', 'Chemistry', 'Physics', 'Earth & environmental science', 'Practicals & lab skills'],
+  'Coding & Tech': ['Scratch (block coding)', 'Python', 'Intro to coding', 'Web design (HTML & CSS)', 'Computer science', 'Spreadsheets & data', 'Microsoft Excel, Word & PowerPoint', 'Databases', 'Data science', 'AI fluency', 'AI & machine learning basics', 'The internet & networks', 'Robotics', 'Cybersecurity & online safety']
 };
 
 // Exams for the subjects and ages we teach. Boards shown under each exam.
