@@ -372,6 +372,7 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
       >
         {isBooking ? 'Booking...' : (variant === 'dark' ? 'Book My Free Consultation' : 'Book Session')}
       </button>
+      <p className="form-consent">By submitting, you agree to our <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</p>
     </form>
   );
 }

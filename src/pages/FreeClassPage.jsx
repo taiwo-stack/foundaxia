@@ -150,6 +150,7 @@ export default function FreeClassPage() {
                 <span>I am the parent/guardian and I agree to my teen joining these free online classes.</span>
               </label>
               <button type="submit" className="fc-submit" disabled={sending}>{sending ? 'Registering…' : 'Register my teen'}</button>
+              <p className="form-consent light">By registering, you agree to our <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</p>
             </form>
           )}
         </div>

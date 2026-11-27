@@ -57,6 +57,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Vercel's analytics script must always come from the network.
+  if (new URL(request.url).pathname.startsWith('/_vercel/')) return;
+
   // Page navigations: go to the network first so users always get the
   // latest app shell; fall back to the last cached page if offline.
   if (request.mode === 'navigate') {

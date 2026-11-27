@@ -16,6 +16,7 @@ const TutorDashboard = lazy(() => import('./pages/TutorDashboard'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const SlideEditor = lazy(() => import('./pages/SlideEditor'));
+const LegalPage = lazy(() => import('./pages/LegalPage'));
 
 const RouteFallback = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
@@ -64,6 +65,8 @@ function AppContent() {
           <Route path="/subjects" element={<SubjectsPage />} />
           <Route path="/tbn-teens" element={<FreeClassPage />} />
           <Route path="/free-class" element={<Navigate to="/tbn-teens" replace />} />
+          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+          <Route path="/terms" element={<LegalPage doc="terms" />} />
           <Route path="/login" element={<Login onLoginSuccess={handleLoginSuccess} />} />
           <Route
             path="/whiteboard"

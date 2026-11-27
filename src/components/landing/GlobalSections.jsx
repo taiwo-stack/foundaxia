@@ -306,7 +306,7 @@ export function ContactSection({ form, onChange, onSubmit, sending, success, onB
             <button type="submit" className="btn-primary lg-contact-send" disabled={sending} aria-busy={sending}>
               {sending ? 'Sending…' : 'Send message'}
             </button>
-            <p className="lg-contact-note">We only use your details to reply to you.</p>
+            <p className="lg-contact-note">We only use your details to reply to you. See our <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</p>
           </form>
         </div>
       </div>
