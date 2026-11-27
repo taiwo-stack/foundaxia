@@ -85,7 +85,6 @@
 .lg-tab { display: flex; align-items: center; gap: 0.55rem; padding: 0.85rem 1.5rem; border-radius: 16px; border: none; background: transparent; color: rgba(255, 255, 255, 0.85); font-family: var(--font-heading); font-weight: 800; font-size: 1.05rem; cursor: pointer; transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.2s; }
 .lg-tab:hover { background: rgba(255, 255, 255, 0.08); color: white; }
 .lg-tab.on { background: linear-gradient(135deg, #FF8D3B 0%, var(--accent-color) 60%, var(--accent-dark) 100%); color: white; box-shadow: 0 8px 24px rgba(242, 122, 36, 0.45); transform: translateY(-1px); }
-.lg-tab-icon { font-size: 1.25rem; line-height: 1; }
 .lg-tab-count { font-family: var(--font-body); font-size: 0.75rem; font-weight: 800; min-width: 1.6rem; padding: 0.15rem 0.45rem; border-radius: 999px; background: rgba(255, 255, 255, 0.14); color: white; }
 .lg-tab.on .lg-tab-count { background: rgba(20, 33, 61, 0.28); }
 @media (max-width: 640px) {
@@ -146,3 +145,7 @@
 .lg-contact-success { padding: 0.8rem 1rem; border-radius: 12px; background: #E8F7EE; border: 1px solid #38A169; color: #22543D; font-weight: 700; font-size: 0.9rem; }
 @media (max-width: 900px) { .lg-contact { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .lg-form-row { grid-template-columns: 1fr; } .lg-contact-form, .lg-contact-info { padding: 1.75rem 1.25rem; } }
+
+.lg-chip-stack { display: grid; }
+.lg-chip-stack > .lg-chips { grid-area: 1 / 1; align-content: flex-start; visibility: hidden; opacity: 0; transition: opacity 0.2s; }
+.lg-chip-stack > .lg-chips.on { visibility: visible; opacity: 1; }

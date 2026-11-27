@@ -158,8 +158,6 @@ export function InsideClassroom() {
 }
 
 /* ---------- 2b. Subjects & exam boards ---------- */
-const TAB_ICONS = { 'Maths': '📐', 'English': '📖', 'Science': '🔬', 'Coding & Tech': '💻' };
-
 // Subjects match the courses FoundaXia offers.
 const SUBJECT_TABS = {
   'Maths': ['Early maths & number', 'Times tables & arithmetic', 'Fractions, decimals & percentages', 'Ratio & proportion', 'Pre-algebra', 'Algebra', 'Geometry', 'Trigonometry', 'Statistics & probability', 'Functions & pre-calculus', 'Calculus', 'Exam technique & past papers'],
@@ -222,15 +220,19 @@ export function SubjectsAndExams({ onPickSubject, onViewAll }) {
         <div className="lg-tabs" role="tablist" aria-label="Subjects">
           {Object.keys(SUBJECT_TABS).map(t => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} className={`lg-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>
-              <span className="lg-tab-icon" aria-hidden="true">{TAB_ICONS[t]}</span>
               <span className="lg-tab-name">{t}</span>
               <span className="lg-tab-count">{SUBJECT_TABS[t].length}</span>
             </button>
           ))}
         </div>
-        <div className="lg-chips" role="tabpanel">
-          {SUBJECT_TABS[tab].map(s => (
-            <button key={s} type="button" className="lg-chip" onClick={() => onPickSubject(s)}>{s}</button>
+        {/* All lists share one grid cell, so the area keeps the height of the longest list */}
+        <div className="lg-chip-stack">
+          {Object.keys(SUBJECT_TABS).map(t => (
+            <div key={t} className={`lg-chips${t === tab ? " on" : ""}`} role="tabpanel" aria-hidden={t !== tab}>
+              {SUBJECT_TABS[t].map(s => (
+                <button key={s} type="button" className="lg-chip" tabIndex={t === tab ? 0 : -1} onClick={() => onPickSubject(s)}>{s}</button>
+              ))}
+            </div>
           ))}
         </div>
 
@@ -391,9 +393,9 @@ export function TimeZoneBand({ onBook }) {
     <section className="lg-section lg-dark" id="time-zones">
       <div className="container lg-tz">
         <div className="lg-tz-copy">
-          <p className="lg-eyebrow">Lessons at after-school times</p>
-          <h2 className="landing-section-heading">Our team works just one hour from UK time</h2>
-          <p className="lg-lead">Our tutors are based on West Africa Time (UTC+1): the same time as the UK in summer, and one hour ahead in winter. That makes after-school lessons in the UK easy to arrange. Families in Canada and the US book lessons that suit their day too.</p>
+          <p className="lg-eyebrow">Lessons in your time zone</p>
+          <h2 className="landing-section-heading">Lessons at times that work for your family, wherever you are</h2>
+          <p className="lg-lead">Tell us when your child is free and we’ll find a lesson time that fits, whether you’re in London, Toronto, New York or Lagos. Every lesson time and join link shows in your own local time, so there’s nothing to convert.</p>
           <button type="button" className="btn-primary lg-cta" onClick={onBook}>Find a lesson time</button>
         </div>
         <div className="lg-clocks" aria-label="Current time in four cities">

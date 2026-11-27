@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How do time zones work?',
-    a: 'Our tutors work on West Africa Time (UTC+1), which is the same as UK time in summer and one hour ahead in winter, so UK after-school lessons are easy to arrange. We also schedule lessons for families in Canada and the US. Lesson times always show in your own local time on the dashboard.'
+    a: 'We schedule lessons around your child's timetable, wherever you live: the UK, Canada, the US, Nigeria or elsewhere. Lesson times and join links always show in your own local time on the dashboard, so there is nothing to convert. Our team works on West Africa Time (UTC+1), which also makes after-school lessons in the UK and Europe especially easy to arrange.'
   },
   {
     q: 'Is this truly one-to-one?',
@@ -660,8 +660,8 @@ export default function LandingPage() {
               <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Countries’ Curricula</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
-              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>UTC+1</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>UK-Friendly Lesson Times</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>Global</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Lessons in Your Local Time</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>Free</div>
