@@ -79,3 +79,29 @@
   .lg-clock-time { font-size: 1.8rem; }
   .lg-founder-card { padding: 1.5rem; }
 }
+
+/* subjects & exams */
+.lg-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; margin-bottom: 1.25rem; }
+.lg-tab { padding: 0.55rem 1.2rem; border-radius: 999px; border: 1.5px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.05); color: white; font-weight: 700; font-size: 0.9rem; cursor: pointer; font-family: inherit; }
+.lg-tab.on { background: var(--accent-color); border-color: var(--accent-color); }
+.lg-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.7rem; max-width: 900px; margin: 0 auto; }
+.lg-chip { padding: 0.75rem 1.3rem; border-radius: 14px; border: 1.5px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.06); color: white; font-weight: 600; font-size: 0.92rem; cursor: pointer; font-family: inherit; transition: border-color 0.15s, background 0.15s, transform 0.15s; }
+.lg-chip:hover, .lg-chip:focus-visible { border-color: var(--accent-color); background: rgba(242, 122, 36, 0.12); transform: translateY(-2px); }
+.lg-exams { margin-top: 3rem; background: rgba(255, 255, 255, 0.04); border: 1.5px solid rgba(255, 255, 255, 0.08); border-radius: 24px; padding: 2rem; }
+.lg-exams-head { text-align: center; margin-bottom: 1.75rem; }
+.lg-exams-head h3 { font-family: var(--font-heading); color: white; font-size: 1.35rem; font-weight: 800; }
+.lg-exams-head p { color: rgba(255, 255, 255, 0.7); font-size: 0.92rem; margin-top: 0.35rem; }
+.lg-exam-cols { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1.5rem; }
+.lg-exam-country { display: flex; align-items: center; gap: 0.65rem; margin-bottom: 0.9rem; }
+.lg-exam-country strong { color: white; font-family: var(--font-heading); font-size: 1rem; }
+.lg-flag.sm { width: 36px; height: 24px; border-radius: 5px; }
+.lg-exam-col ul { list-style: none; display: flex; flex-direction: column; gap: 0.6rem; }
+.lg-exam-col li { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+.lg-exam { background: none; border: none; padding: 0; color: white; font-weight: 700; font-size: 0.95rem; cursor: pointer; font-family: inherit; text-align: left; border-bottom: 1px dashed rgba(242, 122, 36, 0.6); }
+.lg-exam:hover, .lg-exam:focus-visible { color: var(--accent-color); }
+.lg-boards { color: rgba(255, 255, 255, 0.6); font-size: 0.82rem; }
+.lg-ghost { padding: 0.8rem 1.8rem; border-radius: 12px; border: 2px solid rgba(255, 255, 255, 0.35); background: transparent; color: white; font-weight: 700; cursor: pointer; font-family: inherit; }
+.lg-ghost:hover { border-color: white; }
+@media (max-width: 1180px) { .lg-exam-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .lg-exam-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .lg-exams { padding: 1.5rem 1.2rem; } .lg-exam-cols { grid-template-columns: 1fr 1fr; gap: 1.25rem; } .lg-chip { padding: 0.65rem 1rem; font-size: 0.88rem; } }

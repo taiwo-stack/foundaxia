@@ -157,6 +157,113 @@ export function InsideClassroom() {
   );
 }
 
+/* ---------- 2b. Subjects & exam boards ---------- */
+// Subjects match the courses FoundaXia offers.
+const SUBJECT_TABS = {
+  'Maths': ['Early maths & number', 'Pre-algebra', 'Algebra', 'Geometry', 'Trigonometry', 'Calculus'],
+  'English': ['Phonics', 'Reading comprehension', 'Creative writing', 'Essay writing', 'Literature'],
+  'Science': ['Life science', 'Biology', 'Chemistry', 'Physics', 'Earth science'],
+  'Coding & Tech': ['Intro to coding', 'Computer science', 'Spreadsheets & data', 'Databases', 'The internet & networks', 'AI fluency']
+};
+
+// Exams for the subjects and ages we teach. Boards shown under each exam.
+const EXAMS = [
+  { key: 'uk', name: 'United Kingdom', groups: [
+    ['Phonics screening check (Year 1)', []],
+    ['Multiplication tables check (Year 4)', []],
+    ['KS2 SATs', []],
+    ['11+ entrance exams', ['GL Assessment', 'CEM', 'CSSE', 'ISEB Pre-Test']],
+    ['13+ Common Entrance', ['ISEB']],
+    ['GCSE', ['AQA', 'Edexcel', 'OCR', 'WJEC / Eduqas', 'CCEA']],
+    ['A-level maths & sciences', ['AQA', 'Edexcel', 'OCR']],
+    ['Scotland: National 5 & Highers', ['SQA']]
+  ] },
+  { key: 'us', name: 'United States', groups: [
+    ['SAT & PSAT/NMSQT', []],
+    ['ACT', []],
+    ['AP exams', ['Calculus', 'Biology', 'Chemistry', 'Physics', 'Computer Science']],
+    ['State tests', ['e.g. NY Regents', 'Texas STAAR']],
+    ['ISEE & SSAT', []]
+  ] },
+  { key: 'ca', name: 'Canada', groups: [
+    ['EQAO', ['Ontario']],
+    ['Provincial Achievement Tests', ['Alberta']],
+    ['Diploma exams', ['Alberta']],
+    ['Graduation assessments', ['British Columbia']]
+  ] },
+  { key: 'ng', name: 'Nigeria', groups: [
+    ['Common Entrance', ['NCEE']],
+    ['BECE (Junior WAEC)', []],
+    ['WAEC (WASSCE)', []],
+    ['NECO (SSCE)', []],
+    ['JAMB (UTME)', []],
+    ['Post-UTME', []]
+  ] },
+  { key: 'intl', name: 'International schools', groups: [
+    ['IGCSE', ['Cambridge', 'Pearson Edexcel']],
+    ['International A-level', ['Cambridge', 'Pearson Edexcel']],
+    ['IB', ['MYP', 'Diploma Programme']]
+  ] }
+];
+
+export function SubjectsAndExams({ onPickSubject, onViewAll }) {
+  const [tab, setTab] = useState('Maths');
+  return (
+    <section className="lg-section lg-dark" id="subjects-section">
+      <div className="container">
+        <div className="lg-head">
+          <p className="lg-eyebrow">Subjects &amp; exams</p>
+          <h2 className="landing-section-heading">Every subject. Every exam. One tutor matched to your child.</h2>
+          <p className="lg-lead">From first steps in reading to final exam revision. Choose a subject to book a free consultation about it.</p>
+        </div>
+
+        <div className="lg-tabs" role="tablist" aria-label="Subjects">
+          {Object.keys(SUBJECT_TABS).map(t => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} className={`lg-tab${tab === t ? ' on' : ''}`} onClick={() => setTab(t)}>{t}</button>
+          ))}
+        </div>
+        <div className="lg-chips" role="tabpanel">
+          {SUBJECT_TABS[tab].map(s => (
+            <button key={s} type="button" className="lg-chip" onClick={() => onPickSubject(s)}>{s}</button>
+          ))}
+        </div>
+
+        <div className="lg-exams">
+          <div className="lg-exams-head">
+            <h3>Exams &amp; boards we prepare for</h3>
+            <p>Tell us the exam board and we’ll match a tutor who knows that specification.</p>
+          </div>
+          <div className="lg-exam-cols">
+            {EXAMS.map(c => {
+              const Flag = FLAGS[c.key];
+              return (
+                <div key={c.key} className="lg-exam-col">
+                  <div className="lg-exam-country">
+                    <span className="lg-flag sm" aria-hidden="true"><Flag width="100%" height="100%" /></span>
+                    <strong>{c.name}</strong>
+                  </div>
+                  <ul>
+                    {c.groups.map(([exam, boards]) => (
+                      <li key={exam}>
+                        <button type="button" className="lg-exam" onClick={() => onPickSubject(`${exam} preparation`)}>{exam}</button>
+                        {boards.length > 0 && <span className="lg-boards">{boards.join(' · ')}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="lg-center">
+          <button type="button" className="lg-ghost" onClick={onViewAll}>View all subjects →</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ---------- 3. Time zones (live clocks) ---------- */
 const CITIES = [
   { city: 'London', tz: 'Europe/London' },

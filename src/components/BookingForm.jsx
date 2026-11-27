@@ -196,6 +196,9 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
       {success && (
         <div className="booking-form-success" role="status">Meeting scheduled successfully!</div>
       )}
+      {compact && requestedSubject && (
+        <p className="booking-tz-line">Subject: <strong>{requestedSubject}</strong></p>
+      )}
       {compact ? (
         <div className="form-row-2col">
           <div className="form-group" style={{ margin: 0 }}>

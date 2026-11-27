@@ -9,7 +9,7 @@ import BookingForm from '../components/BookingForm';
 import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
 import '../styles/LandingMobile.css';
-import { CountryPaths, InsideClassroom, TimeZoneBand, FounderSection, Testimonials } from '../components/landing/GlobalSections';
+import { CountryPaths, InsideClassroom, SubjectsAndExams, TimeZoneBand, FounderSection, Testimonials } from '../components/landing/GlobalSections';
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
@@ -67,15 +67,6 @@ const guessCountry = () => {
     if (/^(America\/(New_York|Chicago|Denver|Los_Angeles|Phoenix|Anchorage|Detroit|Boise)|Pacific\/Honolulu)$/.test(tz)) return 'United States';
   } catch { /* unknown zone */ }
   return '';
-};
-
-const SUBJECT_CATEGORIES = {
-  'Math': ['Elementary Math', 'Pre-Algebra', 'Algebra I & II', 'Geometry', 'Trigonometry', 'Calculus'],
-  'English & Reading': ['Phonics', 'Reading Comprehension', 'Creative Writing', 'Essay Writing', 'Literature'],
-  'Science': ['Life Science', 'Biology', 'Chemistry', 'Physics', 'Earth Science'],
-  'Test Prep': ['JAMB Prep', 'WAEC Prep', 'NECO Prep', 'Post-UTME Prep', 'SAT Prep', 'ACT Prep', 'State Assessments'],
-  'World Languages': ['Spanish', 'French'],
-  'Coding & Tech': ['Intro to Coding', 'Computer Science Fundamentals']
 };
 
 const EMPTY_STUDENT_FORM = {
@@ -140,7 +131,6 @@ export default function LandingPage() {
   const [selectedTutorBio, setSelectedTutorBio] = useState(null);
   const [showStickyBtn, setShowStickyBtn] = useState(false);
   const [bgIndex, setBgIndex] = useState(0);
-  const [activeSubjectTab, setActiveSubjectTab] = useState('All');
 
   // Subject requested from the /subjects page ("Request a tutor"); cleared after a successful submit
   const [requestedSubject, setRequestedSubject] = useState(null);
@@ -956,117 +946,11 @@ export default function LandingPage() {
       <InsideClassroom />
       <TimeZoneBand onBook={openConsultation} />
 
-      {/* Subjects Grid Section */}
-      <section id="subjects-section" style={{
-        background: 'rgba(11, 22, 44, 0.7)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        padding: '5.5rem 0',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '3.5rem' }}>
-            <h2 className="landing-section-heading" style={{ margin: '0 0 0.8rem 0' }}>One Platform, Every Subject Your Child Needs</h2>
-            <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '1.1rem', margin: '0 auto', maxWidth: '800px' }}>
-              Maths, English, sciences, exam preparation, languages and tech skills, with a tutor matched to exactly what your child needs.
-            </p>
-          </div>
-
-          {/* Tab buttons / chips */}
-          <div className="landing-subject-tabs">
-            {['All', ...Object.keys(SUBJECT_CATEGORIES)].map((cat) => {
-              const isActive = activeSubjectTab === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveSubjectTab(cat)}
-                  style={{
-                    padding: '0.65rem 1.4rem',
-                    borderRadius: '50px',
-                    border: '1.5px solid',
-                    borderColor: isActive ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.15)',
-                    background: isActive ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.05)',
-                    color: 'white',
-                    fontWeight: '700',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)'
-                  }}
-                  onMouseEnter={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.borderColor = 'var(--accent-color)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                    }
-                  }}
-                >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Filtered Subjects chips list */}
-          <div className="landing-subject-chips-grid">
-            {(activeSubjectTab === 'All' 
-              ? Object.values(SUBJECT_CATEGORIES).flat() 
-              : SUBJECT_CATEGORIES[activeSubjectTab]
-            ).map((subj) => (
-              <div
-                key={subj}
-                className="landing-subject-chip"
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = 'var(--accent-color)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                {subj}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ textAlign: 'center' }}>
-            <button
-              className="btn-next"
-              style={{
-                background: 'transparent',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                padding: '0.8rem 2.2rem',
-                borderRadius: '12px',
-                color: 'white',
-                fontWeight: '700',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                transition: 'all 0.25s ease'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                e.currentTarget.style.background = 'transparent';
-              }}
-              onClick={() => {
-                navigate('/subjects');
-              }}
-            >
-              View All Subjects →
-            </button>
-          </div>
-        </div>
-      </section>
-
-
+      {/* Subjects & exam boards */}
+      <SubjectsAndExams
+        onPickSubject={(subj) => { setRequestedSubject(subj); openConsultation(); }}
+        onViewAll={() => navigate('/subjects')}
+      />
 
       {/* Why Choose Us Section */}
       <section 

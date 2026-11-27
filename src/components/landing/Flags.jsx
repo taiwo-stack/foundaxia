@@ -44,4 +44,16 @@ export const FlagNG = (props) => (
   </svg>
 );
 
-export const FLAGS = { uk: FlagUK, us: FlagUS, ca: FlagCA, ng: FlagNG };
+// A simple globe for "International schools".
+export const FlagWorld = (props) => (
+  <svg viewBox="0 0 60 40" preserveAspectRatio="none" {...props}>
+    <rect width="60" height="40" fill="#12397A" />
+    <g fill="none" stroke="#F27A24" strokeWidth="2">
+      <circle cx="30" cy="20" r="14" />
+      <ellipse cx="30" cy="20" rx="6" ry="14" />
+      <path d="M16 20 H44 M18.5 13 H41.5 M18.5 27 H41.5" />
+    </g>
+  </svg>
+);
+
+export const FLAGS = { uk: FlagUK, us: FlagUS, ca: FlagCA, ng: FlagNG, intl: FlagWorld };
