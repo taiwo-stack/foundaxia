@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How do time zones work?',
-    a: 'We schedule lessons around your child's timetable, wherever you live: the UK, Canada, the US, Nigeria or elsewhere. Lesson times and join links always show in your own local time on the dashboard, so there is nothing to convert. Our team works on West Africa Time (UTC+1), which also makes after-school lessons in the UK and Europe especially easy to arrange.'
+    a: 'We schedule lessons around your child’s timetable, wherever you live: the UK, Canada, the US, Nigeria or elsewhere. Lesson times and join links always show in your own local time on the dashboard, so there is nothing to convert. Our team works on West Africa Time (UTC+1), which also makes after-school lessons in the UK and Europe especially easy to arrange.'
   },
   {
     q: 'Is this truly one-to-one?',
