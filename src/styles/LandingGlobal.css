@@ -1,0 +1,69 @@
+/* Homepage sections for families in the UK, US, Canada and Nigeria (GlobalSections.jsx). */
+
+.lg-section { padding: 5rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.lg-dark { background: rgba(11, 22, 44, 0.7); }
+.lg-darker { background: rgba(8, 18, 38, 0.8); }
+.lg-head { text-align: center; max-width: 780px; margin: 0 auto 3rem; }
+.lg-eyebrow { font-family: var(--font-heading); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-color); margin-bottom: 0.6rem; }
+.lg-lead { color: rgba(255, 255, 255, 0.8); font-size: 1.05rem; line-height: 1.7; margin-top: 0.9rem; }
+.lg-small { color: rgba(255, 255, 255, 0.6); font-size: 0.85rem; line-height: 1.6; margin-top: 0.9rem; }
+.lg-center { text-align: center; margin-top: 2.5rem; }
+.lg-cta { padding: 0.85rem 2rem !important; border-radius: 12px !important; font-weight: 700; font-size: 0.98rem; margin-top: 1.5rem; }
+.lg-center .lg-cta { margin-top: 0; }
+
+/* countries */
+.lg-countries { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; }
+.lg-country { background: rgba(255, 255, 255, 0.05); border: 1.5px solid rgba(255, 255, 255, 0.08); border-top: 4px solid var(--accent-color); border-radius: 20px; padding: 1.6rem 1.4rem; }
+.lg-country-top { display: flex; gap: 0.8rem; align-items: center; margin-bottom: 1rem; }
+.lg-flag { flex-shrink: 0; width: 48px; height: 48px; border-radius: 14px; background: var(--accent-color); color: #14213D; font-family: var(--font-heading); font-weight: 800; font-size: 1rem; letter-spacing: 0.04em; display: flex; align-items: center; justify-content: center; }
+.lg-country h3 { font-family: var(--font-heading); color: white; font-size: 1.15rem; font-weight: 800; }
+.lg-country-top p { color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; margin-top: 0.15rem; }
+.lg-country ul { list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
+.lg-country li { color: rgba(255, 255, 255, 0.85); font-size: 0.9rem; line-height: 1.45; padding-left: 1.2rem; position: relative; }
+.lg-country li::before { content: ''; position: absolute; left: 0; top: 0.5em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-color); }
+
+/* classroom screenshots */
+.lg-shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; }
+.lg-shot { margin: 0; }
+.lg-shot-frame { background: #F7F5F0; border-radius: 18px; padding: 10px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35); }
+.lg-shot-frame img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.lg-shot figcaption { padding: 1rem 0.25rem 0; }
+.lg-shot h3 { font-family: var(--font-heading); color: white; font-size: 1.15rem; font-weight: 800; }
+.lg-shot p { color: rgba(255, 255, 255, 0.75); font-size: 0.92rem; line-height: 1.6; margin-top: 0.35rem; }
+
+/* time zones */
+.lg-tz { display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; align-items: center; }
+.lg-tz-copy .landing-section-heading { text-align: left; }
+.lg-clocks { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.lg-clock { background: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 1.4rem 1rem; text-align: center; display: flex; flex-direction: column; gap: 0.3rem; }
+.lg-clock-time { font-family: var(--font-heading); font-size: 2.2rem; font-weight: 800; color: white; font-variant-numeric: tabular-nums; }
+.lg-clock-city { color: var(--accent-color); font-weight: 700; font-size: 0.9rem; letter-spacing: 0.04em; }
+
+/* founder */
+.lg-founder { display: grid; grid-template-columns: 340px 1fr; gap: 3rem; align-items: center; }
+.lg-founder-card { background: rgba(255, 255, 255, 0.06); border: 1.5px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: center; text-align: center; }
+.lg-founder-photo { width: 168px; height: 168px; border-radius: 50%; object-fit: cover; border: 4px solid var(--accent-color); }
+.lg-founder-initials { display: flex; align-items: center; justify-content: center; background: var(--primary-light); color: white; font-family: var(--font-heading); font-size: 3rem; font-weight: 800; }
+.lg-founder-name { font-family: var(--font-heading); color: white; font-weight: 800; font-size: 1.2rem; }
+.lg-founder-role { color: rgba(255, 255, 255, 0.7); font-size: 0.88rem; line-height: 1.5; margin-top: 0.2rem; }
+.lg-founder-copy .landing-section-heading { text-align: left; }
+.lg-founder-copy .lg-lead { font-style: italic; }
+
+/* parent quotes */
+.lg-quotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+.lg-quotes.one { max-width: 720px; margin: 0 auto; grid-template-columns: 1fr; }
+.lg-quote { margin: 0; background: rgba(255, 255, 255, 0.06); border-left: 4px solid var(--accent-color); border-radius: 16px; padding: 1.6rem 1.8rem; }
+.lg-quote p { color: white; font-size: 1.05rem; line-height: 1.7; }
+.lg-quote footer { color: rgba(255, 255, 255, 0.65); font-size: 0.85rem; margin-top: 0.8rem; }
+.lg-quote strong { color: var(--accent-color); }
+
+@media (max-width: 1024px) {
+  .lg-countries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lg-tz, .lg-founder { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .lg-section { padding: 3.5rem 0; }
+  .lg-countries, .lg-shots { grid-template-columns: 1fr; }
+  .lg-clock-time { font-size: 1.8rem; }
+  .lg-founder-card { padding: 1.5rem; }
+}

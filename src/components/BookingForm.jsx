@@ -183,7 +183,9 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
   return (
     <form onSubmit={handleSubmit} className={`booking-form booking-form--${variant}`}>
       <p className="booking-form-intro">
-        Schedule a 1-on-1 counseling call or academic consultation session with a tutor.
+        {variant === 'dark'
+          ? 'Book a free, no-obligation call with our team. We’ll talk about your child’s curriculum and goals, then recommend a tutor and a lesson plan.'
+          : 'Schedule a 1-on-1 counseling call or academic consultation session with a tutor.'}
       </p>
       {success && (
         <div className="booking-form-success" role="status">Meeting scheduled successfully!</div>
@@ -199,7 +201,7 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
         </div>
         <div className="form-group" style={{ margin: 0 }}>
           <label>Contact Phone *</label>
-          <input type="tel" name="bookingPhone" value={form.bookingPhone} onChange={handleChange} placeholder="080..." required {...lockedProps('bookingPhone')} />
+          <input type="tel" name="bookingPhone" value={form.bookingPhone} onChange={handleChange} placeholder="With country code, e.g. +44" required {...lockedProps('bookingPhone')} />
         </div>
       </div>
       <div className="form-group" style={{ margin: 0 }}>
@@ -331,7 +333,7 @@ export default function BookingForm({ variant = 'dark', prefill, lockedFields = 
         aria-busy={isBooking}
         style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isBooking ? 0.7 : 1, cursor: isBooking ? 'not-allowed' : 'pointer' }}
       >
-        {isBooking ? 'Booking...' : 'Book Session'}
+        {isBooking ? 'Booking...' : (variant === 'dark' ? 'Book My Free Consultation' : 'Book Session')}
       </button>
     </form>
   );

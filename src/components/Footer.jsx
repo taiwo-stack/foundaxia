@@ -25,12 +25,12 @@ export default function Footer() {
             <img src="/images/logo_text.png" alt="Foundaxia Brand" style={{ height: '25px', objectFit: 'contain' }} />
           </div>
           <p style={{ fontSize: '0.88rem', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.6', marginBottom: '1.2rem' }}>
-            One-on-One Tutoring That Builds Strong Foundations for Lifelong Success.
+            Expert one-to-one online tutoring for students in the UK, US, Canada and Nigeria.
           </p>
           <div style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.8)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
             <div>📍 Darka Street,</div>
             <div>📍 Wuse Zone I, FCT Abuja, Nigeria</div>
-            <div>📞 +2349061814608</div>
+            <div>📞 +234 906 181 4608 (WhatsApp)</div>
             <div style={{ marginTop: '0.2rem' }}>✉️ foundaxia@gmail.com</div>
           </div>
         </div>
