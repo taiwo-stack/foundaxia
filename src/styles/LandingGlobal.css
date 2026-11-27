@@ -11,17 +11,9 @@
 .lg-cta { padding: 0.85rem 2rem !important; border-radius: 12px !important; font-weight: 700; font-size: 0.98rem; margin-top: 1.5rem; }
 .lg-center .lg-cta { margin-top: 0; }
 
-/* countries */
-.lg-countries { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.25rem; }
-.lg-country { background: rgba(255, 255, 255, 0.05); border: 1.5px solid rgba(255, 255, 255, 0.08); border-top: 4px solid var(--accent-color); border-radius: 20px; padding: 1.6rem 1.4rem; }
-.lg-country-top { display: flex; gap: 0.8rem; align-items: center; margin-bottom: 1rem; }
+/* flags */
 .lg-flag { flex-shrink: 0; width: 60px; height: 40px; border-radius: 8px; overflow: hidden; display: block; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 6px 14px rgba(0, 0, 0, 0.35); }
 .lg-flag svg { display: block; }
-.lg-country h3 { font-family: var(--font-heading); color: white; font-size: 1.15rem; font-weight: 800; }
-.lg-country-top p { color: rgba(255, 255, 255, 0.6); font-size: 0.8rem; margin-top: 0.15rem; }
-.lg-country ul { list-style: none; display: flex; flex-direction: column; gap: 0.55rem; }
-.lg-country li { color: rgba(255, 255, 255, 0.85); font-size: 0.9rem; line-height: 1.45; padding-left: 1.2rem; position: relative; }
-.lg-country li::before { content: ''; position: absolute; left: 0; top: 0.5em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-color); }
 
 /* classroom screenshots */
 .lg-slider { position: relative; }
@@ -61,12 +53,10 @@
 .lg-quote strong { color: var(--accent-color); }
 
 @media (max-width: 1024px) {
-  .lg-countries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lg-founder { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .lg-section { padding: 3.5rem 0; }
-  .lg-countries { grid-template-columns: 1fr; }
   .lg-shot { flex-basis: 86%; }
   .lg-arrow { display: none; }
   .lg-founder-card { padding: 1.5rem; }
@@ -141,3 +131,6 @@
 .lg-chip-stack { display: grid; }
 .lg-chip-stack > .lg-chips { grid-area: 1 / 1; align-content: flex-start; visibility: hidden; opacity: 0; transition: opacity 0.2s; }
 .lg-chip-stack > .lg-chips.on { visibility: visible; opacity: 1; }
+
+.lg-exam-country > div { display: flex; flex-direction: column; }
+.lg-exam-country small { color: rgba(255, 255, 255, 0.6); font-size: 0.78rem; margin-top: 0.1rem; }

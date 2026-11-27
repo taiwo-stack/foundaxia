@@ -5,67 +5,6 @@ import { FLAGS } from './Flags';
 // Homepage sections for families outside Nigeria as well as inside it.
 // Copy rule: only say what is true today. No guarantees, no unverifiable checks or stats.
 
-/* ---------- 1. Choose your country ---------- */
-export const COUNTRY_PATHS = [
-  {
-    key: 'uk', code: 'UK', name: 'United Kingdom',
-    note: 'National Curriculum, Year 1 to Year 13',
-    items: ['KS1 & KS2: phonics, reading, maths', 'KS2 SATs & 11+ preparation', 'KS3 maths, English & science', 'GCSE: maths, English, sciences, computer science']
-  },
-  {
-    key: 'us', code: 'US', name: 'United States',
-    note: 'Kindergarten to Grade 12',
-    items: ['Elementary reading, writing & math', 'Middle school pre-algebra & science', 'High school algebra, geometry & sciences', 'SAT preparation']
-  },
-  {
-    key: 'ca', code: 'CA', name: 'Canada',
-    note: 'Grade 1 to Grade 12',
-    items: ['Elementary literacy & math', 'Middle school math & science', 'High school functions, calculus & sciences', 'Coding & tech skills']
-  },
-  {
-    key: 'ng', code: 'NG', name: 'Nigeria',
-    note: 'Primary, JSS & SSS',
-    items: ['Primary maths & English', 'JSS & SSS core subjects', 'WAEC, NECO & JAMB preparation', 'Coding & tech skills']
-  }
-];
-
-export function CountryPaths({ onBook }) {
-  return (
-    <section className="lg-section lg-dark" id="curricula">
-      <div className="container">
-        <div className="lg-head">
-          <p className="lg-eyebrow">Wherever your child studies</p>
-          <h2 className="landing-section-heading">Tutoring that follows your country’s curriculum</h2>
-          <p className="lg-lead">Tell us your child’s year or grade and what they are studying. We match a tutor who knows that syllabus and teaches at times that suit your family.</p>
-        </div>
-        <div className="lg-countries">
-          {COUNTRY_PATHS.map(c => {
-            const Flag = FLAGS[c.key];
-            return (
-            <article key={c.key} className="lg-country">
-              <div className="lg-country-top">
-                <span className="lg-flag" aria-hidden="true"><Flag width="100%" height="100%" /></span>
-                <div>
-                  <h3>{c.name}</h3>
-                  <p>{c.note}</p>
-                </div>
-              </div>
-              <ul>
-                {c.items.map(i => <li key={i}>{i}</li>)}
-              </ul>
-            </article>
-            );
-          })}
-        </div>
-        <div className="lg-center">
-          <button type="button" className="btn-primary lg-cta" onClick={onBook}>Book a free consultation</button>
-          <p className="lg-small">Not sure where your child fits? We’ll work it out together on the call.</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ---------- 2. Inside the classroom (real platform screenshots) ---------- */
 const CLASSROOM = [
   { img: '/images/platform/student-lesson.jpg', title: 'Every lesson in one place', text: 'Slides, practice files and homework stay on your child’s dashboard, so they can revise or catch up any time.', alt: 'A FoundaXia course page with weekly lesson slides, a practice sheet, flashcards and a quiz' },
@@ -168,7 +107,7 @@ const SUBJECT_TABS = {
 
 // Exams for the subjects and ages we teach. Boards shown under each exam.
 const EXAMS = [
-  { key: 'uk', name: 'United Kingdom', groups: [
+  { key: 'uk', note: 'Reception to Year 13', name: 'United Kingdom', groups: [
     ['Phonics screening check (Year 1)', []],
     ['Multiplication tables check (Year 4)', []],
     ['KS2 SATs', []],
@@ -178,20 +117,20 @@ const EXAMS = [
     ['A-level maths & sciences', ['AQA', 'Edexcel', 'OCR']],
     ['Scotland: National 5 & Highers', ['SQA']]
   ] },
-  { key: 'us', name: 'United States', groups: [
+  { key: 'us', note: 'Kindergarten to Grade 12', name: 'United States', groups: [
     ['SAT & PSAT/NMSQT', []],
     ['ACT', []],
     ['AP exams', ['Calculus', 'Biology', 'Chemistry', 'Physics', 'Computer Science']],
     ['State tests', ['e.g. NY Regents', 'Texas STAAR']],
     ['ISEE & SSAT', []]
   ] },
-  { key: 'ca', name: 'Canada', groups: [
+  { key: 'ca', note: 'Grade 1 to Grade 12', name: 'Canada', groups: [
     ['EQAO', ['Ontario']],
     ['Provincial Achievement Tests', ['Alberta']],
     ['Diploma exams', ['Alberta']],
     ['Graduation assessments', ['British Columbia']]
   ] },
-  { key: 'ng', name: 'Nigeria', groups: [
+  { key: 'ng', note: 'Primary, JSS & SSS', name: 'Nigeria', groups: [
     ['Common Entrance', ['NCEE']],
     ['BECE (Junior WAEC)', []],
     ['WAEC (WASSCE)', []],
@@ -199,7 +138,7 @@ const EXAMS = [
     ['JAMB (UTME)', []],
     ['Post-UTME', []]
   ] },
-  { key: 'intl', name: 'International schools', groups: [
+  { key: 'intl', note: 'IGCSE, A-level & IB', name: 'International schools', groups: [
     ['IGCSE', ['Cambridge', 'Pearson Edexcel']],
     ['International A-level', ['Cambridge', 'Pearson Edexcel']],
     ['IB', ['MYP', 'Diploma Programme']]
@@ -248,7 +187,10 @@ export function SubjectsAndExams({ onPickSubject, onViewAll }) {
                 <div key={c.key} className="lg-exam-col">
                   <div className="lg-exam-country">
                     <span className="lg-flag sm" aria-hidden="true"><Flag width="100%" height="100%" /></span>
-                    <strong>{c.name}</strong>
+                    <div>
+                      <strong>{c.name}</strong>
+                      <small>{c.note}</small>
+                    </div>
                   </div>
                   <ul>
                     {c.groups.map(([exam, boards]) => (
