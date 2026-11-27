@@ -92,9 +92,9 @@ export default function Header({ currentUser, onLogout }) {
                   Grades <span style={{ fontSize: '0.62rem', opacity: 0.8, transform: activeMobileDropdown === 'grades' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                 </a>
                 <ul className={`dropdown-menu ${activeMobileDropdown === 'grades' ? 'mobile-show' : ''}`}>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Early Learners (K–5)</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('Middle School'); }}>Middle School</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('High School'); }}>High School</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Primary · KS1–KS2 · Grades K–5</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('Middle School'); }}>Middle · KS3 · Grades 6–8</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('High School'); }}>Secondary · GCSE · Grades 9–12</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleGradeFilterNav('K-5'); }}>Homeschool Support</a></li>
                 </ul>
               </li>
@@ -113,11 +113,10 @@ export default function Header({ currentUser, onLogout }) {
                   Subjects <span style={{ fontSize: '0.62rem', opacity: 0.8, transform: activeMobileDropdown === 'subjects' ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>▼</span>
                 </a>
                 <ul className={`dropdown-menu ${activeMobileDropdown === 'subjects' ? 'mobile-show' : ''}`}>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Math'); }}>Math</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Math'); }}>Maths</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('English & Reading'); }}>Reading &amp; English</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Science'); }}>Science</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Test Prep'); }}>Test Prep</a></li>
-                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('World Languages'); }}>World Languages</a></li>
+                  <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Test Prep'); }}>Exam Prep</a></li>
                   <li><a onClick={() => { setActiveMobileDropdown(null); handleSubjectFilterNav('Coding & Tech'); }}>Coding</a></li>
                 </ul>
               </li>

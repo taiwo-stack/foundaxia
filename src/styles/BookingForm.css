@@ -132,3 +132,33 @@
   background: var(--accent-dark, #d9661a);
   transform: translateY(-1px);
 }
+
+/* ---------- Compact homepage form ---------- */
+.booking-form--dark { gap: 0.6rem; }
+.booking-form--dark .form-row-2col { margin-bottom: 0; gap: 0.6rem; }
+@media (max-width: 576px) {
+  /* keep pairs side by side on phones so the hero card stays short */
+  .booking-form--dark .form-row-2col { grid-template-columns: 1fr 1fr; }
+}
+.booking-tz-line {
+  margin: -0.15rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.booking-tz-line strong { color: white; font-weight: 600; }
+.booking-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-color);
+  font-weight: 700;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+.booking-note-toggle { align-self: flex-start; }

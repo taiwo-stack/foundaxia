@@ -9,54 +9,69 @@ import BookingForm from '../components/BookingForm';
 import { withRequestedSubject } from '../utils/booking';
 import '../styles/LandingPage.css';
 import '../styles/LandingMobile.css';
+import { InsideClassroom, SubjectsAndExams, ContactSection, FounderSection, Testimonials } from '../components/landing/GlobalSections';
 
 // Single source of truth for the visible FAQ and the FAQPage JSON-LD.
 const FAQ_ITEMS = [
   {
-    q: 'How does tutor matching work?',
-    a: 'We use a short assessment covering your child\'s subject needs, goals, and learning style. Our team personally reviews every response and hand-selects a qualified tutor from our vetted network — a real person makes the match, not an algorithm.'
+    q: 'Which countries and curricula do you teach?',
+    a: 'We teach students in the UK, the US, Canada and Nigeria. Tell us your child\'s year or grade and what they are studying (for example KS2, GCSE, Grade 8 or WAEC) and we match a tutor who knows that syllabus.'
   },
   {
-    q: 'Is this truly one-on-one?',
-    a: 'Yes. Every session is a private, individual session between your child and their tutor — never a group class disguised as personal support.'
-  },
-  {
-    q: 'Can we switch tutors if it\'s not the right fit?',
-    a: 'Absolutely. If the first match isn\'t right, we\'ll help you find a better fit — no extra cost, no hassle.'
-  },
-  {
-    q: 'What ages and grade levels do you support?',
-    a: 'Early learners through high school, plus homeschool curriculum support and test prep for college-bound students.'
+    q: 'What happens in the free consultation?',
+    a: 'It is a short call with our team. We learn about your child, their curriculum, goals and timetable, answer your questions, and then recommend a tutor and a lesson plan. There is no obligation to continue.'
   },
   {
     q: 'How much does it cost?',
-    a: 'Pricing is flexible based on session frequency and subject. Send us a message using the contact form below (choose "Fees & Pricing") and our team will share full details for your child.'
+    a: 'Fees depend on the subject, the level and how many lessons a week your child needs. After the free consultation we send you a tailored plan with the fee in your local currency.'
   },
   {
-    q: 'How do I enroll my child?',
-    a: 'Simply fill in the Quick Register form at the top of this page. After your registration, our admin team will review your information, assign your child to a suitable tutor, and set up their learning account within 24 hours.'
+    q: 'How do time zones work?',
+    a: 'We schedule lessons around your child’s timetable, wherever you live: the UK, Canada, the US, Nigeria or elsewhere. Lesson times and join links always show in your own local time on the dashboard, so there is nothing to convert.'
   },
   {
-    q: 'How are classes scheduled?',
-    a: 'Once enrolled, your child\'s assigned tutor schedules live class sessions and sends a meeting link directly. All scheduled classes appear in your child\'s Student Dashboard with date, time, and the meeting link.'
+    q: 'Is this truly one-to-one?',
+    a: 'Yes. Every session is a private, live lesson between your child and their tutor, never a group class presented as personal support.'
   },
   {
-    q: 'How do I track my child\'s progress?',
-    a: 'Your child has a dedicated Student Dashboard showing all enrolled courses, scheduled classes, assignments, grades, and class materials — everything in one place so you can stay informed at all times.'
+    q: 'How do I follow my child\'s progress?',
+    a: 'Your child has their own dashboard with lessons, homework, quizzes and timetable. You get a private Parent Area showing attendance, scores and notes from the tutor.'
+  },
+  {
+    q: 'Can we switch tutors if it\'s not the right fit?',
+    a: 'Yes. If the first match is not right, we will find a better fit at no extra cost.'
+  },
+  {
+    q: 'How do payments work?',
+    a: 'Payments are made securely online. We confirm your plan and the payment details after the consultation, before any paid lessons begin.'
   }
 ];
 
-const SUBJECT_CATEGORIES = {
-  'Math': ['Elementary Math', 'Pre-Algebra', 'Algebra I & II', 'Geometry', 'Trigonometry', 'Calculus'],
-  'English & Reading': ['Phonics', 'Reading Comprehension', 'Creative Writing', 'Essay Writing', 'Literature'],
-  'Science': ['Life Science', 'Biology', 'Chemistry', 'Physics', 'Earth Science'],
-  'Test Prep': ['JAMB Prep', 'WAEC Prep', 'NECO Prep', 'Post-UTME Prep', 'SAT Prep', 'ACT Prep', 'State Assessments'],
-  'World Languages': ['Spanish', 'French'],
-  'Coding & Tech': ['Intro to Coding', 'Computer Science Fundamentals']
+// Year/grade choices, shown for the country the parent picks.
+const US_GRADES = ['Kindergarten', ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`)];
+const GRADES_BY_COUNTRY = {
+  'United Kingdom': ['Reception', ...Array.from({ length: 13 }, (_, i) => `Year ${i + 1}`)],
+  'United States': US_GRADES,
+  'Canada': US_GRADES,
+  'Nigeria': [...Array.from({ length: 6 }, (_, i) => `Primary ${i + 1}`), 'JSS 1', 'JSS 2', 'JSS 3', 'SSS 1', 'SSS 2', 'SSS 3'],
+  'Other': US_GRADES
+};
+
+// Best guess from the visitor's time zone; they can change it.
+const guessCountry = () => {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (tz === 'Europe/London' || tz === 'Europe/Belfast') return 'United Kingdom';
+    if (tz === 'Africa/Lagos') return 'Nigeria';
+    if (/^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|Regina|St_Johns|Moncton|Whitehorse|Yellowknife|Iqaluit)$/.test(tz)) return 'Canada';
+    if (/^(America\/(New_York|Chicago|Denver|Los_Angeles|Phoenix|Anchorage|Detroit|Boise)|Pacific\/Honolulu)$/.test(tz)) return 'United States';
+  } catch { /* unknown zone */ }
+  return '';
 };
 
 const EMPTY_STUDENT_FORM = {
   studentName: '',
+  country: '',
   gradeLevel: '',
   primaryPhone: '',
   email: '',
@@ -106,19 +121,22 @@ export default function LandingPage() {
   const [isSendingContact, setIsSendingContact] = useState(false);
 
   // Tab State: 'registration' | 'booking'
-  const [activeTab, setActiveTab] = useState('registration');
+  const [activeTab, setActiveTab] = useState('booking');
+  const openConsultation = () => {
+    setActiveTab('booking');
+    document.getElementById('register')?.scrollIntoView({ behavior: 'smooth' });
+  };
   const [faqOpenIndex, setFaqOpenIndex] = useState(null);
 
   const [selectedTutorBio, setSelectedTutorBio] = useState(null);
   const [showStickyBtn, setShowStickyBtn] = useState(false);
   const [bgIndex, setBgIndex] = useState(0);
-  const [activeSubjectTab, setActiveSubjectTab] = useState('All');
 
   // Subject requested from the /subjects page ("Request a tutor"); cleared after a successful submit
   const [requestedSubject, setRequestedSubject] = useState(null);
 
   // Quick Register form state (only the fields the form actually collects)
-  const [studentForm, setStudentForm] = useState(EMPTY_STUDENT_FORM);
+  const [studentForm, setStudentForm] = useState(() => ({ ...EMPTY_STUDENT_FORM, country: guessCountry() }));
 
   // Contact form state
   const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM);
@@ -223,7 +241,8 @@ export default function LandingPage() {
   // Student Registration Form Handlers
   const handleRegChange = (e) => {
     const { name, value } = e.target;
-    setStudentForm(prev => ({ ...prev, [name]: value }));
+    // A new country means a different list of years/grades.
+    setStudentForm(prev => (name === 'country' ? { ...prev, country: value, gradeLevel: '' } : { ...prev, [name]: value }));
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -242,13 +261,13 @@ export default function LandingPage() {
         program: studentForm.program,
         schedule: null,
         start_date: null,
-        additional_comments: withRequestedSubject(requestedSubject, ''),
+        additional_comments: withRequestedSubject(requestedSubject, studentForm.country ? `Country: ${studentForm.country}` : ''),
         email: studentForm.email,
         phone: studentForm.primaryPhone
       };
       await registerStudent(dataToSave);
       setRegisterSuccess(true);
-      setStudentForm(EMPTY_STUDENT_FORM);
+      setStudentForm({ ...EMPTY_STUDENT_FORM, country: studentForm.country });
       setRequestedSubject(null);
       clearNavigationState();
       setTimeout(() => setRegisterSuccess(false), 5000);
@@ -341,7 +360,7 @@ export default function LandingPage() {
           <button
             id="sticky-enroll-btn"
             onClick={() => {
-              setActiveTab('registration');
+              setActiveTab('booking');
               const el = document.getElementById('register');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
             }}
@@ -356,7 +375,7 @@ export default function LandingPage() {
             onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.35)'; }}
             onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.28)'; }}
           >
-            🎓 Enroll Your Child
+            📅 Free Consultation
           </button>
           <button
             id="sticky-register-btn"
@@ -478,9 +497,9 @@ export default function LandingPage() {
           <div className="container">
             <div className="hero-content">
               <div className="hero-text">
-                <h1>One-on-One Tutoring That Builds Strong Foundations for Lifelong Success</h1>
+                <h1>Expert One-to-One Online Tutoring, Wherever Your Child Studies</h1>
                 <p>
-                  At Foundaxia, we combine personalized one-on-one tutoring with innovative learning programs, from core school subjects to future-ready tech skills. We equip K–12 and high school students with the knowledge, confidence, and tools they need to excel in school and thrive in tomorrow's digital world.
+                  Live lessons with a dedicated tutor in maths, English, science, exam preparation and tech skills, matched to your child’s curriculum in the UK, US, Canada or Nigeria. From KS2 and GCSE to SAT and WAEC, with a learning platform where you can follow every step.
                 </p>
                 <div className="hero-buttons" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1.5rem' }}>
                   <button
@@ -494,17 +513,13 @@ export default function LandingPage() {
                     }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-dark)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-color)'}
-                    onClick={() => {
-                      setActiveTab('registration');
-                      const el = document.getElementById('register');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                    }}
+                    onClick={openConsultation}
                   >
                     <span style={{ fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
-                      ✨ Give Your Child an Edge
+                      📅 Book a Free Consultation
                     </span>
                     <span style={{ fontSize: '0.72rem', opacity: 0.9, fontWeight: 'normal', marginTop: '2px', color: 'white' }}>
-                      Start 1-on-1 Personalized Tutoring
+                      Talk to our team and plan your child’s lessons
                     </span>
                   </button>
 
@@ -520,30 +535,19 @@ export default function LandingPage() {
                     }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.borderColor = 'white'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'; }}
-                    onClick={() => navigate('/subjects')}
+                    onClick={() => document.getElementById('subjects-section')?.scrollIntoView({ behavior: 'smooth' })}
                   >
                     <span style={{ fontSize: '1.05rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      📚 Explore Study Programs
+                      🌍 Subjects & Exams
                     </span>
                     <span style={{ fontSize: '0.72rem', opacity: 0.8, fontWeight: 'normal', marginTop: '2px' }}>
-                      See our standard &amp; custom courses
+                      UK · US · Canada · Nigeria
                     </span>
                   </button>
                 </div>
               </div>
               <div className="hero-form-card" id="register">
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.75rem' }}>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('registration')}
-                    style={{
-                      flex: 1, padding: '0.5rem 0.25rem',
-                      background: activeTab === 'registration' ? 'var(--accent-color)' : 'transparent',
-                      border: 'none', color: 'white', borderRadius: '6px',
-                      fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >Quick Register</button>
                   <button
                     type="button"
                     onClick={() => setActiveTab('booking')}
@@ -554,13 +558,24 @@ export default function LandingPage() {
                       fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer',
                       transition: 'all 0.2s ease'
                     }}
-                  >Book Meeting</button>
+                  >Free Consultation</button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('registration')}
+                    style={{
+                      flex: 1, padding: '0.5rem 0.25rem',
+                      background: activeTab === 'registration' ? 'var(--accent-color)' : 'transparent',
+                      border: 'none', color: 'white', borderRadius: '6px',
+                      fontSize: '0.82rem', fontWeight: 'bold', cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >Enrol Now</button>
                 </div>
 
                 {activeTab === 'registration' && (
                   <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     <p style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.75)', margin: '0 0 0.4rem 0', lineHeight: '1.4' }}>
-                      Enroll your child in our courses to setup their study account and choose grade programs.
+                      Ready to start? Enrol your child and our team will set up their learning account and match their tutor.
                     </p>
                     {registerSuccess && (
                       <div style={{ padding: '0.5rem', background: 'rgba(40, 167, 69, 0.2)', border: '1px solid #28a745', borderRadius: '6px', fontSize: '0.75rem', textAlign: 'center', color: '#28a745', fontWeight: 'bold' }}>
@@ -578,18 +593,26 @@ export default function LandingPage() {
                       </div>
                       <div className="form-group" style={{ margin: 0 }}>
                         <label>Contact Phone *</label>
-                        <input type="tel" name="primaryPhone" value={studentForm.primaryPhone} onChange={handleRegChange} placeholder="080..." required />
+                        <input type="tel" name="primaryPhone" value={studentForm.primaryPhone} onChange={handleRegChange} placeholder="With country code, e.g. +44" required />
                       </div>
                     </div>
                     <div className="form-row-2col">
                       <div className="form-group" style={{ margin: 0 }}>
-                        <label>Grade Level *</label>
-                        <select name="gradeLevel" value={studentForm.gradeLevel} onChange={handleRegChange} required>
-                          <option value="">Select Grade</option>
-                          {['Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9','Grade 10'].map(g => <option key={g} value={g}>{g}</option>)}
+                        <label>Country *</label>
+                        <select name="country" value={studentForm.country} onChange={handleRegChange} required>
+                          <option value="">Select country</option>
+                          {Object.keys(GRADES_BY_COUNTRY).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
                       <div className="form-group" style={{ margin: 0 }}>
+                        <label>{studentForm.country === 'United Kingdom' ? 'School Year *' : studentForm.country === 'Nigeria' ? 'Class *' : 'Grade *'}</label>
+                        <select name="gradeLevel" value={studentForm.gradeLevel} onChange={handleRegChange} required disabled={!studentForm.country}>
+                          <option value="">{studentForm.country ? 'Select' : 'Choose country first'}</option>
+                          {(GRADES_BY_COUNTRY[studentForm.country] || []).map(g => <option key={g} value={g}>{g}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
                         <label>Preferred Program *</label>
                         <select name="program" value={studentForm.program} onChange={handleRegChange} required>
                           <option value="">Select Program</option>
@@ -597,7 +620,6 @@ export default function LandingPage() {
                           <option value="tutoring">One-on-One Tutoring</option>
                           <option value="group">Group Sessions</option>
                         </select>
-                      </div>
                     </div>
                     <button type="submit" className="btn-primary" disabled={isRegistering} aria-busy={isRegistering} style={{ padding: '0.65rem', fontSize: '0.85rem', width: '100%', marginTop: '0.5rem', boxShadow: 'none', opacity: isRegistering ? 0.7 : 1, cursor: isRegistering ? 'not-allowed' : 'pointer' }}>
                       {isRegistering ? 'Submitting...' : 'Submit Registration'}
@@ -630,568 +652,32 @@ export default function LandingPage() {
         <div className="container" style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 1.5rem' }}>
           <div className="stats-grid">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>100%</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px' }}>Vetted Tutors</div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
               <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>1:1</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Private Lessons</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px' }}>Live Private Lessons</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
-              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>K–12</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>All Grade Levels</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>4</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Countries’ Curricula</div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
-              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>50+</div>
-              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Subjects Covered</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>Global</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>Lessons in Your Local Time</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', borderLeft: '1px solid rgba(255, 255, 255, 0.12)' }} className="landing-stat-item">
+              <div style={{ fontSize: '1.75rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'var(--font-heading)', lineHeight: '1.2' }}>Free</div>
+              <div style={{ fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.9)', fontWeight: '600', letterSpacing: '0.3px', padding: '0 0.25rem' }}>First Consultation</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features/Learning Approach Section */}
-      <section 
-        className="features" 
-        style={{ 
-          background: 'rgba(11, 22, 44, 0.65)', 
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)', 
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          padding: '5rem 0'
-        }}
-      >
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '4rem' }}>
-            <h2 className="landing-section-heading" style={{ marginBottom: '0.75rem' }}>
-              Our Learning Approach
-            </h2>
-            <p style={{ color: 'rgba(255, 255, 255, 0.75)', fontSize: '1.1rem', maxWidth: '720px', margin: '0 auto', lineHeight: '1.6' }}>
-              We orchestrate a comprehensive, student-centered learning model built around custom-fit pathways and continuous progress monitoring.
-            </p>
-          </div>
-          
-          <div className="features-grid">
-            
-            {/* Step 1: Blueprints */}
-            <div 
-              className="feature-card"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                padding: '2.5rem 2rem',
-                borderRadius: '24px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
-                border: '1.5px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '4px solid var(--accent-color)',
-                transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                textAlign: 'left'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-6px)';
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              }}
-            >
+      {/* Subjects & exam boards */}
+      <SubjectsAndExams
+        onPickSubject={(subj) => { setRequestedSubject(subj); openConsultation(); }}
+        onViewAll={() => navigate('/subjects')}
+      />
 
-              <div style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.8rem',
-                marginBottom: '1.5rem'
-              }}>
-                🎯
-              </div>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.35rem', color: 'white', fontWeight: '800', marginBottom: '0.8rem' }}>
-                Custom Learning Blueprints
-              </h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', margin: 0 }}>
-                Every child receives a tailored study roadmap engineered from a detailed diagnostic assessment of their specific academic strengths and gaps.
-              </p>
-            </div>
-
-            {/* Step 2: Scheduling */}
-            <div 
-              className="feature-card"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                padding: '2.5rem 2rem',
-                borderRadius: '24px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
-                border: '1.5px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '4px solid var(--accent-color)',
-                transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                textAlign: 'left'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-6px)';
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              }}
-            >
-
-              <div style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.8rem',
-                marginBottom: '1.5rem'
-              }}>
-                ⏰
-              </div>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.35rem', color: 'white', fontWeight: '800', marginBottom: '0.8rem' }}>
-                Adaptive Session Schedules
-              </h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', margin: 0 }}>
-                We provide consistent, structured classes configured around your family's weekly calendar to prevent learning burnout and fit busy lifestyles.
-              </p>
-            </div>
-
-            {/* Step 3: Development */}
-            <div 
-              className="feature-card"
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                padding: '2.5rem 2rem',
-                borderRadius: '24px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
-                border: '1.5px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '4px solid var(--accent-color)',
-                transition: 'all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                textAlign: 'left'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.transform = 'translateY(-6px)';
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-              }}
-            >
-
-              <div style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.8rem',
-                marginBottom: '1.5rem'
-              }}>
-                🎨
-              </div>
-              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.35rem', color: 'white', fontWeight: '800', marginBottom: '0.8rem' }}>
-                Multi-Dimensional Development
-              </h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', margin: 0 }}>
-                We combine core logic math, literacy writing, and STEM focus assignments to deliver a highly personalized teaching approach tailored specifically to how your child learns best.
-              </p>
-            </div>
-
-          </div>
-        </div>
-      </section>
-
-      {/* Who FoundaXia Is For Section */}
-      <section id="audience-section" style={{
-        background: 'rgba(11, 22, 44, 0.7)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        padding: '5.5rem 0',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '3.5rem' }}>
-            <h2 className="landing-section-heading" style={{ margin: '0 0 0.8rem 0' }}>Support for Every Kind of Learner</h2>
-            <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '1.1rem', margin: 0 }}>
-              Whatever stage your child is at, there's a path built for them.
-            </p>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-            gap: '2rem'
-          }}>
-            {/* Card 1 */}
-            <div className="feature-card" style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              textAlign: 'left',
-              transition: 'all 0.35s ease'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'var(--accent-color)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-            }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '1.25rem' }}>🧸</div>
-              <h3 style={{ color: 'white', fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Early Learners (K–5)</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', marginBottom: '1.5rem', flexGrow: 1 }}>
-                Foundational reading, phonics, and early math support that builds confidence before the gaps grow.
-              </p>
-              <a onClick={() => {
-                const el = document.getElementById('register');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }} style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                Explore Early Learning →
-              </a>
-            </div>
-
-            {/* Card 2 */}
-            <div className="feature-card" style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              textAlign: 'left',
-              transition: 'all 0.35s ease'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'var(--accent-color)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-            }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '1.25rem' }}>🎓</div>
-              <h3 style={{ color: 'white', fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Middle &amp; High School</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', marginBottom: '1.5rem', flexGrow: 1 }}>
-                From pre-algebra to AP Chemistry, our tutors help students catch up, keep up, or get ahead in core subjects and electives.
-              </p>
-              <a onClick={() => {
-                const el = document.getElementById('subjects-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }} style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                Explore K–12 Tutoring →
-              </a>
-            </div>
-
-            {/* Card 3 */}
-            <div className="feature-card" style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              textAlign: 'left',
-              transition: 'all 0.35s ease'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'var(--accent-color)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-            }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '1.25rem' }}>🏠</div>
-              <h3 style={{ color: 'white', fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Homeschool Families</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', marginBottom: '1.5rem', flexGrow: 1 }}>
-                Flexible, curriculum-aligned support that plugs directly into your homeschool schedule — as a full subject lead or a supplemental boost.
-              </p>
-              <a onClick={() => {
-                const el = document.getElementById('register');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }} style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                Explore Homeschool Support →
-              </a>
-            </div>
-
-            {/* Card 4 */}
-            <div className="feature-card" style={{
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1.5px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '24px',
-              padding: '2.5rem 2rem',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              textAlign: 'left',
-              transition: 'all 0.35s ease'
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'translateY(-6px)';
-              e.currentTarget.style.borderColor = 'var(--accent-color)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-            }}>
-              <div style={{ fontSize: '1.8rem', marginBottom: '1.25rem' }}>📝</div>
-              <h3 style={{ color: 'white', fontSize: '1.35rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Test Prep &amp; College</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', lineHeight: '1.65', marginBottom: '1.5rem', flexGrow: 1 }}>
-                Focused, goal-driven prep for the SAT, ACT, and beyond, with tutors who track progress toward a real score target.
-              </p>
-              <a onClick={() => {
-                const el = document.getElementById('subjects-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }} style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-                Explore Test Prep →
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works Section */}
-      <section id="how-it-works" style={{
-        background: 'rgba(11, 22, 44, 0.75)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        padding: '5.5rem 0',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '4rem' }}>
-            <h2 className="landing-section-heading" style={{ margin: 0 }}>Getting Started Is Simple</h2>
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
-            gap: '2.5rem',
-            position: 'relative'
-          }}>
-            {/* Step 1 */}
-            <div style={{ position: 'relative', textAlign: 'center' }}>
-              <div style={{
-                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
-                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
-              }}>01</div>
-              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Tell Us About Your Child</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
-                A quick assessment covering goals, subject needs, and learning style — takes less than 5 minutes.
-              </p>
-            </div>
-
-            {/* Step 2 */}
-            <div style={{ position: 'relative', textAlign: 'center' }}>
-              <div style={{
-                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
-                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
-              }}>02</div>
-              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Get Personally Matched</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
-                Our team reviews your child's assessment and hand-selects the right tutor from our vetted network — no algorithm, no guesswork.
-              </p>
-            </div>
-
-            {/* Step 3 */}
-            <div style={{ position: 'relative', textAlign: 'center' }}>
-              <div style={{
-                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
-                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
-              }}>03</div>
-              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Start Learning, 1-on-1</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
-                Begin personalized live sessions built around your child, not a generic curriculum.
-              </p>
-            </div>
-
-            {/* Step 4 */}
-            <div style={{ position: 'relative', textAlign: 'center' }}>
-              <div style={{
-                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
-                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
-              }}>04</div>
-              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Track Real Progress</h3>
-              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
-                Get visibility into every session — skills covered, progress made, and what's coming next — through a simple parent dashboard.
-              </p>
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', marginTop: '3.5rem' }}>
-            <button
-              className="btn-primary"
-              style={{ padding: '0.9rem 2.5rem', borderRadius: '12px', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', background: 'var(--accent-color)', border: 'none', color: 'white', transition: 'background 0.2s' }}
-              onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-dark)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-color)'}
-              onClick={() => {
-                const el = document.getElementById('register');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              Get Matched With a Tutor
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Subjects Grid Section */}
-      <section id="subjects-section" style={{
-        background: 'rgba(11, 22, 44, 0.7)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        padding: '5.5rem 0',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
-      }}>
-        <div className="container">
-          <div className="section-title" style={{ textAlign: 'center', marginBottom: '3.5rem' }}>
-            <h2 className="landing-section-heading" style={{ margin: '0 0 0.8rem 0' }}>One Platform, Every Subject Your Child Needs</h2>
-            <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '1.1rem', margin: '0 auto', maxWidth: '800px' }}>
-              50+ subjects across every grade level, taught by tutors who specialize in exactly what your child needs help with.
-            </p>
-          </div>
-
-          {/* Tab buttons / chips */}
-          <div className="landing-subject-tabs">
-            {['All', ...Object.keys(SUBJECT_CATEGORIES)].map((cat) => {
-              const isActive = activeSubjectTab === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveSubjectTab(cat)}
-                  style={{
-                    padding: '0.65rem 1.4rem',
-                    borderRadius: '50px',
-                    border: '1.5px solid',
-                    borderColor: isActive ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.15)',
-                    background: isActive ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.05)',
-                    color: 'white',
-                    fontWeight: '700',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)'
-                  }}
-                  onMouseEnter={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.borderColor = 'var(--accent-color)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                    }
-                  }}
-                >
-                  {cat}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Filtered Subjects chips list */}
-          <div className="landing-subject-chips-grid">
-            {(activeSubjectTab === 'All' 
-              ? Object.values(SUBJECT_CATEGORIES).flat() 
-              : SUBJECT_CATEGORIES[activeSubjectTab]
-            ).map((subj) => (
-              <div
-                key={subj}
-                className="landing-subject-chip"
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = 'var(--accent-color)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                }}
-              >
-                {subj}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ textAlign: 'center' }}>
-            <button
-              className="btn-next"
-              style={{
-                background: 'transparent',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                padding: '0.8rem 2.2rem',
-                borderRadius: '12px',
-                color: 'white',
-                fontWeight: '700',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-                transition: 'all 0.25s ease'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'white';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                e.currentTarget.style.background = 'transparent';
-              }}
-              onClick={() => {
-                navigate('/subjects');
-              }}
-            >
-              View All Subjects →
-            </button>
-          </div>
-        </div>
-      </section>
-
-
+      <InsideClassroom />
 
       {/* Why Choose Us Section */}
       <section 
@@ -1269,7 +755,7 @@ export default function LandingPage() {
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                Enroll Your Child Today
+                Enrol Your Child Today
               </button>
             </div>
 
@@ -1283,12 +769,12 @@ export default function LandingPage() {
               {[
                 {
                   icon: '🎓',
-                  title: 'Expert Vetted Educators',
-                  text: 'Only top-tier subject specialists pass our rigorous vetting process. All tutors hold advanced degrees, background checks, and certifications.'
+                  title: 'Tutors Matched by People',
+                  text: 'Our team speaks with every family first, then hand-picks a tutor for your child’s subject, curriculum and personality. Not the right fit? We switch at no extra cost.'
                 },
                 {
                   icon: '🎯',
-                  title: 'Personalized Study Plans',
+                  title: 'Personalised Study Plans',
                   text: 'We target and resolve specific academic weaknesses with custom-tailored curriculums built uniquely around your child\'s schedule.'
                 },
                 {
@@ -1298,8 +784,8 @@ export default function LandingPage() {
                 },
                 {
                   icon: '🛡️',
-                  title: 'Secure Online Portal',
-                  text: 'Complete security compliance. Encrypted virtual classrooms, parent alerts, and structured supervision checkups in every class.'
+                  title: 'Private Accounts for Every Family',
+                  text: 'Each student has their own login, and parents have a private Parent Area protected by a parent code, so you always know what is happening in lessons.'
                 }
               ].map((card, i) => (
                 <div
@@ -1395,7 +881,7 @@ export default function LandingPage() {
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
-                Enroll Your Child Today
+                Enrol Your Child Today
               </button>
             </div>
             
@@ -1405,12 +891,16 @@ export default function LandingPage() {
 
 
 
-      {/* Teachers Section */}
+      <FounderSection onBook={openConsultation} />
+      <Testimonials />
+
+      {/* Teachers Section: only shown when there are real tutor profiles */}
+      {(loadingTutors || tutors.length > 0) && (
       <section className="teachers" id="teachers">
         <div className="container">
           <div className="section-title" style={{ textAlign: 'center', marginBottom: '3rem' }}>
             <h2>Tutors Who Show Up for Your Child</h2>
-            <p style={{ maxWidth: '800px', margin: '0.8rem auto 0', color: 'white' }}>Every FoundaXia tutor is vetted for subject expertise and — just as important — for the ability to connect with kids. Tutoring isn't a side gig for them; it's a craft.</p>
+            <p style={{ maxWidth: '800px', margin: '0.8rem auto 0', color: 'white' }}>Every FoundaXia tutor is chosen for their subject knowledge and, just as important, for their ability to connect with young people.</p>
           </div>
           {!loadingTutors && tutors.length === 0 ? (
             <div className="teachers-empty">
@@ -1559,6 +1049,98 @@ export default function LandingPage() {
           )}
         </div>
       </section>
+      )}
+
+      {/* How It Works Section */}
+      <section id="how-it-works" style={{
+        background: 'rgba(11, 22, 44, 0.75)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        padding: '5.5rem 0',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+      }}>
+        <div className="container">
+          <div className="section-title" style={{ textAlign: 'center', marginBottom: '4rem' }}>
+            <h2 className="landing-section-heading" style={{ margin: 0 }}>Getting Started Is Simple</h2>
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+            gap: '2.5rem',
+            position: 'relative'
+          }}>
+            {/* Step 1 */}
+            <div style={{ position: 'relative', textAlign: 'center' }}>
+              <div style={{
+                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
+                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
+              }}>01</div>
+              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Book a Free Consultation</h3>
+              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
+                A short call with our team about your child’s curriculum, goals, learning style and timetable.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div style={{ position: 'relative', textAlign: 'center' }}>
+              <div style={{
+                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
+                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
+              }}>02</div>
+              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Get Personally Matched</h3>
+              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
+                Our team hand-picks a tutor who knows your child’s curriculum and suits their learning style. A person makes the match, not an algorithm.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div style={{ position: 'relative', textAlign: 'center' }}>
+              <div style={{
+                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
+                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
+              }}>03</div>
+              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Start Learning, 1-on-1</h3>
+              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
+                Begin personalised live sessions built around your child, not a generic curriculum.
+              </p>
+            </div>
+
+            {/* Step 4 */}
+            <div style={{ position: 'relative', textAlign: 'center' }}>
+              <div style={{
+                width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-color)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 1.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'white',
+                boxShadow: '0 4px 15px rgba(242, 122, 36, 0.3)'
+              }}>04</div>
+              <h3 style={{ color: 'white', fontSize: '1.2rem', fontWeight: '800', marginBottom: '0.8rem', fontFamily: 'var(--font-heading)' }}>Track Real Progress</h3>
+              <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.88rem', lineHeight: '1.65' }}>
+                Get visibility into every session — skills covered, progress made, and what's coming next — through a simple parent dashboard.
+              </p>
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '3.5rem' }}>
+            <button
+              className="btn-primary"
+              style={{ padding: '0.9rem 2.5rem', borderRadius: '12px', fontSize: '1.05rem', fontWeight: '700', cursor: 'pointer', background: 'var(--accent-color)', border: 'none', color: 'white', transition: 'background 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-dark)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-color)'}
+              onClick={() => {
+                const el = document.getElementById('register');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+            >
+              Get Matched With a Tutor
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* ─────────────── FAQ SECTION ─────────────── */}
       <section
@@ -1641,94 +1223,15 @@ export default function LandingPage() {
 
 
 
-      {/* Contact Section */}
-      <section className="contact" id="contact">
-        <div className="container">
-          <div className="section-title">
-            <h2>Get in Touch</h2>
-            <p>Have questions? We're here to help! Contact us for any information about our programs.</p>
-          </div>
-          <div className="contact-content">
-            <div className="contact-image-placeholder"></div>
-            <div className="contact-form">
-              {contactSuccess && (
-                <div className="success-message">
-                  Thank you for your message! We will get back to you within 24 hours.
-                </div>
-              )}
-              <h3>Send us a Message</h3>
-              <form onSubmit={handleContactSubmit}>
-                <div className="form-group">
-                  <label>Your Name *</label>
-                  <input
-                    type="text"
-                    name="contactName"
-                    value={contactForm.contactName}
-                    onChange={handleContactChange}
-                    placeholder="Enter your full name"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Your Email *</label>
-                  <input
-                    type="email"
-                    name="contactEmail"
-                    value={contactForm.contactEmail}
-                    onChange={handleContactChange}
-                    placeholder="Enter your email address"
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Your Phone</label>
-                  <input
-                    type="tel"
-                    name="contactPhone"
-                    value={contactForm.contactPhone}
-                    onChange={handleContactChange}
-                    placeholder="Enter your phone number"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Subject</label>
-                  <select
-                    name="contactSubject"
-                    value={contactForm.contactSubject}
-                    onChange={handleContactChange}
-                  >
-                    <option value="">Select a topic</option>
-                    <option value="enrollment">Enrollment Information</option>
-                    <option value="programs">Program Details</option>
-                    <option value="scheduling">Scheduling Questions</option>
-                    <option value="fees">Fees & Pricing</option>
-                    <option value="tutor_application">Become a Tutor</option>
-                    <option value="careers">Careers</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Your Message *</label>
-                  <textarea
-                    name="contactMessage"
-                    value={contactForm.contactMessage}
-                    onChange={handleContactChange}
-                    rows={4}
-                    placeholder="Tell us how we can help you..."
-                    required
-                  ></textarea>
-                </div>
-                <div className="step-buttons">
-                  <div></div>
-                  <button type="submit" className="btn-submit" disabled={isSendingContact} aria-busy={isSendingContact} style={{ opacity: isSendingContact ? 0.7 : 1, cursor: isSendingContact ? 'not-allowed' : 'pointer' }}>
-                    {isSendingContact ? 'Sending...' : 'Send Message'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Contact */}
+      <ContactSection
+        form={contactForm}
+        onChange={handleContactChange}
+        onSubmit={handleContactSubmit}
+        sending={isSendingContact}
+        success={contactSuccess}
+        onBook={openConsultation}
+      />
 
       {/* Final CTA Banner */}
       <section style={{
@@ -1745,7 +1248,7 @@ export default function LandingPage() {
             Give Your Child a Tutor Who Actually Knows Them
           </h2>
           <p style={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: '1.1rem', marginBottom: '2.5rem', lineHeight: '1.6' }}>
-            Sign up in minutes and get matched with the right tutor today.
+            Book a free consultation and we’ll match the right tutor for your child’s curriculum and goals.
           </p>
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button
@@ -1757,12 +1260,9 @@ export default function LandingPage() {
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-dark)'}
               onMouseLeave={e => e.currentTarget.style.background = 'var(--accent-color)'}
-              onClick={() => {
-                const el = document.getElementById('register');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={openConsultation}
             >
-              Create Your Free Account
+              Book a Free Consultation
             </button>
             <button
               className="btn-next"
